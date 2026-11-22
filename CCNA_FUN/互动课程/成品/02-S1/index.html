@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TCP 的握手与字节确认 · 02-S1</title>
+<style>
+:root{--ink:#12343a;--green:#006457;--line:#bbcecb;--soft:#456065;--light:#eef5ef;--orange:#874318;color:var(--ink);font:16px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}*{box-sizing:border-box}body{margin:0;background:#f4f6f2}header{border-bottom:1px solid var(--line);background:white}header div,main{max-width:1184px;padding:0 22px;margin:auto}header div{padding-block:12px;display:flex;justify-content:space-between;font-size:.9rem}h1{font-size:clamp(1.75rem,3vw,2.6rem);margin:20px 0 2px;line-height:1.25}h2,h3,p{margin:0}h2{font-size:1.22rem}h3{font-size:1.02rem}main>p{color:var(--soft);margin-bottom:12px}button,input{font:inherit}button{border:1px solid #93aca6;border-radius:7px;background:white;color:var(--ink);padding:7px 12px;cursor:pointer}button:hover{background:#edf5ed}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #105cab;outline-offset:2px}nav,.tools{display:flex;align-items:center;gap:7px;flex-wrap:wrap}nav{margin:12px 0 15px}nav button[aria-pressed=true],.primary{background:var(--green);color:white;font-weight:700;border-color:var(--green)}.primary:hover,nav button[aria-pressed=true]:hover{background:#06483e}.layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(305px,1fr);align-items:start;gap:16px}.card,details{background:white;border:1px solid var(--line);border-radius:12px;min-width:0}.card{overflow:hidden}.head{background:#193f43;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:6px}.head small{color:#d1ebdf;font:600 .85rem monospace}.diagram{padding:14px 18px 10px;background:linear-gradient(#f3f8f5,#fff)}.roles{display:flex;justify-content:space-between;gap:10px;font-size:.94rem}.roles b{border:1px solid var(--line);background:white;border-radius:6px;padding:3px 8px}.lanes{margin:0 28px;border-inline:2px dashed #a1b5b1;padding:8px 0;text-align:center}.packet{font-size:.93rem;font-weight:650}.arrow{position:relative;border-top:3px solid var(--green);margin:4px 0 7px}.arrow:after{content:"";position:absolute;right:-1px;top:-7px;border:6px solid transparent;border-right:0;border-left:11px solid var(--green)}.back{border-color:#97531c}.back:after{right:auto;left:-1px;transform:rotate(180deg);border-left-color:#97531c}.pending{color:var(--soft);font-size:.87rem;border:1px dashed #b7c7c2;padding:2px 9px;display:inline-block;border-radius:3px}.ruler{border-top:1px solid var(--line);padding:10px 0 4px}.meta{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-bottom:6px}.meta small{color:var(--soft)}.track{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:2px}.tick{height:26px;border:1px dashed #a1b0ac;border-radius:3px;background:white;display:grid;place-items:center;font:600 .78rem monospace;color:var(--soft)}.filled{background:#dcf1e5;color:#004e40;border:1px solid #579e84}.marker-rail{height:25px;position:relative;margin-top:2px}.marker{position:absolute;width:max-content;white-space:nowrap;transform:translateX(-100%);border-right:3px solid var(--orange);padding-right:4px;color:var(--orange);font-weight:700;font-size:.83rem}.limits{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:.92rem}.ack{color:var(--orange);font-weight:700}.note{padding:10px 16px;border-top:1px solid var(--line);background:#f2f6f4;font-size:.94rem}.note b{color:var(--green)}.tools{padding:0 16px 12px;background:#f2f6f4}.tools:empty{padding:0}.tools button{font-size:.88rem}.panel{padding:16px 18px}.panel p{color:var(--soft);margin:7px 0}.kicker{color:var(--green);font-weight:700;font-size:.88rem;margin-bottom:5px}fieldset{border:0;padding:0;margin:10px 0;min-width:0}legend{font-weight:700;margin:0 0 4px;padding:0}.choice{display:block;border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin:4px 0;font-size:.94rem;cursor:pointer}.choice:has(:checked){border-color:var(--green);background:var(--light)}input[type=radio]{accent-color:var(--green)}.num{display:block;width:min(100%,15em);border:1px solid #7f9994;border-radius:6px;padding:8px;font-size:1rem;margin-top:4px}.feedback{border-left:3px solid #ae651a;background:#fff3da;padding:7px 9px;margin:8px 0}.stats{background:var(--light);border-radius:8px;padding:9px;margin:8px 0}.mono{font-family:ui-monospace,monospace;font-weight:700}details{padding:9px 14px;margin:10px 0}summary{cursor:pointer;font-weight:650}details p,details ol{margin:7px 0}footer{margin-bottom:18px}
+@media(max-width:820px){.layout{grid-template-columns:1fr}header div,main{padding-inline:14px}}@media(max-width:450px){.diagram,.panel{padding:12px}.lanes{margin-inline:19px}.roles{font-size:.88rem}.limits{flex-wrap:wrap}.tools{padding-inline:12px}.tick{font-size:.78rem}}
+</style></head><body><header><div><strong>CCNA 互动课程 · 传输层</strong><span>02-S1</span></div></header><main>
+<h1>TCP 的握手与字节确认</h1><p>站在接收方一侧，判断返回的 ACK 应指向哪里。</p>
+<nav aria-label="选择独立任务"><button id="tabC" data-task="C">握手确认 · 选做</button><button id="tabA" data-task="A">字节确认 · 核心</button></nav>
+<div class="layout"><section class="card" aria-label="时序与序号"><div class="head"><h2 id="chartTitle"></h2><small id="eid"></small></div><div class="diagram" id="chart"></div><div class="note" id="caption"></div><div class="tools" id="tools"></div></section><section class="card panel" aria-label="课程操作" id="panel"></section></div>
+<footer><details><summary>术语与题设</summary><p><b>Seq</b> 是本次发送的起始序号。<b>ACK 确认号</b> 告诉对方下一次期待收到的序号。沿时间线从上往下读，箭头标出发送方向。</p><p>握手题中 SYN 不携带数据，但自身占一个序号位置。数据题中连接已经建立，接收方起初等待 1000，数据按序连续到达，无 SYN、FIN 或丢失。</p></details><details><summary>本轮已观察的事件</summary><ol id="log"></ol></details></footer></main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const tasks={
+ C:{title:"握手确认",field:"入站 SYN 的 Seq",values:[100,900],why:["回包确认客户端的 SYN，期待它的下一个序号。","回包的 ACK 使用服务端自己的初始序号。"],correct:0,follow:"这条 ACK 确认谁发出的 SYN？",choices:["客户端","服务端"],right:0},
+ A:{title:"字节确认",field:"连续载荷长度",values:[40,60],why:["ACK 报告已经收到的最后一个字节序号。","ACK 报告接下来期待的第一个字节序号。"],correct:1,follow:"最后一个已收字节之后，下一期待序号怎样变化？",choices:["保持相同","向前增加 1"],right:1}
+};
+const blank=()=>({step:0,ans:"",why:"",follow:"",lock:false,msg:""});
+const fresh=()=>({round:0,cases:[blank(),blank()],summary:false,review:null});
+let task=location.hash==="#02C"?"C":"A";
+const progress={A:fresh(),C:fresh()};
+const names=["接收入站段","读取关键字段","发出确认"];
+function button(action,title,primary=false){return '<button type="button" data-action="'+action+'" class="'+(primary?'primary':'')+'">'+title+'</button>'}
+function context(){
+ const s=progress[task],r=s.review?s.review.r:s.round,k=s.review?s.review.k:s.cases[r].step;
+ const val=tasks[task].values[r],syn=task==="C",first=syn?val:1000,span=syn?1:val;
+ return {s,r,k,val,syn,first,span,ack:first+span,id:"02"+task+"-"+(r?"V":"M")+"-E"+k};
+}
+function descriptions(c){
+ const {val,syn,first,span,ack}=c;
+ return syn?["客户端的无载荷 SYN 已到达服务端，先读取它的初始序号。","客户端 SYN 的 Seq 为 "+val+"，SYN 占用一个序号位置。","服务端以 SYN+ACK 应答，上行的 SYN 占用 "+first+"，回程 ACK 指向 "+ack+"。"]:
+ ["一个按序到达的数据段从字节 1000 开始，先读取连续载荷长度。","从字节 1000 开始，连续收到 "+span+" 字节。","已收到闭区间 "+first+"–"+(ack-1)+"，下一期待序号是 "+ack+"。"];
+}
+function graph(c){
+ const {k,syn,val,first,span,ack}=c,read=k>=1,done=k===2;
+ const inbound=syn?"SYN · Seq "+(read?val:"?")+" · 空载荷":"数据段 · Seq 1000 · "+(read?span:"?")+" 字节";
+ let h='<div class="roles"><b>客户端 · 发送方</b><b>服务端 · 接收方</b></div><div class="lanes"><div class="packet">'+inbound+'</div><div class="arrow"></div>';
+ h+=done?'<div class="packet ack">'+(syn?'SYN+ACK':'累计确认')+' · ACK '+ack+'</div><div class="arrow back"></div>':'<span class="pending">回程确认待填写</span>';
+ h+='</div><div class="ruler"><div class="meta"><b>'+(syn?'SYN 的序号占用':'客户端字节序号')+'</b><small>'+(syn?'无载荷 · 占 1 个序号':'每格 10 字节 · 从左向右')+'</small></div>';
+ if(syn)h+='<div class="stats">客户端 Seq <span class="mono">'+(read?first:'?')+'</span>　占用 <b>1 位</b></div>';
+ else{
+ h+='<div class="track" aria-label="从字节 1000 开始的载荷区间">';
+ for(let i=0;i<6;i++){const filled=read&&i*10<span;h+='<div class="tick '+(filled?'filled':'')+'">'+(filled?'10 B':'·')+'</div>';}
+ h+='</div>';
+ if(done)h+='<div class="marker-rail"><span class="marker" style="left:'+span/60*100+'%">下一期待 '+ack+' ↑</span></div>';
+ h+='<div class="limits"><span>起点 <b>1000</b></span><span>'+(read?'连续收到 '+span+' 字节':'长度 ?')+'</span></div>';
+ }
+ if(done)h+='<div class="limits"><span>'+(syn?'SYN 占用':'最后已收')+' <b>'+ (ack-1)+'</b></span>'+(syn?'<span class="ack">下一期待 → '+ack+'</span>':'')+'</div>';
+ return h+'</div>';
+}
+function radios(name,choices,selected){return choices.map((v,i)=>'<label class="choice"><input type="radio" name="'+name+'" value="'+i+'" '+(String(i)===selected?'checked':'')+'> '+v+'</label>').join("")}
+function render(focus=false){
+ const c=context(),{s,r,k,val,syn,ack}=c,t=tasks[task],st=s.cases[r];
+ $("tabC").setAttribute("aria-pressed",task==="C");$("tabA").setAttribute("aria-pressed",task==="A");
+ $("chartTitle").textContent=syn?"握手中的确认方向":"累计确认与连续区间";$("eid").textContent=c.id;
+ $("chart").innerHTML=graph(c);$("caption").innerHTML='<b>'+names[k]+'</b>　'+descriptions(c)[k];
+ $("log").innerHTML=descriptions(c).slice(0,k+1).map((x,i)=>'<li>'+c.id.slice(0,-1)+i+'　'+x+'</li>').join("");
+ let controls="",h='<div class="kicker">'+t.title+' · '+(r?'迁移':'主例')+'</div>';
+ if(s.review){
+ h+='<h2>回看'+names[k]+'</h2><p>当前图与记录已恢复到这一刻。</p>'+button("return","返回当前任务",true);
+ controls=(k>0?button("prev","上一步"):"")+(k<st.step?button("forward","下一步"):"");
+ }else if(s.summary){
+ const values=t.values.map(v=>syn?v+1:1000+v);
+ h+='<h2>两轮确认号为什么变化？</h2><p>'+(syn?'两个无载荷 SYN 各占一个序号。改变客户端初始序号，回程确认号跟着改变。':'起点同为 1000。只改变连续载荷长度，最后已收与下一期待的位置都随之移动。')+'</p><div class="stats">主例 ACK <b>'+values[0]+'</b>　迁移 ACK <b>'+values[1]+'</b></div>'+button("reviewM","回看主例")+button("reviewV","回看迁移")+' '+button("reset","重做本任务")+' '+button("other",syn?"进入核心任务":"进入选做握手");
+ }else if(k===0){
+ h+='<h2>'+(syn?'服务端应确认到哪里？':'接收方应返回哪个 ACK？')+'</h2><p>'+(r?'仅改变'+t.field+'。':'')+(syn?'握手中观察客户端 SYN 和服务端 SYN+ACK。两端各有自己的序号空间。':'连接已建立，接收方正等待 1000。这个段没有 SYN 或 FIN，数据连续到达。')+'</p><p>'+(syn?'例如入站 SYN 的 Seq 为 7，这个 SYN 占用位置 7，接下来期待 8。':'先看一个小例子：如果连续收到了第 7、8、9 字节，ACK 就填 10。现在用同样的方法处理图中的段。')+'</p>'+button("read","读取"+t.field,true);
+ }else if(k===1){
+ h+='<h2>预测回程确认号</h2><p>根据入站读数填写 ACK，再说明理由。</p><label><b>返回的 ACK</b><input class="num" id="answer" inputmode="numeric" autocomplete="off" maxlength="10" '+(st.lock?'readonly':'')+'></label>';
+ h+=st.lock?'<fieldset><legend>'+t.follow+'</legend>'+radios("follow",t.choices,st.follow)+'</fieldset>':'<fieldset><legend>判断依据</legend>'+radios("why",t.why,st.why)+'</fieldset>';
+ h+=(st.msg?'<div class="feedback" role="status">'+st.msg+'</div>':'')+button("submit",st.lock?"提交追问":"提交预测",true);
+ controls=button("back","回看上一步");
+ }else{
+ h+='<h2>回程 ACK '+ack+'</h2><p>'+descriptions(c)[2]+'</p>'+button("next",r?"查看本任务小结":"改变"+t.field,true);
+ controls=button("readHistory","回看入站读数")+button("resultHistory","回看确认依据");
+ }
+ $("panel").innerHTML=h;$("tools").innerHTML=controls;
+ if($("answer"))$("answer").value=st.ans;
+ if(focus){const title=$("panel").querySelector("h2");title.tabIndex=-1;title.focus({preventScroll:true});}
+}
+function grade(){
+ const {s,r,ack,syn}=context(),st=s.cases[r],t=tasks[task];
+ if(st.lock){
+ if(!st.follow)st.msg="请选择追问的答案。";
+ else if(Number(st.follow)!==t.right)st.msg=syn?"沿上行箭头找发起 SYN 的一端。":"最后已收之后，下一次从哪个位置接着收？";
+ else st.step=2;
+ }else if(!/^\d+$/.test(st.ans.trim()))st.msg="请填写一个非负整数字段值作为 ACK。";
+ else if(!st.why)st.msg="还需要选择判断依据。";
+ else if(Number(st.ans)!==ack)st.msg=syn?"重新读取客户端 Seq，并数一数 SYN 占几个序号。":"从图中的起点数完整个连续区间。回包应指向下一次要收的位置。";
+ else if(Number(st.why)!==t.correct){st.lock=true;st.msg="确认号正确，已保留。请回答追问来修正依据。";}
+ else st.step=2;
+}
+document.addEventListener("input",e=>{const s=progress[task],st=s.cases[s.round];if(e.target.id==="answer")st.ans=e.target.value;});
+document.addEventListener("change",e=>{const s=progress[task];if(["why","follow"].includes(e.target.name))s.cases[s.round][e.target.name]=e.target.value;});
+document.addEventListener("click",e=>{
+ const b=e.target.closest("button");if(!b)return;
+ const c=context(),{s,r,k}=c,st=s.cases[r],a=b.dataset.action;
+ if(b.dataset.task)task=b.dataset.task;
+ else if(a==="read")st.step=1;
+ else if(a==="submit")grade();
+ else if(a==="back"||a==="prev")s.review={r,k:k-1};
+ else if(a==="forward")s.review={r,k:k+1};
+ else if(a==="return")s.review=null;
+ else if(a==="next"){if(r===0)s.round=1;else s.summary=true;}
+ else if(a==="readHistory"||a==="resultHistory")s.review={r,k:a==="readHistory"?1:2};
+ else if(a==="reviewM"||a==="reviewV")s.review={r:a==="reviewM"?0:1,k:2};
+ else if(a==="reset")progress[task]=fresh();
+ else if(a==="other")task=task==="C"?"A":"C";
+ render(true);
+ if(matchMedia("(max-width:820px)").matches&&a!=="submit")document.querySelector(".layout").scrollIntoView({block:"start"});
+ if(matchMedia("(max-width:820px)").matches&&a==="submit"&&context().k===2)document.querySelector(".layout").scrollIntoView({block:"start"});
+});
+render();
+</script></body></html>
