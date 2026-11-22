@@ -15,7 +15,7 @@ const tasks={
  C:{title:"握手确认",field:"入站 SYN 的 Seq",values:[100,900],why:["回包确认客户端的 SYN，期待它的下一个序号。","回包的 ACK 使用服务端自己的初始序号。"],correct:0,follow:"这条 ACK 确认谁发出的 SYN？",choices:["客户端","服务端"],right:0},
  A:{title:"字节确认",field:"连续载荷长度",values:[40,60],why:["ACK 报告已经收到的最后一个字节序号。","ACK 报告接下来期待的第一个字节序号。"],correct:1,follow:"最后一个已收字节之后，下一期待序号怎样变化？",choices:["保持相同","向前增加 1"],right:1}
 };
-const blank=()=>({step:0,ans:"",why:"",follow:"",lock:false,msg:""});
+const blank=()=>({step:0,ans:"",why:"",follow:"",lock:false,attempted:false,submitted:"",revealed:false,msg:""});
 const fresh=()=>({round:0,cases:[blank(),blank()],summary:false,review:null});
 let task=location.hash==="#02C"?"C":"A";
 const progress={A:fresh(),C:fresh()};
@@ -68,9 +68,12 @@ function render(focus=false){
  h+='<h2>预测回程确认号</h2><p>根据入站读数填写 ACK，再说明理由。</p><label><b>返回的 ACK</b><input class="num" id="answer" inputmode="numeric" autocomplete="off" maxlength="10" '+(st.lock?'readonly':'')+'></label>';
  h+=st.lock?'<fieldset><legend>'+t.follow+'</legend>'+radios("follow",t.choices,st.follow)+'</fieldset>':'<fieldset><legend>判断依据</legend>'+radios("why",t.why,st.why)+'</fieldset>';
  h+=(st.msg?'<div class="feedback" role="status">'+st.msg+'</div>':'')+button("submit",st.lock?"提交追问":"提交预测",true);
+ if(st.attempted)h+=" "+button("explain","查看答案与解析");
  controls=button("back","回看上一步");
  }else{
- h+='<h2>回程 ACK '+ack+'</h2><p>'+descriptions(c)[2]+'</p>'+button("next",r?"查看本任务小结":"改变"+t.field,true);
+ const judgment=st.revealed?"已查看解析":"预测正确";
+ const calculation=c.first+" + "+c.span+" = "+ack;
+ h+='<h2>'+judgment+' · 正确答案 ACK '+ack+'</h2><p>你的预测：ACK '+Number(st.submitted)+'。</p><p><strong>'+calculation+'</strong>。'+descriptions(c)[2]+'</p>'+button("next",r?"查看本任务小结":"改变"+t.field,true);
  controls=button("readHistory","回看入站读数")+button("resultHistory","回看确认依据");
  }
  $("panel").innerHTML=h;$("tools").innerHTML=controls;
@@ -79,6 +82,7 @@ function render(focus=false){
 }
 function grade(){
  const {s,r,ack,syn}=context(),st=s.cases[r],t=tasks[task];
+ if(/^\d+$/.test(st.ans.trim()) && st.why){st.attempted=true;st.submitted=st.ans.trim();}
  if(st.lock){
  if(!st.follow)st.msg="请选择追问的答案。";
  else if(Number(st.follow)!==t.right)st.msg=syn?"沿上行箭头找发起 SYN 的一端。":"最后已收之后，下一次从哪个位置接着收？";
@@ -97,6 +101,7 @@ document.addEventListener("click",e=>{
  if(b.dataset.task)task=b.dataset.task;
  else if(a==="read")st.step=1;
  else if(a==="submit")grade();
+ else if(a==="explain"&&st.attempted){st.revealed=true;st.step=2;}
  else if(a==="back"||a==="prev")s.review={r,k:k-1};
  else if(a==="forward")s.review={r,k:k+1};
  else if(a==="return")s.review=null;
@@ -106,8 +111,9 @@ document.addEventListener("click",e=>{
  else if(a==="reset")progress[task]=fresh();
  else if(a==="other")task=task==="C"?"A":"C";
  render(true);
- if(matchMedia("(max-width:820px)").matches&&a!=="submit")document.querySelector(".layout").scrollIntoView({block:"start"});
- if(matchMedia("(max-width:820px)").matches&&a==="submit"&&context().k===2)document.querySelector(".layout").scrollIntoView({block:"start"});
+ if((a==="submit"||a==="explain")&&context().k===2)$("panel").scrollIntoView({block:"nearest"});
+ else if(matchMedia("(max-width:820px)").matches&&a!=="submit")document.querySelector(".layout").scrollIntoView({block:"start"});
+
 });
 render();
 </script></body></html>

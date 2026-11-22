@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>交换转发与广播边界 · 04-S1</title>
+<style>
+:root{--ink:#12343a;--green:#006457;--line:#bbcecb;--soft:#456065;--light:#eef5ef;--orange:#874318;color:var(--ink);font:16px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}*{box-sizing:border-box}body{margin:0;background:#f4f6f2}header{border-bottom:1px solid var(--line);background:white}header div,main{max-width:1184px;padding:0 22px;margin:auto}header div{padding-block:12px;display:flex;justify-content:space-between;font-size:.9rem}h1{font-size:clamp(1.75rem,3vw,2.6rem);margin:20px 0 2px;line-height:1.25}h2,h3,p{margin:0}h2{font-size:1.22rem}main>p{color:var(--soft);margin-bottom:12px}button,input{font:inherit}button{border:1px solid #93aca6;border-radius:7px;background:white;color:var(--ink);padding:7px 12px;cursor:pointer}button:hover{background:#edf5ed}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #105cab;outline-offset:2px}nav,.tools{display:flex;align-items:center;gap:7px;flex-wrap:wrap}nav{margin:12px 0 15px}nav button[aria-pressed=true],.primary{background:var(--green);color:white;font-weight:700;border-color:var(--green)}.primary:hover,nav button[aria-pressed=true]:hover{background:#06483e}.layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(305px,1fr);align-items:start;gap:16px}.card,details{background:white;border:1px solid var(--line);border-radius:12px;min-width:0}.card{overflow:hidden}.head{background:#193f43;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:6px}.head small{color:#d1ebdf;font:600 .85rem monospace}.diagram{padding:14px 18px 10px;background:linear-gradient(#f3f8f5,#fff)}.framehead{border:1px solid var(--line);background:white;border-radius:7px;padding:6px 10px;font-size:.92rem;margin-bottom:10px}.framehead b{font-family:ui-monospace,monospace}.swbox{border:2px solid #35605c;border-radius:10px;background:#e7f1ec;padding:8px 12px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}.swbox b{font-size:1.02rem}.swbox small{color:var(--soft)}.fdb{border:1px dashed #7e9a93;border-radius:7px;background:white;padding:6px 10px;margin-top:8px;font-size:.92rem}.fdb .mono{font-family:ui-monospace,monospace;font-weight:700}.fdb .dim{color:var(--soft)}.ports{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;text-align:center}.pcell{border:1px solid var(--line);border-radius:8px;background:white;padding:6px 4px}.pcell .pn{font:700 .88rem monospace;color:#35605c}.wire{margin:4px 0;min-height:34px}.inarrow{position:relative;border-top:3px solid var(--orange);width:70%;margin:14px auto 2px}.inarrow:before{content:"入站";position:absolute;left:-2px;top:-22px;color:var(--orange);font:700 .74rem monospace}.inarrow:after{content:"";position:absolute;top:-7px;left:-1px;border:6px solid transparent;border-top:0;border-bottom:11px solid var(--orange)}.egarrow{position:relative;border-top:3px solid var(--green);width:70%;margin:2px auto 2px}.egarrow:before{content:"发出";position:absolute;right:0;top:-22px;color:var(--green);font:700 .74rem monospace}.egarrow:after{content:"";position:absolute;right:-1px;top:-7px;border:6px solid transparent;border-right:0;border-left:11px solid var(--green)}.nop{color:var(--soft);font-size:.8rem;border:1px dashed #b7c7c2;border-radius:4px;display:inline-block;padding:1px 6px;margin-top:8px}.host{font-size:.9rem;font-weight:650}.host small{display:block;font-weight:400;color:var(--soft)}.chain{display:flex;align-items:stretch;gap:6px;margin-top:10px;flex-wrap:wrap}.chain>div{flex:1 1 130px;min-width:0}.hostbox{border:1px solid var(--line);border-radius:8px;background:white;padding:8px 6px;text-align:center;font-size:.9rem;font-weight:650}.hostbox small{display:block;font-weight:400;color:var(--soft)}.midbox{border:2px solid #35605c;border-radius:8px;background:#e7f1ec;padding:8px 6px;text-align:center;font-size:.9rem;font-weight:650;flex:1.2 1 150px}.midbox small{display:block;font-weight:400;color:var(--soft)}.chain>.seg{align-self:center;color:var(--soft);flex:0 0 auto}.reach{color:var(--green);font-weight:700}.noreach{color:var(--soft)}.domain{border:2px dashed var(--orange);border-radius:10px;padding:6px 10px;margin-top:10px;font-size:.88rem;color:var(--orange);font-weight:650}.note{padding:10px 16px;border-top:1px solid var(--line);background:#f2f6f4;font-size:.94rem}.note b{color:var(--green)}.tools{padding:0 16px 12px;background:#f2f6f4}.tools:empty{padding:0}.tools button{font-size:.88rem}.panel{padding:16px 18px}.panel p{color:var(--soft);margin:7px 0}.kicker{color:var(--green);font-weight:700;font-size:.88rem;margin-bottom:5px}fieldset{border:0;padding:0;margin:10px 0;min-width:0}legend{font-weight:700;margin:0 0 4px;padding:0}.choice{display:block;border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin:4px 0;font-size:.94rem;cursor:pointer}.choice:has(:checked){border-color:var(--green);background:var(--light)}input[type=radio]{accent-color:var(--green)}.feedback{border-left:3px solid #ae651a;background:#fff3da;padding:7px 9px;margin:8px 0}.stats{background:var(--light);border-radius:8px;padding:9px;margin:8px 0}details{padding:9px 14px;margin:10px 0}summary{cursor:pointer;font-weight:650}details p,details ol{margin:7px 0}footer{margin-bottom:18px}
+@media(max-width:820px){.layout{grid-template-columns:1fr}header div,main{padding-inline:14px}}@media(max-width:450px){.diagram,.panel{padding:12px}.ports{gap:5px}.framehead,.fdb{font-size:.86rem}.tools{padding-inline:12px}.chain{flex-direction:column}.chain>div{flex:0 0 auto}.seg{transform:rotate(90deg)}}
+.chain.sameDomain{outline:2px dashed var(--green);outline-offset:2px;background:#edf8f0}.chain.stopped .midbox{border-right:4px double var(--orange)}.chain.stopped .midbox+.seg{color:var(--orange);font-weight:bold}@media(max-width:450px){.chain.stopped .midbox{border-right:1px solid var(--line);border-bottom:4px double var(--orange)}}
+</style></head><body><header><div><strong>CCNA 互动课程 · 设备角色</strong><span>04-S1</span></div></header><main>
+<h1>交换转发与广播边界</h1><p>从设备和表项当前可观察的字段，推断一帧实际从哪里发出、广播能到哪里。</p>
+<nav aria-label="选择任务"><button id="tabA" data-task="A">已知与未知单播 · 04A</button><button id="tabB" data-task="B">广播边界 · 04B</button></nav>
+<div class="layout"><section class="card" aria-label="转发主图"><div class="head"><h2 id="chartTitle"></h2><small id="eid"></small></div><div class="diagram" id="chart"></div><div class="note" id="caption"></div><div class="tools" id="tools"></div></section><section class="card panel" aria-label="课程操作" id="panel"></section></div>
+<footer><details><summary>术语与题设</summary><p><b>MAC 地址表（FDB）</b> 记录“MAC → 端口”的学习结果。查表命中时，帧只从命中的出端口发送；查不到时按<b>未知单播泛洪</b>：复制给同一 VLAN 内除入端口外所有处于转发状态的端口。</p><p><b>广播域</b> 是二层广播帧能到达的范围。同 VLAN 的交换端口仍属同一广播域；路由器的三层接口是广播域边界，不转发二层广播。本章三端口均处于转发状态，无中继代理。</p></details><details><summary>本轮已观察的事件</summary><ol id="log"></ol></details></footer></main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const tasks={
+ A:{
+  title:"04A 目的 MAC 的出口",field:"转发表关于 B 的记录",
+  outcomes:["仅从 P3 发出","从 P2 和 P3 发出","仅从 P2 发出","不再从任何端口发出"],
+  reasons:["查转发表命中 B 的出端口，仅该出口需要发送。","表中没有 B 的记录，未知单播泛洪到同 VLAN 除入端口外的转发端口。","入端口是 P1，按相邻编号推算，下一端口 P2 就是出口。"],
+  rounds:[
+   {tag:"M",fdbRow:"MAC <b>B</b> → <b>P3</b>",egress:[2],outcome:0,reason:0,
+    hint:"重新查转发表：本轮关于 B 的记录指向哪个端口？只有命中的出口需要发送。",
+    follow:{q:"查表命中的端口和入端口是否相同？",choices:["不同：命中 P3，入端口是 P1，仅从 P3 发出","相同：帧应从入端口 P1 送回"],right:0},
+    why:"查表命中 B → P3：只有 P3 是需要的出口；P2 无记录对应也不发送，P1 是入端口不再回流。"},
+   {tag:"V",fdbRow:"<span class='dim'>（没有 B 的记录）</span>",egress:[1,2],outcome:1,reason:1,
+    hint:"本轮表中没有 B 的记录，目的未知。未知单播按什么规则处理？",
+    follow:{q:"表中没有 B 的记录时，帧复制给哪些端口？",choices:["除入端口 P1 外的同 VLAN 转发端口：P2 和 P3","只有与入端口编号相邻的 P2"],right:0},
+    why:"目的未知：交换机把未知单播按泛洪处理，除入端口 P1 外复制给同 VLAN 的 P2 和 P3。"}
+  ],
+  intro:r=>'三个端口属于同一 VLAN，均处于转发状态。一帧从 P1 到达，帧头目的 MAC 为 <b>B</b>。'+(r?'本轮仅改变转发表关于 B 的记录，其余条件不变。':'')+'先看一个小例子：若表中记录 D → P2，目的为 D 的入站帧就只从 P2 发出。',
+  sumTitle:"两轮出口为什么不同？",sumText:"只改变一个字段：转发表关于 B 的记录。有记录时，帧仅从命中的出端口发出；没有记录时，按未知单播泛洪到同 VLAN 除入端口外的转发端口。",
+  sumStats:'主例出口 <b>P3</b>　迁移出口 <b>P2、P3</b>',
+  other:"进入 04B 广播边界"
+ },
+ B:{
+  title:"04B 广播能跨过中间设备吗",field:"中间连接",
+  outcomes:["B 能收到此广播帧","广播帧止于本链路"],
+  reasons:["二层广播的传播范围由广播域决定，交换机向本 VLAN 其他转发端口复制此帧。","路由器不转发二层广播，两个三层接口分属不同广播域。","只要有物理连接，另一侧就能收到所有帧。"],
+  rounds:[
+   {tag:"M",mid:"二层交换机",midSub:"A、B 同属 VLAN 10 的二层交换端口",outcome:0,reason:0,
+    hint:"先看本轮的中间连接：A 和 B 是否仍在同一个广播域？",
+    follow:{q:"A 和 B 是否仍处于同一广播域？",choices:["是：同 VLAN 的交换端口仍在同一广播域，B 收到","否：中间隔着设备就一定不在同一广播域"],right:0},
+    why:"中间是同 VLAN 的二层交换端口：A 与 B 仍在同一广播域，交换机把广播帧复制给本 VLAN 其他转发端口，B 收到。"},
+   {tag:"V",mid:"路由器",midSub:"两个三层接口分别接 A 和 B",outcome:1,reason:1,
+    hint:"先看本轮的中间连接是什么设备，它会不会把二层广播帧转发到另一个接口？",
+    follow:{q:"A 和 B 是否仍处于同一广播域？",choices:["否：路由器两个三层接口分属两个广播域","是：只要有物理连接就在同一广播域"],right:0},
+    why:"中间是路由器的两个三层接口：广播域在 A 侧链路结束，路由器不把这个二层广播帧转发到另一接口，B 收不到。"}
+  ],
+  intro:r=>'主机 A 发出以太网广播，目的 MAC 为 <b>FF:FF:FF:FF:FF:FF</b>；端口工作正常，无中继代理，接收侧主机 B 位于中间设备的另一个端口。'+(r?'本轮仅改变中间连接的类型，其余条件不变。':'')+'先看一个小例子：同一台交换机同一 VLAN 里，任一主机的广播会到达本 VLAN 其他所有主机。',
+  sumTitle:"两轮结果为什么不同？",sumText:"只改变中间连接：同 VLAN 的二层交换端口仍属同一广播域，B 收到；路由器的两个三层接口划分广播域，广播帧止于 A 所在链路。",
+  sumStats:'主例 <b>B 收到</b>　迁移 <b>B 收不到</b>',
+  other:"进入 04A 单播出口"
+ }
+};
+const names=["接收起始快照","读取本轮线索","揭晓处理结果"];
+const blank=()=>({step:0,outcome:"",why:"",follow:"",lock:false,attempted:false,submitted:"",submittedWhy:"",attempts:0,revealed:false,msg:""});
+const fresh=()=>({round:0,cases:[blank(),blank()],summary:false,review:null});
+let task=location.hash==="#04B"?"B":"A";
+const progress={A:fresh(),B:fresh()};
+function button(action,title,primary){return '<button type="button" data-action="'+action+'" class="'+(primary?'primary':'')+'">'+title+'</button>'}
+function context(){
+ const s=progress[task],r=s.review?s.review.r:s.round,k=s.review?s.review.k:s.cases[r].step;
+ return {s,r,k,t:tasks[task],rd:tasks[task].rounds[r],id:"04"+task+"-"+tasks[task].rounds[r].tag+"-E"+k};
+}
+function diagramA(c){
+ const {k,rd}=c,read=k>=1,done=k===2;
+ const fdbB=rd.tag==="M"?"MAC <b>B</b> → <b>P3</b>":'<span class="dim">没有 B 的记录</span>';
+ let h='<div class="framehead">入站帧（P1 方向）· 目的 MAC <b>B</b></div>';
+ h+='<div class="swbox"><b>交换机 SW1</b><small>VLAN 10 · P1 / P2 / P3 均处于转发状态</small></div>';
+ h+='<div class="fdb">MAC 地址表：MAC A → P1　｜　'+(read?fdbB:'关于 B：<b>？</b>（待读取）')+'</div>';
+ const hosts=[["P1","主机 A","发送方"],["P2","主机 C","同 VLAN"],["P3","主机 B","目的主机"]];
+ h+='<div class="ports">'+hosts.map((p,i)=>{
+  let wire='<div class="wire"></div>';
+  if(i===0)wire='<div class="wire"><div class="inarrow"></div></div>';
+  else if(done)wire=rd.egress.includes(i)?'<div class="wire"><div class="egarrow"></div></div>':'<div class="wire"><span class="nop">不发送</span></div>';
+  else if(k===1)wire='<div class="wire"><span class="nop">出口待预测</span></div>';
+  return '<div class="pcell"><div class="pn">'+p[0]+'</div>'+wire+'<div class="host">'+p[1]+'<small>'+p[2]+'</small></div></div>';
+ }).join("")+'</div>';
+ if(done)h+='<div class="domain">广播域与 VLAN 10 同范围：本帧的出口由查表结果决定，见右侧解析</div>';
+ return h;
+}
+function diagramB(c){
+ const {k,rd}=c,read=k>=1,done=k===2;
+ let h='<div class="framehead">主机 A 发出以太网广播 · 目的 MAC <b>FF:FF:FF:FF:FF:FF</b></div>';
+ const mid=read?rd.mid:'？',midSub=read?rd.midSub:'本轮的中间连接待读取';
+ const aB=done&&rd.tag==="M",bDim=done&&rd.tag==="V";
+ h+='<div class="chain'+(done?(aB?' sameDomain':' stopped'):'')+'"><div class="hostbox">主机 A<small>广播发起方</small></div><div class="seg">—</div>';
+ h+='<div class="midbox">'+mid+'<small>'+midSub+'</small></div><div class="seg">'+(done?(aB?'→':'⊣'):'—')+'</div>';
+ h+='<div class="hostbox"'+(bDim?' style="opacity:.55"':'')+'>主机 B<small>'+(done?(aB?'<span class="reach">收到此广播帧</span>':'<span class="noreach">收不到</span>'):'接收侧')+'</small></div></div>';
+ if(done)h+=aB?'<div class="domain" style="color:var(--green);border-color:var(--green)">╌╌ 广播域边界 ╌╌ 包住 A、交换机与 B：B 在域内</div>':'<div class="domain">╌╌ 广播域边界 ╌╌ 止于 A 所在链路：路由器接口是边界，B 在域外</div>';
+ else if(k===1)h+='<div class="domain" style="color:var(--soft);border-style:dotted">广播域边界待揭晓</div>';
+ return h;
+}
+function captions(c){
+ const {t,rd,k}=c;
+ if(t===tasks.A)return ["一帧从 P1 到达，先看共同线索：可用端口与帧头目的 MAC B。","已取得本轮的转发表记录："+(rd.tag==="M"?"B → P3。":"没有 B 的记录。")+"据此预测实际出口。",rd.why];
+ return ["主机 A 发出广播，先看共同线索：目的 MAC 与接收侧位置。","已取得本轮的中间连接："+rd.mid+"。据此预测 B 能否收到。",rd.why];
+}
+function radios(name,choices,selected){return choices.map((v,i)=>'<label class="choice"><input type="radio" name="'+name+'" value="'+i+'" '+(String(i)===selected?'checked':'')+'> '+v+'</label>').join("")}
+function render(focus){
+ const c=context(),{s,r,k,t,rd,id}=c,st=s.cases[r];
+ $("tabA").setAttribute("aria-pressed",task==="A");$("tabB").setAttribute("aria-pressed",task==="B");
+ $("chartTitle").textContent=t.title;$("eid").textContent=id;
+ $("chart").innerHTML=t===tasks.A?diagramA(c):diagramB(c);
+ $("caption").innerHTML='<b>'+names[k]+'</b>　'+captions(c)[k];
+ $("log").innerHTML=captions(c).slice(0,k+1).map((x,i)=>'<li>'+id.slice(0,-1)+i+'　'+x+'</li>').join("");
+ let controls="",h='<div class="kicker">'+t.title+' · '+(rd.tag==="M"?'主例':'迁移')+'</div>';
+ if(s.review){
+  h+='<h2>回看'+names[k]+'</h2><p>当前图与记录已恢复到这一刻。</p>'+button("return","返回当前任务",true);
+  controls=(k>0?button("prev","上一步"):"")+(k<st.step?button("forward","下一步"):"");
+ }else if(s.summary){
+  h+='<h2>'+t.sumTitle+'</h2><p>'+t.sumText+'</p><div class="stats">'+t.sumStats+'</div>'+button("reviewM","回看主例")+button("reviewV","回看迁移")+' '+button("reset","重做本任务")+' '+button("other",t.other);
+ }else if(k===0){
+  h+='<h2>'+(t===tasks.A?'这一帧从哪里发出？':'这个广播 B 收得到吗？')+'</h2><p>'+t.intro(r)+'</p>'+button("read","读取本轮的「"+t.field+"」",true);
+ }else if(k===1){
+  h+='<h2>预测处理结果并给依据</h2><p>先选结果，再选出决定本次结果的条件。</p>';
+  h+='<fieldset'+(st.lock?' disabled':'')+'><legend>结果预测</legend>'+radios("outcome",t.outcomes,st.outcome)+'</fieldset>';
+  h+=st.lock?'<fieldset><legend>'+rd.follow.q+'</legend>'+radios("follow",rd.follow.choices,st.follow)+'</fieldset>':'<fieldset><legend>判断依据</legend>'+radios("why",t.reasons,st.why)+'</fieldset>';
+  h+=(st.msg?'<div class="feedback" role="status">'+st.msg+'</div>':'')+button("submit",st.lock?"提交追问":"提交预测",true);
+  if(st.attempted)h+=" "+button("explain","查看答案与解析");
+  controls=button("back","回看起始快照");
+ }else{
+  const judg=st.revealed?"已查看解析（非答对）":st.lock||st.attempts>1?"修正后答对":"预测正确";
+  h+='<h2>'+judg+'</h2><p>你的预测：'+t.outcomes[st.submitted]+'。依据：'+t.reasons[st.submittedWhy]+'。</p><p><strong>正确答案：'+t.outcomes[rd.outcome]+'。</strong></p><p><strong>因果解析：</strong>'+rd.why+'</p>'+button("next",r?"查看本任务小结":(t===tasks.A?"改变「"+t.field+"」":"改变「"+t.field+"」"),true);
+  controls=button("clueHistory","回看本轮线索")+button("resultHistory","回看揭晓结果");
+ }
+ $("panel").innerHTML=h;$("tools").innerHTML=controls;
+ if(focus){const title=$("panel").querySelector("h2");title.tabIndex=-1;title.focus({preventScroll:true});}
+}
+function grade(){
+ const {s,r,t,rd}=context(),st=s.cases[r];
+ if(!st.lock&&st.outcome!==""&&st.why!==""){st.attempted=true;st.submitted=st.outcome;st.submittedWhy=st.why;st.attempts++;}
+ if(st.lock){
+  if(st.follow==="")st.msg="请选择追问的答案。";
+  else if(Number(st.follow)!==rd.follow.right)st.msg=t===tasks.A?"再看本轮转发表记录：命中或未命中分别对应什么出口规则？":"再看本轮的中间连接，A 和 B 之间有没有广播域边界？";
+  else st.step=2;
+ }else if(st.outcome==="")st.msg="请先选择结果预测。";
+ else if(st.why==="")st.msg="还需要选择判断依据。";
+ else if(Number(st.outcome)!==rd.outcome)st.msg=rd.hint;
+ else if(Number(st.why)!==rd.reason){st.lock=true;st.msg="结果正确，已保留。请回答追问来修正依据。";}
+ else st.step=2;
+}
+document.addEventListener("change",e=>{const s=progress[task],st=s.cases[s.round];if(["outcome","why","follow"].includes(e.target.name))st[e.target.name]=e.target.value;});
+document.addEventListener("click",e=>{
+ const b=e.target.closest("button");if(!b)return;
+ const c=context(),{s,r,k}=c,a=b.dataset.action;
+ if(b.dataset.task)task=b.dataset.task;
+ else if(a==="read")s.cases[r].step=1;
+ else if(a==="submit")grade();
+ else if(a==="explain"&&s.cases[r].attempted){s.cases[r].revealed=true;s.cases[r].step=2;}
+ else if(a==="back"||a==="prev")s.review={r,k:k-1};
+ else if(a==="forward")s.review={r,k:k+1};
+ else if(a==="return")s.review=null;
+ else if(a==="next"){if(r===0)s.round=1;else s.summary=true;}
+ else if(a==="clueHistory"||a==="resultHistory")s.review={r,k:a==="clueHistory"?1:2};
+ else if(a==="reviewM"||a==="reviewV")s.review={r:a==="reviewM"?0:1,k:2};
+ else if(a==="reset")progress[task]=fresh();
+ else if(a==="other")task=task==="A"?"B":"A";
+ render(true);
+ if((a==="submit"||a==="explain")&&context().k===2)$("panel").scrollIntoView({block:"nearest"});
+ else if(matchMedia("(max-width:820px)").matches&&a!=="submit")document.querySelector(".layout").scrollIntoView({block:"start"});
+});
+render();
+</script></body></html>
