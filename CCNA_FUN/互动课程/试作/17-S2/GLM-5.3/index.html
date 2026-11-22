@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>17-S2 让 VLAN 跨越 Trunk</title>
+<style>
+  :root {
+    --ink: #1f2430; --sub: #4a5162; --line: #8a90a0; --bg: #f6f7f9;
+    --v10: #2563eb; --v10bg: #e3ecfd; --v20: #b45309; --v20bg: #fdf0d8;
+    --ok: #146c43; --bad: #a3242b; --hit: #111111; --focus: #7c3aed;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.6 -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    overflow-wrap: anywhere;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline;
+    padding: 10px 16px; background: #fff; border-bottom: 1px solid #d9dce3;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header .stage { font-size: 14px; color: var(--sub); }
+  main {
+    display: grid; gap: 12px; padding: 12px; max-width: 1240px; margin: 0 auto;
+    grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
+    grid-template-areas: "fig panel" "log log";
+  }
+  @media (max-width: 900px) {
+    main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "fig" "panel" "log"; padding: 8px; }
+  }
+  .fig { grid-area: fig; background: #fff; border: 1px solid #d9dce3; border-radius: 8px; padding: 8px; min-width: 0; }
+  .fig svg { display: block; width: 100%; height: auto; max-width: 100%; }
+  .panel { grid-area: panel; background: #fff; border: 1px solid #d9dce3; border-radius: 8px; padding: 12px 14px; min-width: 0; }
+  .log { grid-area: log; background: #fff; border: 1px solid #d9dce3; border-radius: 8px; padding: 8px 14px; min-width: 0; }
+  h2 { font-size: 17px; margin: 4px 0 8px; }
+  h3 { font-size: 15px; margin: 10px 0 4px; }
+  p { margin: 6px 0; }
+  .rule { border-left: 4px solid var(--v20); background: #fff8ea; padding: 6px 10px; margin: 8px 0; }
+  .step { font-weight: 600; }
+  fieldset { border: 1px solid #cfd3dc; border-radius: 6px; margin: 8px 0; padding: 6px 10px 8px; min-width: 0; }
+  fieldset.err { border-color: var(--bad); }
+  fieldset.done { border-color: var(--ok); }
+  legend { font-weight: 600; padding: 0 4px; }
+  label.opt { display: block; padding: 4px 2px; }
+  .miss::after { content: "　← 还没选"; color: var(--bad); font-weight: 600; }
+  button {
+    font: inherit; font-size: 15px; padding: 6px 14px; margin: 6px 6px 2px 0;
+    border: 1px solid #5b6273; border-radius: 6px; background: #fff; color: var(--ink); cursor: pointer;
+  }
+  button.primary { background: #1f2430; color: #fff; border-color: #1f2430; }
+  button[disabled] { opacity: .45; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .fb { margin-top: 8px; padding: 6px 10px; border-radius: 6px; }
+  .fb.bad { background: #fbe9ea; border: 1px solid var(--bad); color: #7a1a20; }
+  .fb.good { background: #e6f4ec; border: 1px solid var(--ok); color: #0f5231; }
+  .fb.info { background: #eef0fb; border: 1px solid #5b5fd6; }
+  .readout { font-size: 14px; }
+  .readout th, .readout td { text-align: left; padding: 2px 8px 2px 0; border-bottom: 1px solid #e6e8ee; }
+  .stepper { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 14px; }
+  .ev { font-variant-numeric: tabular-nums; }
+  .log ol { margin: 4px 0; padding-left: 26px; font-size: 14px; }
+  .log li { padding: 1px 4px; }
+  .log li.cur { background: #fff2c2; font-weight: 600; }
+  details { font-size: 14px; margin-top: 6px; }
+  summary { cursor: pointer; font-weight: 600; }
+  table.cmp { border-collapse: collapse; font-size: 14px; margin: 6px 0; }
+  table.cmp th, table.cmp td { border: 1px solid #cfd3dc; padding: 3px 8px; text-align: left; }
+  table.cmp .only { background: #fff2c2; }
+  table.cmp .first { background: #fbe9ea; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>17-S2　让 VLAN 跨越 Trunk</h1>
+  <span class="stage">任务 17B · 标签帧能否通过中继？</span>
+  <span class="stage" id="stage">开场</span>
+</header>
+<main>
+  <section class="fig" aria-label="主图">
+    <div id="fig"></div>
+    <div class="stepper" id="stepper" hidden>
+      <button type="button" id="btnPrev" aria-label="上一步">◀ 上一步</button>
+      <button type="button" id="btnNext" aria-label="下一步">下一步 ▶</button>
+      <button type="button" id="btnReplay">⟲ 重播本轮</button>
+      <button type="button" id="btnPause" hidden>暂停</button>
+      <span>当前事件：<strong id="curEv"></strong></span>
+      <span id="dots" aria-hidden="true"></span>
+    </div>
+  </section>
+  <section class="panel" aria-label="题干与作答">
+    <div id="panel"></div>
+    <div id="live" class="visually-hidden" aria-live="polite"></div>
+  </section>
+  <section class="log" aria-label="事件记录">
+    <h2>事件记录</h2>
+    <ol id="log"></ol>
+  </section>
+</main>
+<script>
+"use strict";
+/* ---------- 事件表（编号稳定； M 轮含开场 I-* 与演示） ---------- */
+const EV = {
+  M: [
+    ['I-0', '初态：两端 trunk 已建立（802.1Q），VLAN 20 已创建并转发，本征 VLAN 为 1。待发送帧：VLAN 20 广播；对端允许列表：10、20。本端允许列表未读取。'],
+    ['I-1', 'PC-A 发出 VLAN 20 广播，经接入口 Fa0/1（VLAN 20）进入 SW1。'],
+    ['I-2', '广播的一份副本到达 trunk 口 Gi0/1，等待出口检查。'],
+    ['M-E1', '取证：读到本端 trunk 口允许列表 = 10、20。'],
+    ['M-E2', '演示：VLAN 10 帧到达本端出口；10 在本端允许列表 → 放行，贴标签 10。'],
+    ['M-E3', '演示：标签帧 10 沿链路到达对端入口；链路上留下标签 10 的通道。'],
+    ['M-E4', '演示：10 在对端允许列表 → 对端收下，去掉标签，在 VLAN 10 内泛洪。'],
+    ['M-E5', '预测点：VLAN 20 广播停在本端出口，检查尚未执行。'],
+    ['M-E6', '本端查允许列表：20 在列表（10、20）→ 放行，贴标签 20。'],
+    ['M-E7', '标签帧 20 沿链路到达对端入口。'],
+    ['M-E8', '20 在对端允许列表 → 对端收下，在 VLAN 20 内泛洪；PC-B 收到广播。'],
+    ['M-E9', '因果：20 在两端允许列表里都有 → 标签 20 的通道贯穿链路，VLAN 20 端到端可达。']
+  ],
+  V: [
+    ['V-E1', '迁移初态：只改一项——本端 trunk 允许列表（已修改，未读取）。帧仍是 VLAN 20 广播；对端允许列表仍是 10、20。'],
+    ['V-E2', '取证：重新读到本端 trunk 口允许列表 = 仅 10。'],
+    ['V-E3', '预测点：VLAN 20 广播停在本端出口，检查尚未执行。'],
+    ['V-E4', '本端查允许列表：20 不在列表（仅 10）→ 拦下，帧不会从这个 trunk 口发出。'],
+    ['V-E5', '因果：本端没有 20，帧止于出口；对端虽允许 20，但帧没有到达。链路上只有标签 10 的通道。']
+  ]
+};
+const IDX = { M: { read: 3, predict: 7, hit: 8, end: 11 }, V: { read: 1, predict: 3, hit: 4, end: 5 } };
+
+/* ---------- 由（轮次, 事件序号）推出画面状态 ---------- */
+function st(R, i) {
+  if (R === 'V') return {
+    read: i >= 1, l20: false, lane10: i >= 5,
+    fpos: i <= 3 ? 'wait' : 'drop', g1r20: i >= 4, cause: i >= 5
+  };
+  return {
+    read: i >= 3, l20: true, demo: i >= 4, demoDone: i >= 6,
+    demoPos: i < 5 ? 1 : i === 5 ? 2 : 3,
+    g1r10: i >= 4, lane10: i >= 5, g2r10: i >= 6,
+    fpos: i <= 0 ? 'pc' : i === 1 ? 'room1' : i <= 7 ? 'wait' : i === 8 ? 'g1t' : i === 9 ? 'g2' : 'room2',
+    g1r20: i >= 8, lane20: i >= 9, g2r20: i >= 10, pcb: i >= 10, cause: i >= 11
+  };
+}
+
+/* ---------- 应用状态 ---------- */
+const S = {
+  round: 'M', idx: 0, phase: 'intro', seen: { M: 0, V: 0 },
+  follow: { M: false, V: false }, resOK: { M: false, V: false },
+  attempts: { M: [], V: [] }, fb: null, review: null,
+  playing: null, paused: false, timer: null
+};
+const ANS = {
+  M: { res: 'r1', fu: 0 }, V: { res: 'r2', fu: 1 }
+};
+const OPT = {
+  res: [['r1', '带标签通过 trunk'], ['r2', '不会从该 trunk 发出']],
+  rsn: [['R1', '所属 VLAN 还必须在该中继的允许列表中'], ['R2', '进入 trunk 的所有 VLAN 都自动放行']],
+  fu: [['0', '两端都有 20：本端和对端的允许列表里都有'], ['1', '只有一端有 20：另一端的允许列表里没有']]
+};
+
+/* ---------- 几何：横向为逻辑坐标，窄屏交换 x/y 变纵向 ---------- */
+let Vt = false;
+const SW = { s1: { x: 90, y: 30, w: 250, h: 380 }, s2: { x: 620, y: 30, w: 250, h: 380 } };
+const L10 = 130, L20 = 310, LX = 372, GL = 406, GR = 554, RX = 588, Z = { x: 350, y: 30, w: 260, h: 385 };
+const P = (a, c, ly) => Vt ? [ly + c, a] : [a, ly + c];
+const RA = (x, y, w, h) => Vt ? [y, x, h, w] : [x, y, w, h];
+const B = (a, c, w, h, ly) => { const p = P(a, c, ly); return RA(p[0] - w / 2, p[1] - h / 2, w, h); };
+function T(cx, cy, s, size, side, anchor, extra) {
+  const [x, y] = RA(cx, cy); const o = extra || {};
+  let ax = 'middle', px = x, py = y;
+  const d = o.d == null ? 12 : o.d;
+  if (side === 'above') { if (Vt) { ax = 'end'; px = x - d; } else py = y - d; }
+  if (side === 'below') { if (Vt) { ax = 'start'; px = x + d; } else py = y + d; }
+  if (side === 'left') { if (Vt) py = y - d; else { ax = 'end'; px = x - d; } }
+  if (side === 'right') { if (Vt) py = y + d; else { ax = 'start'; px = x + d; } }
+  if (anchor) ax = anchor;
+  return '<text x="' + px + '" y="' + py + '" font-size="' + size + '" text-anchor="' + ax + '" dominant-baseline="central" fill="' +
+    (o.fill || 'var(--ink)') + '" font-weight="' + (o.w || 400) + '">' + s + '</text>';
+}
+const rect = (g, f, s, sw, extra) => '<rect x="' + g[0] + '" y="' + g[1] + '" width="' + g[2] + '" height="' + g[3] + '" rx="5" fill="' + f +
+  '" stroke="' + s + '" stroke-width="' + sw + '" ' + (extra || '') + '/>';
+const line = (a, b, s, w, dash) => '<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="' + s + '" stroke-width="' + w + '"' +
+  (dash ? ' stroke-dasharray="7 5"' : '') + ' stroke-linecap="round"/>';
+
+function frame(a, ly, vlan, tagged, dim) {
+  const col = vlan === 20 ? 'var(--v20)' : 'var(--v10)', bg = vlan === 20 ? 'var(--v20bg)' : 'var(--v10bg)';
+  const g = B(a, 0, 86, 34, ly), s = B(a - 38, 0, 7, 34, ly);
+  let h = '<g opacity="' + (dim ? .3 : 1) + '">' + rect(g, bg, col, 2.5) + rect(s, col, col, 0) +
+    T(...P(a + 5, 0, ly), vlan === 20 ? '广播 · VLAN 20' : '帧 · VLAN 10', 13);
+  if (tagged) { h += rect(B(a + 58, 0, 28, 22, ly), '#1f2430', '#1f2430', 0) + T(...P(a + 58, 0, ly), String(vlan), 14, null, null, { fill: '#fff', w: 700 }) +
+    T(...P(a + 58, 30, ly), '标签', 12, 'below'); }
+  return h + '</g>';
+}
+function chip(x, ly, txt, on) {
+  const g = B(x, -30, 56, 30, ly);
+  return on ? rect(g, '#fff', '#1f2430', 1.5) : rect(g, '#fff', '#8a90a0', 1.5, 'stroke-dasharray="5 4"') +
+    T(...P(x, -30, ly), txt, 14, null, null, { w: 600, fill: on ? 'var(--ink)' : 'var(--sub)' });
+}
+function gate(x, ly, kind, txt) {
+  const fill = kind === 'go' ? '#146c43' : kind === 'no' ? '#a3242b' : '#b9bec9';
+  const g = B(x, 0, 7, 46, ly);
+  return rect(g, fill, fill, 0, kind === 'wait' ? 'stroke-dasharray="4 4"' : '') +
+    T(...P(x, 32, ly), txt, 13, 'below', null, { w: kind === 'wait' ? 400 : 700, fill: kind === 'no' ? 'var(--bad)' : kind === 'go' ? 'var(--ok)' : 'var(--sub)' });
+}
+function lane(ly, vlan, drawn) {
+  const col = vlan === 20 ? 'var(--v20)' : 'var(--v10)';
+  let h = line(P(414, 0, ly), P(546, 0, ly), '#dfe2e8', 9);
+  if (drawn) h += line(P(414, 0, ly), P(546, 0, ly), col, 3) + T(...P(480, -32, ly), '标签 ' + vlan, 13, null, null, { w: 700, fill: col });
+  return h;
+}
+
+function drawSVG() {
+  const R = S.round, i = S.idx, s = st(R, i);
+  const obtain = S.phase === 'obtain-M' || S.phase === 'obtain-V';
+  const canReview = /^reveal-/.test(S.phase) || S.phase === 'summary';
+  const act = (a, label) => ' data-act="' + a + '" tabindex="0" role="button" aria-label="' + label + '" style="cursor:pointer"';
+  let h = '';
+  /* 中继区 */
+  const z = RA(Z.x, Z.y, Z.w, Z.h);
+  h += rect(z, '#f1f3f7', 'transparent', 0, 'rx="10"');
+  h += lane(L10, 10, s.lane10) + lane(L20, 20, s.lane20);
+  /* 交换机与 VLAN 广播域 */
+  for (const k of ['s1', 's2']) {
+    const w = SW[k], g = RA(w.x, w.y, w.w, w.h);
+    h += rect(g, '#fff', '#5b6273', 2) + T(...RA(w.x + 14, w.y + 14), (k === 's1' ? 'SW1 · 本端' : 'SW2 · 对端'), 15, null, 'start', { w: 700 });
+    for (const v of [10, 20]) {
+      const ry = v === 10 ? 60 : 240, r = RA(w.x + 15, ry, w.w - 30, 140);
+      h += rect(r, v === 10 ? 'var(--v10bg)' : 'var(--v20bg)', v === 10 ? 'var(--v10)' : 'var(--v20)', 1.2, 'stroke-dasharray="8 5"') +
+        T(...RA(w.x + 60, ry + 18), 'VLAN ' + v, 14, null, null, { w: 700, fill: v === 10 ? 'var(--v10)' : 'var(--v20)' });
+    }
+  }
+  const pcA = RA(10, 280, 60, 60), pcB = RA(890, 280, 60, 60);
+  h += rect(pcA, '#fff', '#1f2430', 2) + T(...RA(40, 310), 'PC-A', 14, null, null, { w: 700 }) +
+    rect(pcB, '#fff', '#1f2430', 2) + T(...RA(920, 310), 'PC-B', 14, null, null, { w: 700 }) +
+    T(...RA(40, 358), 'Fa0/1 接入口', 12, null, null, { fill: 'var(--sub)' }) +
+    T(...RA(920, 358), 'Fa0/1 接入口', 12, null, null, { fill: 'var(--sub)' });
+  h += T(...RA(480, 433), 'trunk 链路 · 802.1Q · 本征 VLAN 1', 13, null, null, { fill: 'var(--sub)' }) +
+    T(...RA(GL, 403), '本端出口检查', 13, null, null, { w: 600 }) + T(...RA(GR, 403), '对端入口检查', 13, null, null, { w: 600 });
+  /* 允许列表：对端是已知线索；本端读后显示 */
+  h += T(...P(LX, -70, L10), '本端允许列表', 13, null, null, { w: 600 }) +
+    T(...P(RX, -70, L10), '对端允许列表', 13, null, null, { w: 600 });
+  const hitNow = (R === 'M' && i >= IDX.M.hit) || (R === 'V' && i >= IDX.V.hit);
+  let local = chip(LX, L10, s.read ? '10 ✓' : '?', s.read) + chip(LX, L20, s.read ? (s.l20 ? '20 ✓' : '—') : '?', s.read && s.l20);
+  if (hitNow) {
+    const g = B(LX, -30, 62, 36, L20);
+    local += rect(g, 'transparent', 'var(--hit)', 3);
+    if (!s.l20) local += T(...P(LX, -30, L20), '—', 18, null, null, { w: 800, fill: 'var(--bad)' });
+    local += T(...P(LX, 34, L20), '命中读数', 12, null, null, { w: 700 });
+  }
+  h += chip(RX, L10, '10 ✓', true) + chip(RX, L20, '20 ✓', true);
+  const readAct = obtain ? act('read', '读取本端 trunk 口 Gi0/1 的允许列表') :
+    (canReview && S.seen[R] >= IDX[R].read ? act('goto', '回到读到本端允许列表的事件') : '');
+  h += '<g' + readAct + (obtain ? ' class="rd"' : '') + '>' + local + T(...P(LX, -70, L10), '本端允许列表', 13, null, null, { w: 600 }) +
+    (obtain ? T(...P(LX, 52, L10), '点这里读取', 13, 'below', null, { w: 700, fill: 'var(--focus)' }) : '') + '</g>';
+  /* 闸门 */
+  h += gate(GL, L10, s.g1r10 ? 'go' : 'wait', s.g1r10 ? '放行 10 ✓' : '待检查');
+  h += gate(GR, L10, s.g2r10 ? 'go' : 'wait', s.g2r10 ? '收下 10 ✓' : '未到达');
+  const g1 = R === 'V' ? (s.g1r20 ? 'no' : 'wait') : (s.g1r20 ? 'go' : 'wait');
+  h += gate(GL, L20, g1, g1 === 'no' ? '拦下 20 ✕ · 未发出' : g1 === 'go' ? '放行 20 ✓' : '待检查');
+  h += gate(GR, L20, s.g2r20 ? 'go' : 'wait', s.g2r20 ? '收下 20 ✓' : (R === 'V' && i >= IDX.V.hit ? '未到达' : '待检查'));
+  /* 演示帧与待发送帧 */
+  if (s.demo) {
+    const p = s.demoDone ? 745 : s.demoPos === 1 ? 440 : 520;
+    h += frame(p, L10, 10, s.demoPos !== 3, s.demoDone);
+    if (s.demoDone) h += T(...P(745, 40, L10), '✓ 已送达', 13, null, null, { w: 700, fill: 'var(--ok)' });
+  }
+  const fp = { pc: 40, room1: 215, wait: 378, g1t: 450, g2: 520, room2: 745 }[s.fpos] || 378;
+  const tagged = s.fpos === 'g1t' || s.fpos === 'g2';
+  const fAct = (canReview && S.seen[R] >= IDX[R].hit) ? act('gotoHit', '回到帧的状态首次改变的事件') : '';
+  h += '<g' + fAct + '>' + frame(fp, L20, 20, tagged, s.fpos === 'drop') + '</g>';
+  if (s.pcb) h += T(...RA(920, 378), '✓ 收到广播', 13, null, null, { w: 700, fill: 'var(--ok)' });
+  /* 因果联系 */
+  if (s.cause) {
+    h += line(P(LX, 54, L20), P(RX, 54, L20), 'var(--hit)', 2) + line(P(LX, 48, L20), P(LX, 60, L20), 'var(--hit)', 2) + line(P(RX, 48, L20), P(RX, 60, L20), 'var(--hit)', 2);
+    h += T(...P(480, 76, L20), R === 'M' ? '两端允许列表都有 20 ⇒ 标签 20 贯穿链路' : '本端没有 20 ⇒ 帧止于出口，链路上只有标签 10', 13, null, null, { w: 700 });
+    if (R === 'V') h += line(P(414, 0, L20), P(436, 0, L20), 'var(--bad)', 3) + T(...P(436, -14, L20), '✕', 15, null, null, { w: 800, fill: 'var(--bad)' });
+  }
+  if (s.fpos === 'room2' && !s.cause) h += T(...P(745, 34, L20), '在 VLAN 20 内泛洪 →', 12, null, null, { fill: 'var(--sub)' });
+  const vb = Vt ? '0 0 450 960' : '0 0 960 450';
+  return '<svg viewBox="' + vb + '" xmlns="http://www.w3.org/2000/svg" font-family="inherit" role="img" aria-label="主图：' +
+    (R === 'M' ? '主例' : '迁移') + '，当前事件 ' + EV[R][i][0] + '">' + h + '</svg>';
+}
+
+/* ---------- 读数板：与画面同源 ---------- */
+function readout() {
+  const s = st(S.round, S.idx);
+  const sent = [], got = [], blocked = [];
+  if (S.round === 'M') {
+    if (s.g1r10) sent.push(10); if (s.g2r10) got.push(10);
+    if (s.g1r20) sent.push(20); if (s.g2r20) got.push(20);
+  } else if (s.g1r20) blocked.push(20);
+  const pcb = (S.round === 'M' && s.pcb) ? 1 : 0;
+  return '<table class="readout"><caption class="visually-hidden">状态读数</caption><tbody>' +
+    '<tr><th scope="row">本端已发出的标签帧</th><td>' + (sent.join('、') || '无') + '</td></tr>' +
+    '<tr><th scope="row">对端收下的标签帧</th><td>' + (got.join('、') || '无') + '</td></tr>' +
+    '<tr><th scope="row">拦在本端出口的帧</th><td>' + (blocked.join('、') || '无') + '</td></tr>' +
+    '<tr><th scope="row">PC-B 收到的 VLAN 20 广播</th><td>' + pcb + '</td></tr></tbody></table>';
+}
+
+/* ---------- 作答区 ---------- */
+const STAGE = {
+  intro: '开场', 'obtain-M': '第 1 步 取证', demo: '演示规则', 'predict-M': '预测 · 主例 M',
+  anim: '揭晓中', 'reveal-M': '揭晓 · 主例 M', 'obtain-V': '迁移 V · 取证', 'predict-V': '预测 · 迁移 V',
+  'reveal-V': '揭晓 · 迁移 V', compare: '对照两条路径', summary: '收尾'
+};
+function fbHTML() {
+  if (!S.fb) return '';
+  return '<div class="fb ' + S.fb.k + '" role="status">' + S.fb.t + '</div>';
+}
+function group(name, opts, correctLocked) {
+  const R = S.round, at = S.attempts[R];
+  const lastMiss = at.length && at[at.length - 1].miss === name;
+  let h = '<fieldset id="fs-' + name + '" class="' + (lastMiss ? 'err' : '') + (correctLocked ? ' done' : '') + '"><legend>' +
+    (name === 'res' ? '② 结果：这个 VLAN 20 广播会怎样？' : '③ 依据：决定本次结果的条件是？') + '</legend>';
+  for (const [v, t] of opts) h += '<label class="opt"><input type="radio" name="' + name + '" value="' + v + '"' + (correctLocked ? ' checked disabled' : '') + '> ' + t + '</label>';
+  if (lastMiss) h += '<span class="miss"></span>';
+  return h + '</fieldset>';
+}
+function panelHTML() {
+  const p = S.phase, R = S.round, V = R === 'V';
+  let h = '';
+  if (p === 'intro') {
+    h += '<h2>开场问题</h2><p>PC-A 发出一个 VLAN 20 广播。中间是一条 trunk 链路，另一端的 PC-B 也在 VLAN 20。这个广播能经 trunk 到达 PC-B 吗？靠什么判断？</p>' +
+      '<h3>题设条件</h3><ul><li>两端 trunk 已建立（802.1Q），本征 VLAN 为 1。</li><li>VLAN 20 已创建并处于转发状态。</li>' +
+      '<li>待发送帧：VLAN 20 广播。</li><li>对端 trunk 口的允许列表：<strong>10、20</strong>。</li></ul>' +
+      '<div class="rule"><strong>规则</strong>　帧要从 trunk 口发出，它的 VLAN 必须在这个口的<strong>允许列表</strong>里；放行时贴上自己的 VLAN <strong>标签</strong>。对端收到后，也查自己的允许列表才收下。</div>' +
+      '<p><button type="button" class="primary" data-cmd="start">开始</button></p>';
+  } else if (p === 'obtain-M' || p === 'obtain-V') {
+    h += V ? '<h2>迁移 V</h2><div class="rule">与主例相比<strong>只改一项</strong>：本端 trunk 口的允许列表。固定线索不变——帧仍是 VLAN 20 广播，对端允许列表仍是 10、20。</div>'
+      : '<h2>第 1 步　取证</h2><p>对端那一列已知。本端这一列要你自己读。</p>';
+    h += '<p class="step">必做：读取本端 trunk 口 Gi0/1 的允许列表。</p><p>点主图里 SW1 一侧的「本端允许列表」，或点下面的按钮。</p>' +
+      '<p><button type="button" class="primary" data-cmd="read">读取本端允许列表</button></p>';
+  } else if (p === 'demo') {
+    h += '<h2>演示　VLAN 10 的帧怎样过 trunk</h2><p>两张允许列表都读到了。先用一个 VLAN 10 的帧把规则演示一遍，注意每一端都查了自己的允许列表。</p>' +
+      '<p><button type="button" class="primary" data-cmd="demo">播放演示</button></p>';
+  } else if (p === 'predict-M' || p === 'predict-V') {
+    h += '<h2>' + (V ? '迁移 V' : '主例 M') + '　轮到你预测</h2>';
+    if (V) h += '<p>只改了一项：本端允许列表。其余与主例相同。</p>';
+    h += '<p class="step">必做：先看两端允许列表里有没有 20，再选<strong>结果</strong>和<strong>依据</strong>，然后提交。</p>' +
+      '<fieldset disabled><legend>① 取证：本端允许列表</legend>已读取，见图中 SW1 一侧。</fieldset>' +
+      group('res', OPT.res, S.follow[R]) + group('rsn', OPT.rsn, false);
+    if (S.follow[R]) {
+      h += '<fieldset id="fs-fu' + (S.attempts[R].length && S.attempts[R][S.attempts[R].length - 1].miss === 'fu' ? ' err' : '') + '"><legend>追问：检查了两端还是只查了一端？</legend>';
+      for (const [v, t] of OPT.fu) h += '<label class="opt"><input type="radio" name="fu" value="' + v + '"> ' + t + '</label>';
+      h += '</fieldset>';
+    }
+    h += fbHTML() + '<p><button type="button" class="primary" data-cmd="submit">提交</button></p>' +
+      (S.attempts[R].length ? '<details><summary>作答记录（' + S.attempts[R].length + ' 次未通过）</summary><ul><li>' + S.attempts[R].map(a => a.t).join('</li><li>') + '</li></ul></details>' : '');
+  } else if (p === 'reveal-M' || p === 'reveal-V') {
+    h += '<h2>揭晓</h2><div class="fb good">' + (V ? '<strong>不会从该 trunk 发出。</strong>20 在本端被排除，帧止于出口。' :
+      '<strong>带标签通过 trunk。</strong>20 在两端都允许，SW1 发送 VLAN 20 标签帧。') + '</div>' +
+      '<p>看图指认三处：<strong>读到什么</strong>——本端允许列表里' + (V ? '没有 20' : '有 20') + '（加框的“命中读数”）；<strong>约束谁</strong>——SW1 的 trunk 出口检查；<strong>状态怎样变</strong>——帧从“待发送”变为“' +
+      (V ? '拦下、未发出' : '贴标签 20 发出' + (S.idx >= 10 ? '，对端收下，PC-B 收到广播' : '')) + '”。</p>' +
+      '<p>回看：点图中加框的允许列表回到读到它的那一刻，点帧回到它首次变化的事件；也可用上一步／下一步。</p>' +
+      '<p><button type="button" class="primary" data-cmd="' + (V ? 'compare' : 'toV') + '">' + (V ? '对照两条路径' : '进入迁移') + '</button></p>';
+  } else if (p === 'compare') {
+    h += '<h2>对照　两条路径第一次在哪里分开？</h2><p>M 和 V 只改了一个条件（本端允许列表），结果却不同。两者的结果<strong>第一次</strong>出现不同，是在哪一步？</p>';
+    ['SW1 查本端允许列表（出口检查）', '帧在 trunk 链路上传输', 'SW2 查对端允许列表（入口检查）'].forEach((t, k) => {
+      h += '<p><button type="button" data-cmp="' + k + '">' + '①②③'[k] + ' ' + t + '</button></p>';
+    });
+    h += fbHTML();
+  }
+  if (p === 'summary') {
+    h += '<h2>收尾　回答开场问题</h2><div class="fb good">PC-A 的广播能不能到达 PC-B，取决于<strong>本端 trunk 口的允许列表里有没有 20</strong>。</div>' +
+      '<table class="cmp"><thead><tr><th scope="col">只改一项：本端允许列表</th><th scope="col">出口检查（第一个不同结果）</th><th scope="col">对端</th><th scope="col">PC-B</th></tr></thead><tbody>' +
+      '<tr><td class="only">M · 读到 10、20（M-E1）</td><td class="first">20 在列表 → 放行，贴标签 20（M-E6）</td><td>收下（M-E8）</td><td>收到</td></tr>' +
+      '<tr><td class="only">V · 读到仅 10（V-E2）</td><td class="first">20 不在列表 → 拦下（V-E4）</td><td>帧未到达</td><td>没收到</td></tr></tbody></table>' +
+      '<div class="rule">推广：换成任何 VLAN、任何一条 trunk——帧要端到端通过，它的 VLAN 必须在<strong>两端</strong> trunk 口的允许列表里都出现；哪一端缺了，就在哪一端停下。</div>' +
+      '<p>回看：<button type="button" data-goto="M:3">M-E1 读数</button><button type="button" data-goto="M:8">M-E6 放行</button>' +
+      '<button type="button" data-goto="V:1">V-E2 读数</button><button type="button" data-goto="V:4">V-E4 拦下</button></p>' +
+      (S.review ? '<p class="fb info">正在回看 ' + S.review + '。用上一步／下一步继续，或 <button type="button" data-cmd="back">回到收尾</button></p>' : '') +
+      '<p><button type="button" data-cmd="reset">重新开始</button></p>';
+  }
+  if (p !== 'intro') h += '<details><summary>状态读数</summary>' + readout() + '</details>';
+  if (p !== 'intro') h += '<details><summary>术语与端口详情</summary><dl>' +
+    '<dt>允许列表</dt><dd>一个 trunk 口允许通过的 VLAN 清单。发出和接收帧时，交换机都核对这张清单。</dd>' +
+    '<dt>标签</dt><dd>802.1Q 帧里标明“属于哪个 VLAN”的号码。</dd>' +
+    '<dt>本征 VLAN</dt><dd>trunk 口上不打标签的那个 VLAN。本题为 1，所以 VLAN 10、20 的帧都带标签。</dd>' +
+    '<dt>SW1 Gi0/1（本端）</dt><dd>trunk，802.1Q，本征 VLAN 1，允许列表：' + (S.seen[R] >= IDX[R].read ? (V ? '仅 10' : '10、20') : '未读取') + '</dd>' +
+    '<dt>SW2 Gi0/1（对端）</dt><dd>trunk，802.1Q，本征 VLAN 1，允许列表：10、20</dd></dl></details>';
+  return h;
+}
+
+/* ---------- 渲染 ---------- */
+const $ = id => document.getElementById(id);
+function render(withPanel) {
+  Vt = $('fig').clientWidth < 620;
+  const keep = {};
+  document.querySelectorAll('#panel input[type=radio]').forEach(r => { keep[r.name + '=' + r.value] = r.checked; });
+  $('fig').innerHTML = drawSVG();
+  if (withPanel) $('panel').innerHTML = panelHTML();
+  else document.querySelectorAll('#panel input[type=radio]').forEach(r => { if (keep[r.name + '=' + r.value]) r.checked = true; });
+  $('stage').textContent = STAGE[S.phase] || '';
+  const R = S.round, list = EV[R].slice(0, S.idx + 1);
+  $('log').innerHTML = list.map((e, k) => '<li id="log-' + k + '" class="' + (k === S.idx ? 'cur' : '') + '"><span class="ev">' + e[0] + '</span>　' + e[1] + '</li>').join('');
+  const stp = $('stepper');
+  stp.hidden = S.phase === 'intro';
+  $('curEv').textContent = EV[R][S.idx][0];
+  $('btnPrev').disabled = !!S.playing || S.idx === 0;
+  $('btnNext').disabled = !!S.playing || S.idx >= S.seen[R];
+  $('btnReplay').disabled = !!S.playing || S.seen[R] === 0;
+  $('btnPause').hidden = !S.playing;
+  $('btnPause').textContent = S.paused ? '继续' : '暂停';
+  $('dots').textContent = '进度 ' + (S.idx + 1) + ' / ' + (S.seen[R] + 1);
+}
+function say(t) { $('live').textContent = t; }
+function setIdx(i) {
+  S.idx = i; S.seen[S.round] = Math.max(S.seen[S.round], i);
+  render(false);
+  const li = $('log-' + i); if (li) { li.setAttribute('aria-current', 'step'); }
+}
+function setPhase(p) { S.phase = p; render(true); }
+
+/* ---------- 播放（可暂停） ---------- */
+function play(from, to, done) {
+  stop();
+  S.playing = { to, done }; S.paused = false;
+  setIdx(from); render(false);
+  S.timer = setInterval(() => {
+    if (S.paused) return;
+    if (S.idx >= to) { const d = S.playing.done; stop(); if (d) d(); return; }
+    setIdx(S.idx + 1); render(false);
+  }, 1500);
+  render(false);
+}
+function stop() { clearInterval(S.timer); S.timer = null; S.playing = null; S.paused = false; }
+
+/* ---------- 流程 ---------- */
+function read() {
+  setIdx(IDX[S.round].read);
+  if (S.round === 'M') { setPhase('demo'); say('已读到本端允许列表。'); }
+  else { setPhase('anim'); play(IDX.V.read, IDX.V.predict, () => setPhase('predict-V')); }
+}
+function reveal() {
+  const R = S.round; S.resOK[R] = true;
+  setPhase('anim');
+  play(IDX[R].hit, IDX[R].end, () => setPhase(R === 'M' ? 'reveal-M' : 'reveal-V'));
+  say('已提交正确，正在揭晓。');
+}
+function submit() {
+  const R = S.round, A = ANS[R], at = S.attempts[R];
+  const v = n => { const e = document.querySelector('#panel input[name=' + n + ']:checked'); return e ? e.value : null; };
+  const res = S.follow[R] ? A.res : v('res'), rsn = v('rsn'), fu = v('fu');
+  let miss = null, fb = null, ok = false, kind = 'bad';
+  if (!S.follow[R]) {
+    if (!res || !rsn) { miss = !res ? 'res' : 'rsn'; fb = '还有必做项没选：' + (!res ? '② 结果' : '③ 依据') + '。'; }
+    else if (res !== A.res) { fb = '结果不对。重查读数：本端 trunk 口的允许列表里有没有 20？'; at.push({ t: '结果不对（依据未评）' }); }
+    else if (rsn !== 'R1') {
+      S.follow[R] = true; kind = 'info'; fb = '结果正确，已保留。依据不对，先回答追问。';
+      at.push({ t: '结果对、依据错 → 追问' });
+    } else ok = true;
+  } else if (fu === null) { miss = 'fu'; fb = '追问还没作答：检查了两端还是只查了一端？'; }
+  else if (fu !== String(A.fu)) { fb = '再数一遍：20 出现在几端的允许列表里？'; at.push({ t: '追问答错，重试' }); }
+  else { ok = true; at[at.length - 1].t += '，已更正'; }
+  if (ok) { reveal(); return; }
+  if (miss) at.push({ t: '漏答', miss });
+  S.fb = { k: kind, t: fb };
+  setPhase(S.phase);
+  const tgt = miss ? $('fs-' + miss) : document.querySelector('#panel .fb');
+  if (tgt) { tgt.scrollIntoView({ block: 'nearest' }); }
+}
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-cmd],[data-cmp],[data-goto],[data-act]');
+  if (!c) return;
+  const cmd = c.getAttribute('data-cmd'), act = c.getAttribute('data-act');
+  const obtain = S.phase === 'obtain-M' || S.phase === 'obtain-V';
+  const canReview = /^reveal-/.test(S.phase) || S.phase === 'summary';
+  if (act === 'read' && obtain) read();
+  if (act === 'goto' && canReview) { S.review = EV[S.round][IDX[S.round].read][0]; S.phase = 'summary'; stop(); setIdx(IDX[S.round].read); }
+  if (act === 'gotoHit' && canReview) { S.review = EV[S.round][IDX[S.round].hit][0]; S.phase = 'summary'; stop(); setIdx(IDX[S.round].hit); }
+  if (cmd === 'start' && S.phase === 'intro') { setPhase('anim'); play(0, 2, () => setPhase('obtain-M')); }
+  if (cmd === 'read' && obtain) read();
+  if (cmd === 'demo' && S.phase === 'demo') { setPhase('anim'); play(IDX.M.read + 1, IDX.M.predict, () => setPhase('predict-M')); }
+  if (cmd === 'submit' && /^predict-/.test(S.phase) && !S.playing) submit();
+  if (cmd === 'toV' && S.phase === 'reveal-M') { stop(); S.round = 'V'; S.idx = 0; S.seen.V = 0; S.fb = null; setPhase('obtain-V'); setIdx(0); }
+  if (cmd === 'compare' && S.phase === 'reveal-V') { stop(); S.fb = null; setPhase('compare'); }
+  if (cmd === 'back' && S.phase === 'summary') { S.review = null; stop(); S.round = 'M'; setIdx(IDX.M.end); setPhase('summary'); }
+  if (cmd === 'reset') { stop(); Object.assign(S, { round: 'M', idx: 0, phase: 'intro', seen: { M: 0, V: 0 }, follow: { M: false, V: false }, resOK: { M: false, V: false }, attempts: { M: [], V: [] }, fb: null, review: null }); setPhase('intro'); setIdx(0); }
+  if (c.hasAttribute('data-cmp') && S.phase === 'compare') {
+    const k = +c.getAttribute('data-cmp');
+    if (k === 0) setPhase('summary'); else { S.fb = { k: 'bad', t: '再看迁移 V 的最后一张图：帧停在了哪里？对端检查发生了吗？' }; setPhase('compare'); }
+  }
+  if (c.hasAttribute('data-goto') && S.phase === 'summary') { const [R, i] = c.getAttribute('data-goto').split(':'); stop(); S.round = R; S.review = EV[R][+i][0]; setIdx(+i); setPhase('summary'); }
+});
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.hasAttribute && e.target.hasAttribute('data-act')) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+});
+$('btnPrev').addEventListener('click', () => { stop(); if (S.idx > 0) setIdx(S.idx - 1); render(false); });
+$('btnNext').addEventListener('click', () => { stop(); if (S.idx < S.seen[S.round]) setIdx(S.idx + 1); render(false); });
+$('btnReplay').addEventListener('click', () => {
+  const to = S.seen[S.round], back = S.phase;
+  S.phase = 'anim';
+  play(0, to, () => { S.phase = back; render(true); });
+});
+$('btnPause').addEventListener('click', () => { if (!S.playing) return; S.paused = !S.paused; render(false); });
+let rT = null;
+window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => render(false), 120); });
+setPhase('intro');
+setIdx(0);
+</script>
+</body>
+</html>

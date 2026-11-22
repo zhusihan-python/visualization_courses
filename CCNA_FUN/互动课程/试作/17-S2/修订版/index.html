@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>让 VLAN 跨越 Trunk · CCNA 互动课程</title>
+<style>
+:root{color-scheme:light;--ink:#142e37;--soft:#475e67;--line:#c6d6d9;--teal:#006659;--paper:#f6f8f6;--amber:#8a4609;--red:#973c24;--mono:"SFMono-Regular",Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+main,header>div{width:min(1184px,calc(100% - 48px));margin:auto}
+header{background:white;border-bottom:1px solid var(--line)}
+header>div{min-height:54px;display:flex;align-items:center;gap:14px;font-size:.92rem;color:var(--soft)}
+header strong{color:var(--ink)} .unit{margin-left:auto;font-family:var(--mono)}
+h1,h2,h3,p{margin:0} h1{font-size:clamp(1.85rem,3.6vw,2.75rem);line-height:1.23;letter-spacing:-.035em}
+h2{font-size:1.22rem} h3,legend{font-size:1rem;font-weight:700}
+.intro{margin:26px 0 18px}.intro p{color:var(--soft);margin-top:5px}
+.path{display:flex;list-style:none;margin:0 0 18px;padding:0;gap:5px}
+.path li{flex:1;border-bottom:3px solid var(--line);padding:4px 0 6px;color:var(--soft);font-size:.88rem}
+.path .here{border-color:var(--teal);color:var(--teal);font-weight:750}.path .done{border-color:#86bcae}
+.layout{display:grid;grid-template-columns:minmax(0,1.42fr) minmax(340px,1fr);gap:18px;align-items:start}
+.board,.exercise,details{background:white;border:1px solid var(--line);border-radius:15px}
+.board{overflow:hidden}.board-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:#173c43;color:white}
+.board-head span{font:600 .87rem var(--mono);color:#bde6da}
+.drawing{padding:20px;background-color:#f0f6f5;background-image:radial-gradient(#cbded9 .8px,transparent .9px);background-size:14px 14px}
+.endpoints{display:flex;justify-content:space-between;gap:8px;margin-bottom:12px;font-size:.92rem;font-weight:650}.endpoints span:last-child{text-align:right}
+.network{display:grid;grid-template-columns:minmax(0,1fr) minmax(96px,.65fr) minmax(0,1fr);align-items:center}
+.switch{padding:14px;background:white;border:1.5px solid #88a5a9;border-radius:10px;min-width:0}.switch h3{font:700 1.38rem var(--mono);margin:2px 0 6px}.switch small,.link small{display:block;color:var(--soft);font-size:.83rem}
+.list{border-top:1px solid var(--line);padding-top:8px}.chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:33px}
+.chip{border:1px solid #b8cfca;padding:1px 7px;border-radius:4px;background:#edf5f0;color:#193e37;font:700 1rem/1.55 var(--mono)}
+.known{border:2px solid var(--teal);color:var(--teal)}.switch.hit{border:2px solid var(--teal);padding:13.5px}.switch.block{border:2px solid var(--red);padding:13.5px}
+.link{text-align:center;min-width:0}.link b{display:block;font:700 .88rem var(--mono)}.wire{position:relative;border-top:3px dashed #789497;margin:12px 0}
+.sent .wire{border-top:4px solid var(--teal)}.sent .wire:after{content:"";position:absolute;right:0;top:-8px;border-left:10px solid var(--teal);border-top:6px solid transparent;border-bottom:6px solid transparent}
+.stopped .wire:before{content:"×";display:grid;place-content:center;position:absolute;left:2px;top:-12px;width:19px;height:19px;border-radius:50%;background:var(--red);color:white;font:bold 16px/1 sans-serif}
+.wire .frame-dot{position:absolute;top:-8px;left:10%;width:13px;height:13px;border:2px solid white;background:var(--teal);box-shadow:0 0 0 1px var(--teal);border-radius:3px}
+.at-peer .frame-dot{left:auto;right:10%}.endpoint small{display:block;color:var(--soft);font-weight:500}.endpoint.received small{color:var(--teal);font-weight:700}
+.chip-button{display:inline-flex;align-items:center;gap:5px;padding:1px 5px;min-height:33px;background:white;border:1px solid #779e98;border-radius:5px}.chip-button .chip{border:0;padding:0 2px}.chip-button:after{content:"↶";font-size:.9rem;color:var(--teal)}
+.tag{display:inline-block;margin-top:8px;padding:2px 7px;border-radius:5px;background:#fff1dc;color:#77400b;font:700 .86rem/1.55 var(--mono)}
+.verdict{font-size:.87rem;line-height:1.4;margin-top:8px;font-weight:650}.where{padding:13px 18px 16px;border-top:1px solid var(--line);min-height:88px}.where b{display:block;color:var(--teal);font-size:.86rem;margin-bottom:3px}
+.exercise{padding:17px 20px}.exercise h2{font-size:1.34rem;margin-bottom:8px}.exercise p{margin:7px 0;color:var(--soft)}
+fieldset{border:none;margin:12px 0;padding:0;min-width:0}legend{padding:0;margin:0 0 4px}
+label{display:flex;align-items:flex-start;gap:9px;margin:5px 0;padding:8px 9px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;font-size:.94rem;line-height:1.45}
+label:has(:checked){background:#e9f5ef;border-color:var(--teal)}input{accent-color:var(--teal);margin:4px 0 0;flex:none}
+button,summary{font:inherit;cursor:pointer}button{color:var(--ink);border:1px solid #94acab;border-radius:7px;background:white;min-height:38px;padding:6px 11px}
+button:hover{background:#ebf3f1}.primary{background:var(--teal);color:white;border-color:var(--teal);font-weight:650;margin-top:6px}.primary:hover{background:#084b43}
+button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #427cd5;outline-offset:2px}
+.note{padding:8px 10px;background:#fff3d9;border-left:3px solid #b37a20;margin:8px 0;color:#663f16}
+.tools{display:flex;flex-wrap:wrap;gap:6px;padding:0 18px 16px}.tools:empty{padding:0}.tools button,.chips button{font-size:.88rem}
+details{padding:9px 15px;margin:12px 0;color:var(--soft)}summary{font-weight:650;color:var(--ink)}details p,details ol{margin:8px 0}details ol{padding-left:1.4em}li{margin:3px 0}
+.muted{color:var(--soft)}.result{border-left:3px solid var(--teal);padding-left:10px;margin:10px 0}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}footer{margin-bottom:28px}
+@media(max-width:860px){.layout{grid-template-columns:minmax(0,1fr)}main,header>div{width:min(680px,calc(100% - 28px))}}
+@media(max-width:500px){.intro{margin:17px 0 10px}.intro p{font-size:.93rem}.path{margin-bottom:12px}.path li{font-size:.79rem}.board-head,.drawing,.exercise{padding:12px}.network{grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr)}.switch,.switch.hit,.switch.block{padding:8px}.switch small,.link small{font-size:.78rem}.switch h3{font-size:1.15rem}.switch .chip{padding:0 4px}.verdict{font-size:.8rem}.endpoints{font-size:.84rem}.where{padding:10px 12px;min-height:0}.tools{padding:3px 12px 12px}.layout{gap:10px}.tag{font-size:.75rem}.board-head h2{font-size:1.07rem}}
+</style></head>
+<body>
+<header><div><strong>CCNA 互动课程</strong><span>交换基础</span><span class="unit">17-S2</span></div></header>
+<main><div class="intro"><h1>让 VLAN 跨越 Trunk</h1><p>沿着一个广播帧，判断它能否离开本端，又能否被对端接纳。</p></div>
+<ol class="path" id="path" aria-label="学习阶段"></ol>
+<div class="layout"><section class="board" aria-label="链路示意图"><div class="board-head"><h2 id="boardTitle"></h2><span id="event"></span></div><div id="diagram"></div><div class="where"><b id="caption"></b><div id="description"></div></div><div id="tools" class="tools"></div></section>
+<section class="exercise" aria-label="当前学习任务"><div id="panel"></div></section></div>
+<footer><details><summary>题设与术语</summary><p>SW1 与 SW2 的 Gi0/1 已建立 802.1Q Trunk，即一条可以承载多个 VLAN 的中继链路。两端都已创建 VLAN 10 和 20，相关端口处于转发状态。本征 VLAN 为 1，本题中的 VLAN 10 和 20 通过中继时都带标签。</p><p>接入口连接主机。允许列表列出该中继端口可通过的 VLAN。出口和入口分别检查自己的列表；标签标明所属 VLAN。广播只在所属 VLAN 的转发端口内复制。</p></details>
+<details><summary>查看当前事件记录</summary><ol id="history"></ol></details></footer>
+<div id="announcement" class="sr" aria-live="polite"></div></main>
+<script>
+"use strict";
+// Each row is one visible moment. The event ID binds evidence, narration and progression.
+const events = {
+ M:[
+ ["I-0","一份广播要去哪里？","PC-A 和 PC-B 分别接在两台交换机上，都属于 VLAN 20。先跟踪 PC-A 发出的一份广播。"],
+ ["I-1","PC-A 发出广播","帧从接入口进入 SW1。接入口属于 VLAN 20，SW1 据此识别它所属的广播域。"],
+ ["I-2","广播到达本端出口","SW1 准备向 Gi0/1 转发一份副本。对端列表已知，本端列表还待读取。"],
+ ["M-E1","读到 SW1 的允许列表","SW1 的 Gi0/1 允许 10、20。先观察一个 VLAN 10 广播通过同一条链路。"],
+ ["M-E2","SW1 放行 VLAN 10","10 位于 SW1 的允许列表中。SW1 给示范帧加上 VLAN 10 标签，从 Gi0/1 发出。"],
+ ["M-E3","标签随帧经过链路","链路上的标签值是 10。SW2 可用这个值识别帧所属的 VLAN。"],
+ ["M-E4","SW2 接纳示范帧","SW2 的列表也含 10。它接纳这份广播，并在 VLAN 10 内转发。PC-B 属于 VLAN 20。"],
+ ["M-E5","换回 VLAN 20 广播","VLAN 20 的副本停在 SW1 出口。两端读数均已取得，出口检查尚未执行。"],
+ ["M-E6","出口检查首次放行","20 在 SW1 的列表中。SW1 放行，在发出的帧上写入标签 20。"],
+ ["M-E7","标签 20 到达对端","帧已穿过链路，到达 SW2 的 Gi0/1，接下来检查对端允许列表。"],
+ ["M-E8","对端接纳广播","SW2 的列表含 20。SW2 接纳帧，在 VLAN 20 内转发；从接入口发往 PC-B 的副本不带中继标签。"],
+ ["M-E9","PC-B 收到广播","本端允许发出，对端允许接纳。PC-B 收到属于 VLAN 20 的这份广播。"]
+ ],
+ V:[
+ ["V-E1","只改 SW1 的允许列表","同一个 VLAN 20 广播再次来到出口。SW2 仍允许 10、20，重新读取 SW1 的列表。"],
+ ["V-E2","读到新的允许列表","SW1 的 Gi0/1 此时只允许 10。其余条件与主例相同。"],
+ ["V-E3","预测新的路径","帧仍停在 SW1 出口。先根据这次读到的列表判断，再执行出口检查。"],
+ ["V-E4","出口检查首次拦截","20 不在 SW1 的列表中。帧止于 SW1 的 Gi0/1，本次没有 VLAN 20 帧进入链路。"],
+ ["V-E5","对端没有收到帧","SW2 仍然允许 20，但帧没有到达它的入口。PC-B 收不到这份广播。"]
+ ]};
+const order={M:events.M.map(e=>e[0]),V:events.V.map(e=>e[0])};
+const readAt={M:"M-E1",V:"V-E2"}, predictAt={M:"M-E5",V:"V-E3"}, hitAt={M:"M-E6",V:"V-E4"};
+const byId=new Map(Object.values(events).flat().map(e=>[e[0],e]));
+const $=id=>document.getElementById(id);
+const initial=()=>({round:"M",now:"I-0",view:null,completed:{M:null,V:null},mode:"learn",picks:{},locked:false,msg:""});
+let s=initial();
+const active=()=>s.view||s.now;
+const route=id=>id.startsWith("V-")?"V":"M";
+const idx=id=>order[route(id)].indexOf(id);
+const reached=(id,threshold)=>idx(id)>=idx(threshold);
+const button=(cmd,title,primary=false)=>'<button type="button" data-cmd="'+cmd+'" class="'+(primary?'primary':'')+'">'+title+'</button>';
+function graph(id){
+ const r=route(id), m=r==="M", read=reached(id,readAt[r]), demo=m && ["M-E2","M-E3","M-E4"].includes(id);
+ const vlan=demo?10:20, decided=reached(id,hitAt[r]), sent=demo||(m&&decided), blocked=!m&&decided;
+ const accepted=["M-E4","M-E8","M-E9"].includes(id);
+ const leftState=blocked?"× 出口拦截":sent?"✓ 出口放行":id==="I-0"?"帧在 PC-A":id==="I-1"?"接入口已收帧":"等待出口检查";
+ const rightState=accepted?"✓ 入口接纳":blocked?"帧未到达":["M-E3","M-E7"].includes(id)?"已到入口，待查":"等待来帧";
+ const canTrace=!s.view&&s.mode==="learn"&&idx(s.now)>=idx(hitAt[s.round]);
+ function sw(left){
+  const inspected=left?read:true, allowed=left&&!m?[10]:[10,20], matched=left?sent:accepted;
+  const chips=inspected?allowed.map(n=>'<span class="chip '+(matched&&n===vlan?'known':'')+'">'+n+'</span>').join(""):'<span class="chip" aria-label="未读取">?</span>';
+  let evidence=chips;
+  if(left&&canTrace) evidence='<button type="button" class="chip-button" data-cmd="trace-read" aria-label="回看读到本端允许列表的步骤">'+chips+'</button>';
+  if(left&&!s.view&&["I-2","V-E1"].includes(id)) evidence=button("next","? 读取列表");
+  return '<div class="switch '+(left&&blocked?'block':matched?'hit':'')+'"><small>'+(left?'本端出口':'对端入口')+'</small><h3>'+(left?'SW1':'SW2')+'</h3><small>Gi0/1</small><div class="list"><small>允许列表</small><div class="chips">'+evidence+'</div></div><div class="verdict">'+(left?leftState:rightState)+'</div></div>';
+ }
+ const atPeer=["M-E3","M-E7"].includes(id);
+ const onWire=sent&&!accepted;
+ const linkText=blocked?'未发出':accepted?'已通过':atPeer?'到达对端':sent?'刚发出':'待发送';
+ const source=demo?'示范源 · SW1 一侧':'源主机 · 接入口';
+ const delivered=!demo&&accepted;
+ const destination=demo?'本次不接收示范帧':delivered?'✓ 已收到广播':blocked?'未收到广播':'接收待定';
+ $("boardTitle").textContent=(demo?'示范广播':'PC-A 的广播')+' · VLAN '+vlan;
+ $("diagram").innerHTML='<div class="drawing"><div class="endpoints"><span class="endpoint">'+(demo?'示范帧 · VLAN 10':'PC-A · VLAN 20')+'<small>'+source+'</small></span><span class="endpoint '+(delivered?'received':'')+'">PC-B · VLAN 20<small>'+destination+'</small></span></div><div class="network">'+sw(true)+'<div class="link '+(blocked?'stopped':sent?'sent':'')+(atPeer?' at-peer':'')+'"><b>Trunk</b><div class="wire">'+(onWire?'<i class="frame-dot" aria-hidden="true"></i>':'')+'</div><small>'+linkText+'</small>'+(sent?'<span class="tag">标签 '+vlan+'</span>':'')+'</div>'+sw(false)+'</div></div>';
+}
+const questions={
+ res:["这个广播帧会怎样？",["pass","带标签 20 发出，并被 SW2 接纳"],["stop","被 SW1 拦下，未从这个 Trunk 发出"]],
+ rsn:["哪条证据支持你的判断？",["lists","比较帧的 VLAN 与两端各自的允许列表"],["trunk","链路已建成 Trunk，会自动放行所有 VLAN"]],
+ check:["再核对一次：哪几端的列表含有 20？",["both","SW1 和 SW2 都有"],["peer","只有 SW2 有"]]
+};
+function options(key){
+ const [title,...choices]=questions[key],lock=key==="res"&&s.locked;
+ return '<fieldset><legend>'+title+'</legend>'+choices.map(([value,text])=>'<label><input type="radio" name="'+key+'" value="'+value+'" '+(s.picks[key]===value?'checked ':'')+(lock?'disabled':'')+'>'+text+'</label>').join("")+'</fieldset>';
+}
+const nextLabels={"I-0":"跟踪广播","I-1":"查看本端出口","I-2":"读取 SW1 允许列表","M-E1":"观察 VLAN 10 示范","M-E2":"沿链路跟踪","M-E3":"检查对端入口","M-E4":"预测 VLAN 20","M-E6":"跟到对端入口","M-E7":"检查 SW2 的列表","M-E8":"查看交付结果","M-E9":"进入迁移题","V-E1":"读取新的允许列表","V-E2":"开始预测","V-E4":"查看对端状态","V-E5":"比较两条路径"};
+function panel(){
+ const id=active(), r=route(id), feedback=s.msg?'<div class="note" role="status">'+s.msg+'</div>':'';
+ if(s.view)return '<h2>回看已发生的步骤</h2><p>'+byId.get(id)[1]+'。图中显示当时的读数和路径。</p>'+button("return",s.mode==="summary"?"返回小结":"返回当前任务",true);
+ if(s.mode==="summary")return '<h2>两端各做一次判断</h2><div class="result"><b>主例 · 两端都允许 20</b><br>SW1 发出标签帧，SW2 接纳，PC-B 收到广播。</div><div class="result"><b>迁移 · 只有 SW2 允许 20</b><br>SW1 在出口拦下，SW2 没有收到帧。</div><p>在本题的链路和转发条件下，端到端交付要求两端都允许这个 VLAN。仅知道本端放行，还要检查对端。</p>'+button("review-M","回看主例出口")+' '+button("review-V","回看迁移出口")+' '+button("reset","重新开始");
+ if(s.mode==="compare")return '<h2>两次结果从哪里开始不同？</h2><p>沿同一方向定位第一处发生不同处理的端口。</p>'+["SW1 检查出口","帧经过中继链路","SW2 检查入口"].map((x,i)=>button("compare-"+i,x)).join(" ")+feedback;
+ if(id===predictAt[r])return '<h2>'+ (r==="M"?"预测主例":"预测迁移")+'</h2>'+options("res")+(s.locked?options("check"):options("rsn"))+feedback+button("submit",s.locked?"提交核对结果":"提交预测",true);
+ const prompt={"I-0":"PC-A 发出一个 VLAN 20 广播。PC-B 虽然属于同一 VLAN，却在另一台交换机上。需要满足哪些条件才能收到？","I-1":"SW1 要把广播转给另一台交换机，需要经过哪个端口？","I-2":"允许列表决定这个端口能转发哪些 VLAN。先取得 SW1 的读数。","M-E1":"先看一个 VLAN 10 广播。把两端各自检查的数字记下来，再判断 VLAN 20。","M-E2":"出口已放行。沿链路看帧携带的标签。","M-E3":"标签提供 VLAN 编号。对端还要用自己的允许列表检查它。","M-E4":"现在换回 PC-A 的 VLAN 20 广播，用同一规则预测。","M-E6":"本端放行之后，对端还要做什么？","M-E7":"在 SW2 的允许列表里寻找标签上的数字。","M-E8":"从 SW2 的 VLAN 20 接入口继续跟踪。","M-E9":"下一轮只改变本端允许列表，再判断同一广播。","V-E1":"帧和对端读数都与主例相同。打开本端列表，看看什么发生了变化。","V-E2":"本端允许 10，对端允许 10、20。把注意力放在这次广播所属的 VLAN。","V-E4":"出口已拦截。SW2 的入口还会检查这份帧吗？","V-E5":"把两次结果对齐，找出第一次出现不同处理的位置。"};
+ return '<h2>'+({'I-0':'同一 VLAN，广播就一定能到吗？','M-E1':'先观察 VLAN 10','M-E4':'轮到你来判断','M-E9':'准备改变一个条件','V-E5':'定位第一处分叉'}[id]||'下一步看哪里？')+'</h2><p>'+prompt[id]+'</p>'+button("next",nextLabels[id],true);
+}
+function render(){
+ const id=active(),r=route(id),list=order[r],last=s.completed[r]||list[0];
+ const stage=s.mode==="summary"||s.mode==="compare"?3:s.round==="V"?2:idx(s.now)>=idx("M-E5")?1:0;
+ $("path").innerHTML=["观察示范","预测主例","迁移验证","比较结果"].map((v,i)=>'<li class="'+(i===stage?'here':i<stage?'done':'')+'" '+(i===stage?'aria-current="step"':'')+'>'+v+'</li>').join("");
+ graph(id);$("event").textContent=id;$("caption").textContent=(s.view?"回看 · ":"")+byId.get(id)[1];$("description").textContent=byId.get(id)[2];
+ $("panel").innerHTML=panel();
+ let controls="";
+ if(s.view){controls=button("prev","上一步")+button("forward","下一步");}
+ else if(s.mode==="learn"&&idx(id)>0){
+  controls=button("prev","回看上一步");
+  if(reached(id,hitAt[r])) controls+=" "+button("trace-hit","回看出口判断");
+ }
+ $("tools").innerHTML=controls;
+ if(s.view){$("tools").querySelector('[data-cmd="prev"]').disabled=idx(id)===0;$("tools").querySelector('[data-cmd="forward"]').disabled=idx(id)>=idx(last);}
+ $("history").innerHTML=list.slice(0,idx(id)+1).map(k=>'<li><b>'+k+'</b>　'+byId.get(k)[2]+'</li>').join("");
+}
+function advance(id){s.now=id;s.completed[s.round]=id;s.view=null;s.msg="";}
+function mark(){
+ const isM=s.round==="M", correct=isM?"pass":"stop";
+ if(!s.picks.res)s.msg="还缺少对广播帧结果的预测。";
+ else if(s.locked){
+  if(s.picks.check===(isM?"both":"peer"))advance(hitAt[s.round]);
+  else s.msg=s.picks.check?"再对照两端列表，各找一次数字 20。":"请选择哪些端口的允许列表含有 20。";
+ } else if(!s.picks.rsn)s.msg="还需要选择支持预测的依据。";
+ else if(s.picks.res!==correct)s.msg="重新检查 SW1 这一列：允许列表中有没有帧所属的 VLAN？";
+ else if(s.picks.rsn!=="lists"){s.locked=true;s.msg="结果正确，已保留。请用图上的两份列表说明理由。";}
+ else advance(hitAt[s.round]);
+}
+document.addEventListener("change",e=>{if(e.target.matches("input[type=radio]"))s.picks[e.target.name]=e.target.value;});
+document.addEventListener("click",e=>{
+ const b=e.target.closest("button[data-cmd]");if(!b||b.disabled)return;
+ const cmd=b.dataset.cmd,r=s.round,id=active(),list=order[route(id)],i=idx(id);
+ if(cmd==="prev")s.view=list[i-1];
+ else if(cmd==="forward")s.view=list[i+1];
+ else if(cmd==="return")s.view=null;
+ else if(cmd==="trace-read")s.view=readAt[r];
+ else if(cmd==="trace-hit")s.view=hitAt[r];
+ else if(cmd==="submit")mark();
+ else if(cmd==="next"){
+  if(s.now==="M-E9"){s.round="V";s.picks={};s.locked=false;advance("V-E1");}
+  else if(s.now==="V-E5")s.mode="compare";
+  else advance(list[i+1]);
+ }else if(cmd.startsWith("compare-")){
+  if(cmd==="compare-0"){s.mode="summary";s.msg="";}else s.msg="看迁移图中标有 × 的位置。此时帧已经离开 SW1 了吗？";
+ }else if(cmd==="review-M"||cmd==="review-V")s.view=hitAt[cmd.slice(-1)];
+ else if(cmd==="reset")s=initial();
+ render();
+ const title=$("panel").querySelector("h2");title.tabIndex=-1;title.focus({preventScroll:true});
+ $("announcement").textContent=s.msg||byId.get(active())[1];
+ if(matchMedia("(max-width:860px)").matches && (id!==active()||cmd==="reset"))document.querySelector(".board").scrollIntoView({block:"start"});
+});
+render();
+</script></body></html>

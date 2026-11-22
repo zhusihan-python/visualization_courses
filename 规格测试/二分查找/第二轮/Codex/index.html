@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#173f39">
+<title>读一格，能排除几格？ · 二分查找</title>
+<style>
+:root{--ink:#183b35;--muted:#52675f;--rule:#bdc7bb;--paper:#f7f6ef;--accent:#9ce8c0;--orange:#ffc29c;--dark:#173e38;color-scheme:light}
+*{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--paper);font:16px/1.5 Inter,"PingFang SC","Microsoft YaHei",sans-serif}
+main{max-width:1280px;margin:auto;padding:20px clamp(14px,4vw,58px) 32px}button,summary,input{font:inherit}button,summary,label{cursor:pointer}button{color:inherit}button:disabled{cursor:default}
+button:focus-visible,summary:focus-visible,input:focus-visible{outline:3px solid #da783d;outline-offset:3px}h1,h2,h3,p{margin:0}
+.mast,.meta,.bar,.board-head,.board-foot,.nav,.switch,.compare{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.mast{padding-bottom:10px;border-bottom:1px solid var(--ink);font-weight:700;font-size:.9rem}.mast small,footer{font-weight:400;color:var(--muted)}.mark{display:inline-block;border:2px solid currentColor;width:18px;height:12px;vertical-align:-1px;margin-right:8px;background:linear-gradient(90deg,transparent 42%,currentColor 42% 55%,transparent 55%)}
+h1{font:700 clamp(2.15rem,4vw,3.45rem)/1.18 "STSong","Songti SC","Noto Serif CJK SC",serif;letter-spacing:-.045em;margin:19px 0 5px}
+.intro{color:var(--muted);font-size:.98rem}.bar{margin:19px 0 12px;flex-wrap:wrap}.switch{gap:2px;padding:3px;border:1px solid var(--rule);border-radius:7px}.switch button{border:0;background:none;padding:5px 12px;border-radius:4px;font-size:.86rem;font-weight:650}.switch button[aria-pressed=true]{background:var(--ink);color:white}.switch button:disabled{color:#67746b;background:#eeeee5}.meta{font:500 .84rem/1.4 ui-monospace,monospace;gap:8px}
+.workspace{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(310px,1fr);gap:15px;align-items:stretch}
+.board{color:#f6f6e7;background-color:var(--dark);background-image:radial-gradient(#b0d8c817 .8px,transparent .9px);background-size:12px 12px;border-radius:12px;padding:clamp(14px,2.6vw,32px);display:flex;flex-direction:column;min-width:0}
+.board-head{align-items:flex-start}.board-head h2{font-size:1.22rem}.board-head p{font-size:.82rem;color:#c2d7c8;margin-top:2px}.target{color:#dcefe1;font-size:.8rem;border:1px solid #789889;padding:3px 10px;border-radius:20px;white-space:nowrap}.target b{font:700 1.05rem ui-monospace,monospace;color:#fff}
+.diagram{margin:auto 0;padding:20px 0}.tracks,.slots{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:clamp(2px,.5vw,7px)}.slots{margin-bottom:5px}
+.slot{text-align:center;min-width:0;display:flex;flex-direction:column}.idx{font:500 .85rem ui-monospace,monospace;color:#c5d6cd;margin:0 0 6px}.face{height:clamp(51px,6.6vw,82px);width:100%;border-radius:5px;border:1px solid #899d91;background:#f4f1df;color:#213e36;font:650 clamp(1.5rem,3.1vw,2.65rem)/1 ui-monospace,monospace;display:grid;place-items:center}
+.face.unknown{color:#60776a}.face.out{background:repeating-linear-gradient(135deg,#254b43 0 5px,#34584f 5px 7px);color:#e0e9df;border-style:dashed}.face.mid{box-shadow:inset 0 0 0 3px #aa613a;border:2px solid #ffd4a6}.face.hit{background:var(--accent);color:#173e38}.slotnote{min-height:21px;margin-top:4px;color:#c8dcce;font-size:.72rem}
+.band{position:relative;border-top:2px solid;border-left:1px solid;border-right:1px solid;text-align:center;min-width:0;padding:4px 1px 0;font-size:clamp(.65rem,1.15vw,.86rem);font-weight:650;line-height:1.4;overflow-wrap:anywhere}.band::before{content:"";position:absolute;top:8px;left:-1px;right:-1px;bottom:0;background:var(--dark);z-index:0}.band span{position:relative}.kept{color:var(--accent)}.cut{color:var(--orange);border-top-style:dashed}.board-foot{border-top:1px solid #67857b;padding-top:12px;align-items:baseline;flex-wrap:wrap;gap:3px 15px}.board-foot b{color:var(--accent)}.board-foot small{color:#d5e1d7}
+.panel{background:#fffef8;border:1px solid var(--rule);border-radius:12px;padding:clamp(15px,2vw,26px);display:flex;flex-direction:column;min-width:0}
+.event{font:650 .78rem/1.5 ui-monospace,monospace;color:var(--muted)}h3{font-size:clamp(1.22rem,2vw,1.7rem);line-height:1.28;margin:5px 0 9px}.panel p{font-size:.93rem}.readout{border-left:3px solid #42916b;padding:6px 10px;background:#eef2e7;margin:9px 0;font-weight:650}.nav{margin-top:auto;padding-top:12px;align-items:stretch}.primary,.secondary,.log button,.reveal{border:1px solid var(--ink);border-radius:5px;padding:8px 12px;font-weight:650}.primary{background:var(--ink);color:white;flex:1}.primary:hover{background:#245c50}.secondary,.reveal,.log button{background:transparent}.secondary:disabled{opacity:.4}
+fieldset{margin:9px 0 0;padding:0;border:0}legend{font-size:.89rem;font-weight:700}.opts{display:flex;gap:4px;margin-top:3px}.opts.long{display:grid}.opts label{border:1px solid #c8cfc1;padding:4px 7px;border-radius:4px;display:flex;align-items:center;gap:5px;font-size:.84rem;line-height:1.45}.opts:not(.long) label{flex:1;justify-content:center}.opts label:has(input:checked){border-color:#267255;background:#e0f2de}.opts input{accent-color:#206342;margin:0}
+.feedback:not(:empty){margin-top:8px;padding:6px 9px;background:#fff0d9;border-left:3px solid #a76633}.compare{align-items:stretch;margin-top:10px}.compare p{border-top:2px solid #749483;padding-top:4px;flex:1;font-size:.85rem}.reveal{font-size:.83rem;margin-top:8px}.log{border-block:1px solid var(--rule);margin-top:16px;padding:10px 2px}.log summary{font-weight:650}.log ol{display:flex;gap:7px;flex-wrap:wrap;padding:0;list-style:none;margin:9px 0 0}.log button{padding:4px 9px;font-size:.8rem;border-color:var(--rule)}.log button[aria-current=step]{background:#deecdf;border-color:var(--ink)}
+footer{margin-top:11px;font-size:.78rem}.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media(min-width:781px){.board{min-height:440px}}
+@media(max-width:780px){.workspace{grid-template-columns:1fr}.diagram{padding:18px 0 10px}.board{padding:15px}.board-head h2{font-size:1.1rem}.board-foot{padding-top:8px}.slotnote{font-size:.67rem}.panel{padding:15px}h1{margin-top:14px}.bar{margin:12px 0 9px}.workspace{gap:9px}.mast{padding-bottom:7px}.band span{font-size:.71rem}.target{padding:2px 7px}}
+@media(max-width:380px){main{padding-inline:10px}.bar{gap:6px}.switch button{padding:4px 8px}.opts label{padding-inline:4px}}
+</style>
+</head>
+<body><main>
+<div class="mast"><span><i class="mark" aria-hidden="true"></i>二分查找</span><small>数组与下标　/　约 6 分钟</small></div>
+<header><h1>读一格，能排除几格？</h1><p class="intro">在升序数组里找一个数。读中点，比大小，再用中点的值判断哪一整段可以排除。</p></header>
+<div class="bar"><div class="switch" aria-label="查找任务"><button id="mainMode">主例 · 找 25</button><button id="transferMode">迁移 · 找 24</button></div><span class="meta" id="counter"></span></div>
+<div class="workspace">
+  <section class="board" aria-labelledby="boardTitle"><div class="board-head"><div><h2 id="boardTitle">升序数组</h2><p>数值从左到右递增 →　·　? 表示未读</p></div><span class="target" id="target"></span></div>
+    <div class="diagram" id="diagram"></div><div class="board-foot" id="facts"></div>
+  </section>
+  <section class="panel" aria-labelledby="title"><div class="event" id="event"></div><h3 tabindex="-1" id="title"></h3><div id="explain"></div>
+    <form id="quiz" hidden></form><p id="feedback" class="feedback" role="status"></p><div id="extras"></div>
+    <div class="nav"><button class="secondary" id="prev">上一步</button><button class="primary" id="next"></button></div>
+  </section>
+</div>
+<details class="log"><summary>已发生的事件 <span id="logCount"></span></summary><ol id="entries"></ol></details>
+<footer>教学示例 · 一步表示一次读数或一次边界更新。点已排除的格子，可回看首次排除它的依据。</footer>
+</main>
+<script>
+"use strict";
+const values = [3,7,11,18,25,31,42];
+const $ = id => document.getElementById(id);
+const runs = [25,24].map(buildRun);
+let mode = 0;
+let peek = false;
+
+function buildRun(target) {
+  const events = [];
+  const seen = new Set(), origins = Array(values.length).fill(null);
+  let lo = 0, hi = values.length-1, mid = null;
+  function save(kind, text, delta = null) {
+    events.push({kind,text,delta,lo,hi,mid,seen:new Set(seen),origins:[...origins]});
+  }
+  save("start","圈定七个候选");
+  while (lo <= hi) {
+    mid = Math.floor((lo+hi)/2);
+    seen.add(mid);
+    save("read","读出中点 "+values[mid]);
+    if (values[mid] === target) {save("hit","在下标 "+mid+" 命中");break;}
+    const oldLo = lo, oldHi = hi;
+    const left = values[mid] < target;
+    if (left) lo = mid+1; else hi = mid-1;
+    const from = left ? oldLo : mid, to = left ? mid : oldHi;
+    for (let i=from;i<=to;i++) origins[i]=events.length;
+    save(lo>hi?"empty":"cut",lo>hi?"候选用尽":left?"向右移动左端":"向左移动右端",{from,to,left,oldLo,oldHi});
+  }
+  return {target,events,index:0,visited:0,passed:false};
+}
+function idFor(run,index) {return (run.target===25?"E":"T")+(index+1);}
+function describeTest(run,e) {
+  const v=values[e.mid];
+  return "A["+e.mid+"] = "+v+" "+(v===run.target?"=":v<run.target?"&lt;":"&gt;")+" "+run.target;
+}
+function question(run,e) {
+  if(e.kind!=="read") return null;
+  if(run.target===25 && e.seen.size===1) return {
+    ranges:["[0, 2]","[3, 6]","[4, 6]"],right:2,
+    whys:["左侧各值都 ≤ 18，而 18 小于目标","18 与目标不同，只能去掉中点","选较短的一侧就能更快找到"],why:0,
+    rangeHints:["目标比 18 大。升序数组里，它还可能在 18 的左边吗？","检查下标 3 本身。刚读到的 18 还可能等于 25 吗？"],
+    whyHint:"看看下标 2。即使它还是问号，升序能保证它至多是 18，还是至少是 18？"
+  };
+  if(run.target===24 && e.lo===e.hi) return {
+    ranges:["[0, 3]","[4, 4]","空区间"],right:2,
+    whys:["已经比较三次，次数用完了","唯一候选 25 太大，其余位置已排除","目标在两个整数之间，一定找不到"],why:1,
+    rangeHints:["下标 0–3 在第一次比较时已排除。哪条新证据允许把它们重新加入？","只剩下标 4。已经读到的 25 能等于 24 吗？"],
+    whyHint:"如果停止只靠比较次数，主例第三次又为什么能命中？检查剩下了几个位置，以及那一格的值。"
+  };
+  return null;
+}
+function band(first,last,label,cls) {
+  return '<div class="band '+cls+'" style="grid-column:'+ (first+1)+' / span '+(last-first+1)+'"><span>'+label+'</span></div>';
+}
+function drawBoard(run,e) {
+  const n=Math.max(0,e.hi-e.lo+1);
+  const slots=values.map((v,i)=>{
+    const origin=e.origins[i], out=origin!==null, visible=e.seen.has(i)||peek;
+    const active=i===e.mid, hit=e.kind==="hit" && active;
+    const cls="face "+(visible?"":"unknown ")+(out?"out ":"")+(active?"mid ":"")+(hit?"hit":"");
+    const face=visible?v:"?";
+    const cell=out?'<button class="'+cls+'" data-go="'+origin+'" aria-label="下标 '+i+'，回看 '+idFor(run,origin)+' 的排除依据">'+face+'</button>':'<span class="'+cls+'">'+face+'</span>';
+    const note=hit?"命中":active?"比较点":out?"已排除":e.lo===i && e.hi===i?"左·右端":i===e.lo?"左端":i===e.hi?"右端":"";
+    return '<div class="slot"><span class="idx">'+i+'</span>'+cell+'<span class="slotnote">'+note+'</span></div>';
+  });
+  const bands=[];
+  for(let first=0;first<values.length;) {
+    const origin=e.origins[first];let last=first;
+    while(last+1<values.length && e.origins[last+1]===origin) last++;
+    if(origin===null) bands.push(band(first,last,e.kind==="hit"?"命中":"候选 "+first+"–"+last,"kept"));
+    else {
+      const cut=run.events[origin],v=values[cut.mid];
+      const label=cut.delta.left?"≤ "+v+" &lt; "+run.target:"≥ "+v+" &gt; "+run.target;
+      bands.push(band(first,last,label,"cut"));
+    }
+    first=last+1;
+  }
+  $("diagram").innerHTML='<div class="slots">'+slots.join("")+'</div><div class="tracks">'+bands.join("")+'</div>';
+  $("target").innerHTML="查找 <b>"+run.target+"</b>";
+  $("facts").innerHTML='<b>候选 '+n+' 项　'+(n?'['+e.lo+', '+e.hi+']':'空区间')+'</b><small>区间含两个端点 · 已比较 '+e.seen.size+' 格</small>';
+}
+function options(name,items,legend,long) {
+  return '<fieldset><legend>'+legend+'</legend><div class="opts'+(long?' long':'')+'">'+items.map((text,i)=>'<label><input type="radio" name="'+name+'" value="'+i+'" required>'+text+'</label>').join("")+'</div></fieldset>';
+}
+function render(focus=false) {
+  const run=runs[mode], e=run.events[run.index], last=run.index===run.events.length-1;
+  const q=question(run,e), gated=q && !run.passed;
+  $("mainMode").setAttribute("aria-pressed",String(mode===0));$("transferMode").setAttribute("aria-pressed",String(mode===1));
+  $("transferMode").disabled=runs[0].visited < runs[0].events.length-1;
+  $("counter").textContent="步骤 "+(run.index+1)+" / "+run.events.length;
+  $("event").textContent=idFor(run,run.index)+"　"+(gated?"预测":e.kind==="read"?"比较":"推演");
+  $("title").textContent=e.kind==="start"?(mode?"只换目标，再走一次":"七格里，先读哪一格？"):gated?"下一轮留下哪里？":e.text;
+  let body="";
+  if(e.kind==="start") body=mode?"数组和取中点的规则都沿用。把目标从 25 换成 24，找出两条路径第一次做出不同决定的时刻。":"下标从 0 开始。中点把候选尽量均分；两端下标相加除以二，向下取整，这里是下标 3。";
+  else if(e.kind==="read") body=(mode&&e.seen.size===3?"同一格，主例读到 25 时命中。现在目标是 24。":"本轮只翻开中点。")+'<div class="readout">'+describeTest(run,e)+'</div>';
+  else if(e.kind==="hit") body="中点值等于目标，返回下标 "+e.mid+"。只比较了 3 格，另外四格的值仍然未知。";
+  else {
+    const d=e.delta;
+    const boundary=d.left?"左端 "+d.oldLo+" → "+e.lo:"右端 "+d.oldHi+" → "+e.hi;
+    body='下标 '+d.from+(d.from===d.to?'':'–'+d.to)+' '+(d.left?'都不大于':'都不小于')+'中点值 '+values[e.mid]+'，可以一起排除。<div class="readout">'+boundary+'　·　候选 '+(d.oldHi-d.oldLo+1)+' → '+Math.max(0,e.hi-e.lo+1)+' 项</div>';
+    if(e.kind==="cut" && e.seen.size===1) body+="左边三个问号还没有读过。只要知道它们都不大于 18，就足以排除它们。";
+    if(e.kind==="empty") body+="左端 4 超过右端 3，已没有位置可以藏着 24。";
+  }
+  $("explain").innerHTML='<div>'+body+'</div>';
+  drawBoard(run,e);
+  $("quiz").hidden=!gated;
+  $("quiz").innerHTML=gated?options("range",q.ranges,"1　选下一候选范围",false)+options("reason",q.whys,"2　选支持它的依据",true):"";
+  $("feedback").textContent="";
+  $("extras").innerHTML=e.kind==="empty"?'<div class="compare"><p>找 25 · 第三次<br><b>相等，返回 4</b></p><p>找 24 · 第三次<br><b>25 偏大，范围空</b></p></div><p style="margin-top:9px">升序保证一侧可以整段排除；取中点保证每次未命中后，至多留下原候选数的一半（向下取整）。</p><button class="reveal" id="peek">'+(peek?"收起核对值":"翻开全数组核对")+'</button>':"";
+  $("prev").disabled=run.index===0;
+  $("next").textContent=gated?"提交预测":last?(mode?"从头再学":"换目标，查找 24"):e.kind==="start"?"翻开中点（下标 3）":e.kind==="read"?"查看比较结果":"读取下一中点";
+  $("logCount").textContent="("+ (run.visited+1) +")";
+  $("entries").innerHTML=run.events.slice(0,run.visited+1).map((x,i)=>'<li><button data-go="'+i+'"'+(i===run.index?' aria-current="step"':'')+'>'+idFor(run,i)+' · '+x.text+'</button></li>').join("");
+  if(focus) {const heading=$("boardTitle");heading.tabIndex=-1;heading.focus({preventScroll:true});if(heading.getBoundingClientRect().top<0)heading.scrollIntoView({block:"start"});}
+}
+function go(i) {
+  const run=runs[mode];peek=false;run.index=i;run.visited=Math.max(run.visited,i);render(true);
+}
+function switchMode(next) {mode=next;peek=false;render(true);}
+$("mainMode").onclick=()=>switchMode(0);
+$("transferMode").onclick=()=>switchMode(1);
+$("prev").onclick=()=>go(runs[mode].index-1);
+$("next").onclick=()=>{
+  const run=runs[mode];
+  if(!$("quiz").hidden) {$("quiz").requestSubmit();return;}
+  if(run.index<run.events.length-1) {go(run.index+1);return;}
+  if(!mode) {switchMode(1);return;}
+  runs.splice(0,runs.length,buildRun(25),buildRun(24));switchMode(0);
+};
+$("quiz").onsubmit=event=>{
+  event.preventDefault();
+  const run=runs[mode],q=question(run,run.events[run.index]),data=new FormData(event.target);
+  const choice=Number(data.get("range"));
+  if(choice!==q.right) {$("feedback").textContent=q.rangeHints[choice];return;}
+  if(Number(data.get("reason"))!==q.why) {$("feedback").textContent="范围选对了。"+q.whyHint;return;}
+  run.passed=true;go(run.index+1);
+};
+document.addEventListener("click",event=>{
+  const b=event.target.closest("button[data-go]");
+  if(b) go(Number(b.dataset.go));
+  if(event.target.id==="peek") {peek=!peek;render();$("peek").focus({preventScroll:true});}
+});
+render();
+</script></body></html>

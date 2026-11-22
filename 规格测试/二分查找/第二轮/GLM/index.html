@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>二分查找：为什么看一个数，就敢扔掉一半？</title>
+<style>
+  :root{
+    --ink:#1f2937; --sub:#64748b; --line:#e2e8f0;
+    --accent:#2563eb; --accentbg:#eff6ff;
+    --good:#15803d; --bad:#b91c1c; --gold:#b45309; --goldbg:#fef3c7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#f5f7fa;color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+    line-height:1.65;}
+  code,.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  .wrap{max-width:920px;margin:0 auto;padding:0 16px}
+  header.wrap{padding-top:34px;padding-bottom:6px}
+  h1{font-size:26px;margin:0 0 10px}
+  h2{font-size:19px;margin:0 0 10px}
+  h3{font-size:15px;margin:0 0 6px}
+  .sub{margin:0;font-size:14.5px;color:#334155}
+  .meta{margin:8px 0 0;font-size:12.5px;color:var(--sub)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:14px 0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  /* 规则卡 */
+  .rule .motto{font-size:17px;background:var(--accentbg);border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;margin:0 0 10px}
+  .rulelist{margin:0 0 10px;padding-left:20px;font-size:14px}
+  .rulelist li{margin:4px 0}
+  .safe{font-size:13.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 12px;margin:0}
+  /* 页签 */
+  .tabs{display:flex;gap:10px;margin:18px 0 0;flex-wrap:wrap}
+  .tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 18px;font-size:14px;cursor:pointer;color:#475569}
+  .tab.on{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+  .tab:disabled{opacity:.55;cursor:not-allowed}
+  .hidden{display:none!important}
+  .cond{background:var(--goldbg);border:1px solid #fcd34d;border-radius:10px;padding:8px 12px;font-size:13.5px;margin-bottom:12px}
+  /* 数组可视化 */
+  .lanes{position:relative;height:80px;margin-top:4px}
+  .lane{position:relative;height:26px}
+  .mk{position:absolute;top:3px;transform:translateX(-50%);white-space:nowrap;font-size:12px;font-weight:700;
+      border-radius:999px;padding:1px 9px;transition:left .45s ease;border:1.5px solid}
+  .mk.lo{color:#1d4ed8;border-color:#93c5fd;background:#eff6ff}
+  .mk.mid{color:#b45309;border-color:#fcd34d;background:#fffbeb}
+  .mk.hi{color:#047857;border-color:#6ee7b7;background:#ecfdf5}
+  .cells{display:flex;margin-top:2px}
+  .cell{flex:1 1 0;height:62px;border:1.5px solid #cbd5e1;border-left-width:0;background:#fff;cursor:pointer;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;transition:background .4s}
+  .cell:first-child{border-left-width:1.5px}
+  .cell .val{font-size:21px;font-weight:600;font-family:ui-monospace,Menlo,monospace}
+  .cell .idx{font-size:10.5px;color:var(--sub)}
+  .cell.ex{background:#eef0f3}
+  .cell.ex .val{color:#94a3b8;text-decoration:line-through}
+  .cell.found{background:var(--goldbg);border-color:#f59e0b}
+  .cell.found .val{color:#92400e}
+  .segs{position:relative;height:44px;margin-top:6px}
+  .seg{position:absolute;top:2px;height:38px;text-align:center;font-size:11px;color:#475569;white-space:nowrap;overflow:visible}
+  .seg i{display:block;height:0;border-top:2.5px solid;margin:0 6px 4px}
+  .seg .lb{display:inline-block;font-weight:inherit;background:#fff;padding:0 6px;border-radius:6px;box-shadow:0 0 0 3px #fff}
+  .seg.act{color:#1d4ed8;font-weight:600}
+  .seg.act i{border-top-style:solid;border-top-color:#60a5fa}
+  .seg.hit{color:#92400e}
+  .seg.hit i{border-top-color:#f59e0b}
+  .seg.ex{color:#94a3b8}
+  .seg.ex i{border-top-style:dashed;border-top-color:#cbd5e1}
+  .emptymk{position:absolute;top:4px;transform:translateX(-50%);font-size:11px;font-weight:700;color:var(--bad);
+    border:1.5px dashed #fca5a5;background:#fef2f2;border-radius:6px;padding:0 6px}
+  .outcome{margin:6px 0 0;font-size:14px;font-weight:600;border-radius:10px;padding:8px 12px}
+  .outcome.good{color:var(--good);background:#f0fdf4;border:1px solid #bbf7d0}
+  .outcome.bad{color:var(--bad);background:#fef2f2;border:1px solid #fecaca}
+  /* 比较面板 */
+  .cmp{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:14px 0 8px}
+  .cbox{font-family:ui-monospace,Menlo,monospace;font-size:16px;border:1.5px solid var(--line);border-radius:10px;padding:6px 14px;background:#fff}
+  .sg{font-family:ui-monospace,Menlo,monospace;font-size:24px;color:#cbd5e1;padding:0 10px;border-radius:8px;border:2px solid transparent}
+  .sg.ok{color:#1d4ed8;background:var(--accentbg);border-color:#93c5fd;font-weight:700}
+  .ccap{width:100%;text-align:center;font-size:12.5px;color:var(--sub);margin-top:-2px}
+  /* 状态行 */
+  .status{border-left:4px solid var(--accent);background:#f8fafc;border-radius:0 10px 10px 0;
+    padding:9px 12px;font-size:14px;margin:10px 0;min-height:44px}
+  /* 控件 */
+  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0 4px}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:7px 16px;font-size:14px;cursor:pointer;color:#334155}
+  .btn:hover:not(:disabled){border-color:#94a3b8}
+  .btn.primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+  .btn.primary:disabled{background:#cbd5e1;border-color:#cbd5e1;cursor:not-allowed}
+  .btn:disabled{color:#94a3b8;cursor:not-allowed}
+  .prog{font-size:12px;color:var(--sub);font-family:ui-monospace,Menlo,monospace}
+  .hint{margin:10px 0 0;font-size:13.5px;background:var(--goldbg);border:1px solid #fcd34d;border-radius:10px;padding:8px 12px}
+  /* 预测卡 */
+  .qcard{border:1.5px solid #bfdbfe;background:#f0f7ff;border-radius:12px;padding:14px 16px;margin:12px 0}
+  .qintro{font-size:14px;font-weight:600;margin-bottom:8px;color:#1e3a8a}
+  fieldset.qpart{border:none;margin:0 0 10px;padding:0}
+  fieldset.qpart legend{font-weight:700;font-size:13.5px;color:#1d4ed8;padding:0;margin-bottom:6px}
+  .opt{display:block;padding:6px 9px;border-radius:8px;cursor:pointer;font-size:13.5px;margin:2px 0}
+  .opt:hover{background:#dcebff}
+  .fb{font-size:13px;margin:6px 0 0;padding:6px 9px;border-radius:8px}
+  .fb.ok{color:var(--good);background:#f0fdf4}
+  .fb.err{color:var(--bad);background:#fef2f2}
+  fieldset.followup{border-top:1.5px dashed #93c5fd;padding-top:8px;margin-top:10px}
+  .qbtns{display:flex;align-items:center;gap:12px;margin-top:6px}
+  .qwarn{font-size:13px;color:var(--bad)}
+  .qreveal{font-size:13.5px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:9px 12px;margin-top:10px}
+  /* 事件记录 */
+  .logwrap{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+  .logwrap h3{font-size:14px}
+  .logtip{font-weight:400;font-size:12px;color:var(--sub)}
+  table.log{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:6px}
+  table.log th{color:var(--sub);font-weight:600;text-align:left;border-bottom:1.5px solid var(--line);padding:4px 8px;white-space:nowrap}
+  table.log td{border-bottom:1px solid #eef2f6;padding:5px 8px;font-family:ui-monospace,Menlo,monospace;white-space:nowrap}
+  table.log td.txt{font-family:inherit}
+  table.log tbody tr{cursor:pointer}
+  table.log tbody tr:hover{background:#f1f5f9}
+  table.log tbody tr.sel{background:var(--accentbg)}
+  .unit{font-size:12px;color:var(--sub);margin:8px 0 0}
+  /* 总结 */
+  #sumLock{padding:22px;text-align:center;color:var(--sub);font-size:14px;background:#f8fafc;border-radius:10px;border:1.5px dashed #cbd5e1}
+  .sumgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .sumgrid>div{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13.5px}
+  .sumgrid p{margin:0}
+  footer.foot{font-size:12.5px;color:var(--sub);padding:6px 16px 30px}
+  noscript{display:block;padding:12px;color:var(--bad)}
+  @media (max-width:700px){
+    .sumgrid{grid-template-columns:1fr}
+    .cell{height:52px}
+    .cell .val{font-size:16px}
+    .seg{font-size:9.5px;white-space:normal}
+    .lanes{height:74px}.lane{height:24px}
+    .mk{font-size:10.5px;padding:0 6px}
+  }
+</style>
+</head>
+<body>
+<noscript>这节微课需要启用 JavaScript 才能交互。</noscript>
+
+<header class="wrap">
+  <h1>二分查找：为什么看一个数，就敢扔掉一半？</h1>
+  <p class="sub">升序数组 <code>[3, 7, 11, 18, 25, 31, 42]</code>（下标 0–6）里找一个数，不逐个翻，凭什么一次排除半段？
+  学完你能：<b>① 预测下一次候选范围；② 指着图上的证据，说明为什么这样排除不会漏掉目标。</b></p>
+  <p class="meta">交互自学微课 · 约 6 分钟 · 数组与目标均为教学示例 · 下标从 0 开始</p>
+</header>
+
+<section class="wrap card rule">
+  <h2>先记一句能用的规则</h2>
+  <p class="motto">比中间：<b>小了</b> → 扔左半、往右找；<b>大了</b> → 扔右半、往左找；<b>相等</b> → 找到了。</p>
+  <ul class="rulelist">
+    <li><b>中间数 &lt; 目标</b>：目标只可能在右半段。左半<b>连同中间数那一格</b>整段排除，<code>lo</code> 移到 <code>mid+1</code>。</li>
+    <li><b>中间数 &gt; 目标</b>：目标只可能在左半段。右半<b>连同中间数那一格</b>整段排除，<code>hi</code> 移到 <code>mid−1</code>。</li>
+    <li><b>中间数 = 目标</b>：找到，答案就是下标 <code>mid</code>。</li>
+  </ul>
+  <p class="safe"><b>为什么安全：</b>数组<b>升序</b> ⇒ 被扔那一段的<b>每一个数</b>都 ≤ 中间数（于是都 &lt; 目标），或都 ≥ 中间数（于是都 &gt; 目标）——目标不可能藏在那里。这句话，本课会让你亲手验证。</p>
+</section>
+
+<section class="wrap">
+  <div class="tabs">
+    <button type="button" id="tabMain" class="tab on">① 主例 · 找 25</button>
+    <button type="button" id="tabT" class="tab" disabled>② 变式 · 找 24（完成主例后解锁）</button>
+  </div>
+  <div id="panelMain" class="card panel"></div>
+  <div id="panelT" class="card panel hidden"></div>
+</section>
+
+<section class="wrap card" id="summarySec">
+  <h2>总结：回到开场问题</h2>
+  <div id="sumLock">🔒 完成主例与变式（作答并揭晓）后，这里会解锁。</div>
+  <div id="sumBody" class="hidden">
+    <div class="sumgrid">
+      <div>
+        <h3>凭什么敢扔一半？</h3>
+        <p>以 E1 为证：<code>18 &lt; 25</code> 且数组升序 ⇒ 主例图上灰色段的证据条写着「0..3 都 ≤ 18 &lt; 25」——那一段<b>每一个数</b>都比 25 小，25 不可能藏进去，整段扔掉不会漏。排除的依据写在图上，不是猜。</p>
+      </div>
+      <div>
+        <h3>两次运行的轨迹</h3>
+        <p>找 25：候选 7 → 3 → 1 项，第 3 次比较相等 ⇒ 下标 4。<br>
+        找 24：候选 7 → 3 → 1 → <b>0</b> 项，范围为空 ⇒ 不存在。<br>
+        两问都只用了 3 次比较，规则一条没变——变的只是目标。</p>
+      </div>
+      <div>
+        <h3>复盘</h3>
+        <p>回到上面两个面板：点<b>记录表任意一行</b>，或点图中<b>任何灰色格子</b>，都能跳回排除它的那一步，对照证据条检查当时的判断。</p>
+      </div>
+      <div>
+        <h3>适用条件（可推广）</h3>
+        <p>任何<b>升序</b>数组、任意目标值都适用；“比较一次扔一段”的安全性始终来自升序；<b>候选范围为空 ⇔ 目标不存在</b>。<code>mid = ⌊(lo+hi)/2⌋</code> 只是约定；重复元素本课未涉及。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap foot">
+  <b>简化与示例说明：</b>数组与目标 25 / 24 均为教学示例；「一步 / 第几次」是比较次数计数，不代表真实耗时；
+  <code>mid = ⌊(lo+hi)/2⌋</code>，向下取整只是约定；本课数组无重复元素，不涉及无序数组（预测题追问中的乱序数组仅作反例，不真正运行）。
+</footer>
+
+<script>
+'use strict';
+var A = [3,7,11,18,25,31,42];
+var N = A.length;
+
+/* ---------- 题目配置 ---------- */
+var Q1 = {
+  at: 0,
+  intro: '💬 预测：第 1 次比较已经读出 —— a[3] = 18 &lt; 25。按规则，接下来候选范围会变成哪一段？这样扔为什么安全？',
+  parts: [
+    { name: 'range', q: '第 1 问 · 下一步的候选范围：',
+      opts: [
+        {k:'a', t:'[4..6] —— 扔掉 0..3，连 a[3]=18 那格一起扔', ok:true,
+         fb:'对。18 &lt; 25，且 0..3 每个数都 ≤ 18，整段都不可能是 25；lo 移到 mid+1 = 4。'},
+        {k:'b', t:'[3..6] —— 18 比过了，但 a[3] 那格先留着',
+         fb:'a[3]=18 自己也比 25 小，同样可以扔：lo 移到 mid+1 = 4，而不是留在 mid = 3。'},
+        {k:'c', t:'[0..2] —— 扔掉右边，去左边找',
+         fb:'方向反了：18 &lt; 25，目标更大，升序数组里更大的数只会在右边，该扔的是小的一侧。'},
+        {k:'d', t:'仍是 [0..6] —— 只看一个数，不敢下结论',
+         fb:'规则恰恰允许看一个数就扔一段：升序保证 0..3 全部 ≤ 18 &lt; 25，这段可以整段排除。'}
+      ]},
+    { name: 'why', q: '第 2 问 · 扔掉这一段的依据是：',
+      opts: [
+        {k:'a', t:'升序数组里，下标 0..3 上的数最大就是 18，每一个都 &lt; 25，25 藏不进这段', ok:true,
+         fb:'对——保证来自「升序」和「18 &lt; 25」合在一起，整段连带排除才安全。'},
+        {k:'b', t:'18 ≠ 25，所以 18 和它左边的都不用再看',
+         fb:'「≠ 25」只能排除 a[3] 这一个位置；3、7、11 各自并没有比过。能整段扔，靠的是升序让它们全都 ≤ 18。'},
+        {k:'c', t:'候选剩得越少找得越快，所以扔一半没问题',
+         fb:'这是「为什么快」，不是「为什么安全」。安全要回答的是：被扔的段里不可能藏着目标。'}
+      ]}
+  ],
+  followup: {
+    q: '追问 · 依据再确认：把数组换成不升序的 [42, 3, 31, 18, 25, 11, 7]，a[3] 仍是 18，18 &lt; 25 仍成立。这时还能排除下标 0..3 吗？',
+    opts: [
+      {k:'a', t:'不能 —— 0 号位是 42 &gt; 25，25 可能藏在左边，扔掉会漏', ok:true,
+       fb:'对。「左边全都 ≤ 18」这个保证来自升序；乱序后它不成立，整段排除就不安全了。'},
+      {k:'b', t:'能 —— 只要 18 &lt; 25，就能扔掉 mid 左边一段',
+       fb:'一次比较只能排除 mid 这一个位置。整段排除靠「左边都 ≤ 18」，乱序后没有这个保证。'},
+      {k:'c', t:'不能 —— 数组乱了，mid 就不再指向下标 3',
+       fb:'mid 由 lo、hi 算出，仍指向下标 3。失去的是「左边都 ≤ 18」的保证，不是 mid 的位置。'}
+    ]
+  },
+  fixA: '（第 1 问正确答案：[4..6]——0..3 连同 a[3]=18 都 ≤ 18 &lt; 25，整段排除，lo→4。）',
+  revealText: '已揭晓：0..3 变灰并标注证据「都 ≤ 18 &lt; 25」，lo 旗标滑到 4，记录表新增 E1。用「下一步」继续第 2、3 次比较。'
+};
+
+var Q2 = {
+  at: 2,
+  intro: '💬 预测：目标 24。前两步与主例完全相同，现在 lo=4、hi=4、mid=4，读数 a[4]=25 &gt; 24——就在这一步，和主例分道扬镳。',
+  parts: [
+    { name: 'range', q: '第 1 问 · 下一步的候选范围是：',
+      opts: [
+        {k:'a', t:'空 —— hi 移到 3，lo=4 &gt; hi=3，没有候选了', ok:true,
+         fb:'对。25 &gt; 24 ⇒ 连 [4..4] 也排除，hi 移到 mid−1 = 3；lo=4 &gt; hi=3，范围为空。'},
+        {k:'b', t:'[0..3] —— 回头去左边再找',
+         fb:'25 &gt; 24 该扔的是大的一侧（右边）。何况 [0..3] 早在 T1 就被证据排除了——那段全都 ≤ 18 &lt; 24。'},
+        {k:'c', t:'仍是 [4..4] —— 继续比较同一格',
+         fb:'hi 会移到 mid−1 = 3。范围一旦为空（lo &gt; hi）就不再比较，查找到此结束。'},
+        {k:'d', t:'[5..6] —— 往右再找',
+         fb:'方向反了：25 &gt; 24，比 24 更大的 31、42 更不可能是目标，该扔右边。'}
+      ]},
+    { name: 'why', q: '第 2 问 · 把 [4..4] 也排除、断定「24 不在数组中」——原判断（比较一次，安全排除一段）还成立吗？',
+      opts: [
+        {k:'a', t:'成立且安全：升序下这段只有 25，而 25 &gt; 24；范围为空本身就是「不存在」的结论', ok:true,
+         fb:'对。排除依旧安全（这段不可能藏 24）；范围为空 ⇒ 无处可藏 ⇒ 不存在。'},
+        {k:'b', t:'安全，但那是因为 24 本来就不在数组里',
+         fb:'「24 不在数组里」正是要靠「范围为空」推导出的结论，不能反过来当依据。依据仍是：25 &gt; 24 且升序。'},
+        {k:'c', t:'不安全：25 ≠ 24，只比一次不能下结论',
+         fb:'25 &gt; 24 加上升序 ⇒ 这一段不可能藏 24，排除安全。范围空 ⇒ 无处可藏 ⇒ 不存在。'}
+      ]}
+  ],
+  followup: null,
+  fixA: '（第 1 问正确答案：空——hi 移到 3，lo=4 &gt; hi=3。）',
+  revealText: '已揭晓：唯一的候选 [4..4] 也被排除（25 &gt; 24），hi 滑到 3，lo=4 &gt; hi=3 ⇒ 候选为空，24 不在数组中。页面底部的「总结」已解锁。'
+};
+
+/* ---------- 事件轨迹 ---------- */
+function mkTrace(cfg){
+  return {
+    key: cfg.key, target: cfg.target, q: cfg.q, s0text: cfg.s0text,
+    events: cfg.events,
+    revealed: 0, cur: -1, anticip: false, qDone: false,
+    attempts: 0, fuAttempts: 0, qOpen: false
+  };
+}
+
+var mainT = mkTrace({
+  key: 'M', target: 25, q: Q1,
+  s0text: '初始：候选范围 [0..6] · 7 项，lo=0、hi=6。目标 25（如果在数组里）一定藏在这 7 格中。按「下一步」读出中间数。',
+  events: [
+    { id:'E1', before:[0,6], mid:3, cmp:'lt', after:[4,6],
+      anticip:'第 1 次比较：mid = ⌊(0+6)/2⌋ = 3。读 a[3] = 18，与目标 25 比：18 &lt; 25。——先别看边界，你来预测。',
+      status:'E1 决策：18 &lt; 25 ⇒ 左半 [0..3]（连同 a[3]=18）整段排除，lo 0→4。候选 7 项 → 3 项。',
+      logPre:'[0..6]·7', logRead:'a[3]=18', logCmp:'&lt;', logDec:'扔左半（连 mid），lo→4', logPost:'[4..6]·3' },
+    { id:'E2', before:[4,6], mid:5, cmp:'gt', after:[4,4],
+      anticip:'第 2 次比较：mid = ⌊(4+6)/2⌋ = 5。读 a[5] = 31，与目标 25 比：31 &gt; 25。',
+      status:'E2 决策：31 &gt; 25 ⇒ 右半 [5..6]（连同 a[5]=31）整段排除，hi 6→4。候选 3 项 → 1 项。',
+      logPre:'[4..6]·3', logRead:'a[5]=31', logCmp:'&gt;', logDec:'扔右半（连 mid），hi→4', logPost:'[4..4]·1' },
+    { id:'E3', before:[4,4], mid:4, cmp:'eq', after:[4,4], found:true,
+      anticip:'第 3 次比较：mid = ⌊(4+4)/2⌋ = 4。读 a[4] = 25，与目标 25 比：25 = 25。',
+      status:'E3 决策：25 = 25 ⇒ 找到！目标在下标 4。共比较 3 次，候选 7 → 3 → 1 项。',
+      logPre:'[4..4]·1', logRead:'a[4]=25', logCmp:'=', logDec:'相等 ⇒ 找到，下标 4', logPost:'[4..4]·1（锁定）' }
+  ]
+});
+
+var transT = mkTrace({
+  key: 'T', target: 24, q: Q2,
+  s0text: '初始：候选范围 [0..6] · 7 项，lo=0、hi=6。目标 24。按「下一步」——第 1、2 步会和主例一模一样。',
+  events: [
+    { id:'T1', before:[0,6], mid:3, cmp:'lt', after:[4,6],
+      anticip:'第 1 次比较：mid=3，读 a[3]=18，与目标 24 比：18 &lt; 24。',
+      status:'T1 决策：18 &lt; 24 ⇒ 排除 [0..3]，lo 0→4。与主例 E1 同型——换目标，不换规则。',
+      logPre:'[0..6]·7', logRead:'a[3]=18', logCmp:'&lt;', logDec:'扔左半，lo→4（同 E1）', logPost:'[4..6]·3' },
+    { id:'T2', before:[4,6], mid:5, cmp:'gt', after:[4,4],
+      anticip:'第 2 次比较：mid=5，读 a[5]=31，与目标 24 比：31 &gt; 24。',
+      status:'T2 决策：31 &gt; 24 ⇒ 排除 [5..6]，hi 6→4。仍与主例 E2 相同。',
+      logPre:'[4..6]·3', logRead:'a[5]=31', logCmp:'&gt;', logDec:'扔右半，hi→4（同 E2）', logPost:'[4..4]·1' },
+    { id:'T3', before:[4,4], mid:4, cmp:'gt', after:[4,3], notFound:true,
+      anticip:'第 3 次比较：mid=4，读 a[4]=25，与目标 24 比：25 &gt; 24。——和主例的分岔就在这一步。',
+      status:'T3 决策：25 &gt; 24 ⇒ 连唯一的候选 [4..4] 也排除，hi 4→3。lo=4 &gt; hi=3，候选为空 ⇒ 24 不在数组中。',
+      logPre:'[4..4]·1', logRead:'a[4]=25', logCmp:'&gt;', logDec:'扔 [4..4]，hi→3；范围空 ⇒ 不存在', logPost:'空（lo=4&gt;hi=3）' }
+  ]
+});
+
+/* ---------- 面板构建 ---------- */
+function buildPanel(t, mount){
+  var k = t.key;
+  mount.innerHTML =
+    (k === 'T' ? '<div class="cond">只改一个条件：<b>目标 25 → 24</b>。数组、规则、mid 取法都不变。前两步的决策与主例完全相同——分岔在第 3 步。</div>' : '') +
+    '<div class="viz">' +
+      '<div class="lanes">' +
+        '<div class="lane"><span class="mk lo" id="mkLo' + k + '">lo = 0</span></div>' +
+        '<div class="lane"><span class="mk mid" id="mkMid' + k + '" style="opacity:0">mid</span></div>' +
+        '<div class="lane"><span class="mk hi" id="mkHi' + k + '">hi = 6</span></div>' +
+      '</div>' +
+      '<div class="cells" id="cells' + k + '"></div>' +
+      '<div class="segs" id="segs' + k + '"></div>' +
+      '<div class="outcome" id="outc' + k + '" hidden></div>' +
+    '</div>' +
+    '<div class="cmp">' +
+      '<div class="cbox" id="cmpL' + k + '">—</div>' +
+      '<div class="signs"><span class="sg" id="sgLt' + k + '">&lt;</span><span class="sg" id="sgEq' + k + '">=</span><span class="sg" id="sgGt' + k + '">&gt;</span></div>' +
+      '<div class="cbox">目标 <b id="cmpR' + k + '">' + t.target + '</b></div>' +
+      '<div class="ccap" id="cmpC' + k + '"></div>' +
+    '</div>' +
+    '<div class="status" id="st' + k + '"></div>' +
+    '<div class="qcard" id="q' + k + '" hidden></div>' +
+    '<div class="controls">' +
+      '<button type="button" class="btn" id="rst' + k + '">⟲ 回到开头</button>' +
+      '<button type="button" class="btn" id="prv' + k + '">◀ 上一步</button>' +
+      '<button type="button" class="btn primary" id="nxt' + k + '">下一步 ▶</button>' +
+      '<span class="prog" id="pg' + k + '"></span>' +
+    '</div>' +
+    '<div class="hint" id="hint' + k + '" hidden></div>' +
+    '<div class="logwrap">' +
+      '<h3>事件记录<span class="logtip">（点击任意一行，回看该步之后的状态）</span></h3>' +
+      '<table class="log"><thead><tr><th>事件</th><th>第几次</th><th>候选(前)</th><th>读数</th><th>比较</th><th>决策</th><th>候选(后)</th></tr></thead>' +
+      '<tbody id="log' + k + '"></tbody></table>' +
+      '<p class="unit">「第几次」= 比较次数计数，非真实时间。数组与目标为教学示例；mid = ⌊(lo+hi)/2⌋。</p>' +
+    '</div>';
+
+  t.dom = {
+    cellsEl: document.getElementById('cells' + k),
+    segsEl: document.getElementById('segs' + k),
+    outcome: document.getElementById('outc' + k),
+    mLo: document.getElementById('mkLo' + k),
+    mMid: document.getElementById('mkMid' + k),
+    mHi: document.getElementById('mkHi' + k),
+    cmpL: document.getElementById('cmpL' + k),
+    cmpC: document.getElementById('cmpC' + k),
+    signs: { lt: document.getElementById('sgLt' + k), eq: document.getElementById('sgEq' + k), gt: document.getElementById('sgGt' + k) },
+    status: document.getElementById('st' + k),
+    qcard: document.getElementById('q' + k),
+    next: document.getElementById('nxt' + k),
+    prev: document.getElementById('prv' + k),
+    reset: document.getElementById('rst' + k),
+    prog: document.getElementById('pg' + k),
+    hint: document.getElementById('hint' + k),
+    logBody: document.getElementById('log' + k)
+  };
+
+  // 单元格
+  t.dom.cellsEl.innerHTML = A.map(function(v, i){
+    return '<div class="cell" data-i="' + i + '" title="点击回看排除它的事件"><span class="val">' + v + '</span><span class="idx">下标 ' + i + '</span></div>';
+  }).join('');
+  t.dom.cells = Array.prototype.slice.call(t.dom.cellsEl.querySelectorAll('.cell'));
+
+  // S0 行
+  var s0 = document.createElement('tr');
+  s0.dataset.i = '-1';
+  s0.innerHTML = '<td>S0</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="txt">初始：lo=0，hi=6</td><td>[0..6]·7</td>';
+  t.dom.logBody.appendChild(s0);
+  t.dom.logRows = [s0];
+  s0.addEventListener('click', function(){ t.cur = -1; t.anticip = false; render(t); });
+
+  // 预测卡
+  if (t.q) buildQ(t);
+
+  // 单元格点击回看
+  t.dom.cellsEl.addEventListener('click', function(e){
+    var c = e.target.closest('.cell');
+    if (!c || t.anticip || t.cur < 0) return;
+    var i = +c.dataset.i;
+    var ev = t.events[t.cur];
+    var lo = ev.after[0], hi = ev.after[1];
+    var idx = -1;
+    if (i < lo) { for (var j = t.cur; j >= 0; j--) if (t.events[j].cmp === 'lt') { idx = j; break; } }
+    else if (i > hi) { for (var j2 = t.cur; j2 >= 0; j2--) if (t.events[j2].cmp === 'gt') { idx = j2; break; } }
+    if (idx >= 0) { t.cur = idx; render(t); }
+  });
+
+  t.dom.next.addEventListener('click', function(){ onNext(t); });
+  t.dom.prev.addEventListener('click', function(){
+    if (t.anticip) t.anticip = false;
+    else if (t.cur >= 0) t.cur--;
+    render(t);
+  });
+  t.dom.reset.addEventListener('click', function(){ t.cur = -1; t.anticip = false; render(t); });
+}
+
+function buildQ(t){
+  var q = t.q, d = t.dom;
+  var html = '<div class="qintro">' + q.intro + '</div>';
+  q.parts.forEach(function(p){
+    html += '<fieldset class="qpart"><legend>' + p.q + '</legend>' +
+      p.opts.map(function(o){
+        return '<label class="opt"><input type="radio" name="' + t.key + p.name + '" value="' + o.k + '"><span>' + o.t + '</span></label>';
+      }).join('') + '<p class="fb" hidden></p></fieldset>';
+  });
+  if (q.followup){
+    html += '<fieldset class="qpart followup" id="fu' + t.key + '" hidden><legend>' + q.followup.q + '</legend>' +
+      q.followup.opts.map(function(o){
+        return '<label class="opt"><input type="radio" name="' + t.key + 'fu" value="' + o.k + '"><span>' + o.t + '</span></label>';
+      }).join('') + '<p class="fb" hidden></p></fieldset>';
+  }
+  html += '<div class="qbtns"><button type="button" class="btn primary" id="qsub' + t.key + '">提交</button><span class="qwarn" id="qwarn' + t.key + '"></span></div>' +
+          '<div class="qreveal" id="qrev' + t.key + '" hidden></div>';
+  d.qcard.innerHTML = html;
+  d.submitBtn = document.getElementById('qsub' + t.key);
+  d.qwarn = document.getElementById('qwarn' + t.key);
+  d.qreveal = document.getElementById('qrev' + t.key);
+  d.fu = q.followup ? document.getElementById('fu' + t.key) : null;
+  d.fuBtn = null;
+
+  d.submitBtn.addEventListener('click', function(){ onSubmitQ(t); });
+
+  if (d.fu){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn primary'; b.textContent = '回答追问';
+    d.fu.appendChild(b);
+    d.fuBtn = b;
+    b.addEventListener('click', function(){ onFollowup(t); });
+  }
+}
+
+function grade(part, keyVal){
+  var o = null;
+  part.opts.forEach(function(x){ if (x.k === keyVal) o = x; });
+  return { ok: !!o.ok, fb: o.fb };
+}
+
+function onSubmitQ(t){
+  var q = t.q, d = t.dom;
+  var picks = q.parts.map(function(p){
+    return d.qcard.querySelector('input[name="' + t.key + p.name + '"]:checked');
+  });
+  if (picks.some(function(x){ return !x; })){ d.qwarn.textContent = '两问都要选，再提交。'; return; }
+  d.qwarn.textContent = '';
+  t.attempts++;
+  var fbs = d.qcard.querySelectorAll('fieldset.qpart:not(.followup) .fb');
+  var res = q.parts.map(function(p, i){ return grade(p, picks[i].value); });
+  res.forEach(function(r, i){
+    fbs[i].hidden = false;
+    fbs[i].innerHTML = (r.ok ? '✓ ' : '✗ ') + r.fb;
+    fbs[i].className = 'fb ' + (r.ok ? 'ok' : 'err');
+  });
+  var aOk = res[0].ok, bOk = res[1].ok;
+  if (!aOk && t.attempts < 2){
+    d.qwarn.textContent = '第 1 问还没对：看上面的反馈，改一改再交一次（还剩 1 次机会，之后会揭晓）。';
+    return;
+  }
+  revealCurrent(t);
+  t.qDone = true;
+  Array.prototype.forEach.call(
+    d.qcard.querySelectorAll('fieldset.qpart:not(.followup) input'),
+    function(x){ x.disabled = true; }
+  );
+  d.submitBtn.hidden = true;
+  d.qwarn.textContent = '';
+  d.qreveal.hidden = false;
+  d.qreveal.innerHTML = q.revealText + (!aOk ? ' ' + q.fixA : '');
+  if (!bOk && d.fu) d.fu.hidden = false;
+  hooks(t);
+}
+
+function onFollowup(t){
+  var d = t.dom;
+  var sel = d.qcard.querySelector('input[name="' + t.key + 'fu"]:checked');
+  if (!sel){ d.qwarn.textContent = '追问也要选一个。'; return; }
+  t.fuAttempts++;
+  var r = grade(t.q.followup, sel.value);
+  var fb = d.fu.querySelector('.fb');
+  fb.hidden = false;
+  fb.innerHTML = (r.ok ? '✓ ' : '✗ ') + r.fb;
+  fb.className = 'fb ' + (r.ok ? 'ok' : 'err');
+  if (r.ok || t.fuAttempts >= 2){
+    Array.prototype.forEach.call(d.fu.querySelectorAll('input'), function(x){ x.disabled = true; });
+    if (d.fuBtn) d.fuBtn.hidden = true;
+    d.qwarn.textContent = '';
+    if (!r.ok){
+      var correct = t.q.followup.opts.filter(function(o){ return o.ok; })[0];
+      fb.innerHTML += '（正确选项：' + correct.t + '）';
+    }
+  } else {
+    d.qwarn.textContent = '再想想：保证来自哪里？改一改再答一次。';
+  }
+}
+
+/* ---------- 推进与渲染 ---------- */
+function onNext(t){
+  if (t.anticip) return; // 预测未提交
+  if (t.cur + 1 < t.revealed){ t.cur++; render(t); return; }
+  if (t.cur + 1 === t.revealed && t.revealed < t.events.length){
+    var ev = t.events[t.revealed];
+    var hasQ = t.q && t.q.at === t.revealed && !t.qDone;
+    if (hasQ){
+      t.anticip = true; t.qOpen = true;
+      render(t);
+      t.dom.qcard.hidden = false;
+      t.dom.qcard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      revealCurrent(t);
+    }
+  }
+}
+
+function revealCurrent(t){
+  t.revealed++;
+  t.cur = t.revealed - 1;
+  t.anticip = false;
+  addLogRow(t, t.events[t.cur]);
+  render(t);
+  hooks(t);
+}
+
+function hooks(t){
+  if (t === mainT && t.revealed === t.events.length){
+    updateTabs();
+    mainT.dom.hint.hidden = false;
+    mainT.dom.hint.innerHTML = '主例完成 ✓ —— 点上方「② 变式」标签：只改一个条件（目标 25 → 24），看看规则还管不管用。';
+  }
+  if (t === transT && t.qDone){
+    updateSummary();
+    transT.dom.hint.hidden = false;
+    transT.dom.hint.innerHTML = '变式完成 ✓ —— 页面底部的「总结」已解锁，用它对照两次运行的证据。';
+  }
+}
+
+function addLogRow(t, ev){
+  var tr = document.createElement('tr');
+  tr.dataset.i = String(t.revealed - 1);
+  var n = String(t.revealed);
+  tr.innerHTML = '<td>' + ev.id + '</td><td>第 ' + n + ' 次</td><td>' + ev.logPre + '</td><td>' + ev.logRead + '</td><td>' + ev.logCmp + '</td><td class="txt">' + ev.logDec + '</td><td>' + ev.logPost + '</td>';
+  t.dom.logBody.appendChild(tr);
+  t.dom.logRows.push(tr);
+  tr.addEventListener('click', function(){
+    var i = +tr.dataset.i;
+    t.cur = i; t.anticip = false;
+    render(t);
+  });
+}
+
+function setMarker(el, i, text){
+  el.style.left = ((i + 0.5) / N * 100) + '%';
+  el.textContent = text;
+}
+
+function renderSegs(t, segs){
+  t.dom.segsEl.innerHTML = segs.map(function(s){
+    if (s.emptyAt != null) return '<span class="emptymk" style="left:' + ((s.emptyAt + 1) / N * 100) + '%">空</span>';
+    var l = s.from / N * 100, w = (s.to - s.from + 1) / N * 100;
+    return '<span class="seg ' + s.cls + '" style="left:' + l + '%;width:' + w + '%"><i></i><b class="lb">' + s.label + '</b></span>';
+  }).join('');
+}
+
+function render(t){
+  var d = t.dom;
+  var lo, hi, mid = null, cmp = null, phase, statusText, viewName;
+
+  if (t.anticip){
+    var ev0 = t.events[t.revealed];
+    lo = ev0.before[0]; hi = ev0.before[1]; mid = ev0.mid; cmp = ev0.cmp;
+    phase = 'anticip'; statusText = ev0.anticip; viewName = ev0.id + ' 已读数 · 待预测';
+  } else if (t.cur < 0){
+    lo = t.events[0].before[0]; hi = t.events[0].before[1];
+    phase = 'S0'; statusText = t.s0text; viewName = 'S0 初始';
+  } else {
+    var ev = t.events[t.cur];
+    lo = ev.after[0]; hi = ev.after[1]; mid = ev.mid; cmp = ev.cmp;
+    phase = 'settled'; statusText = ev.status; viewName = ev.id + ' 之后';
+  }
+
+  // 旗标
+  setMarker(d.mLo, lo, 'lo = ' + lo);
+  setMarker(d.mHi, hi, 'hi = ' + hi);
+  if (mid == null){ d.mMid.style.opacity = 0; }
+  else { d.mMid.style.opacity = (phase === 'anticip' ? 1 : 0.55); setMarker(d.mMid, mid, 'mid = ' + mid + ' ▼'); }
+
+  // 单元格
+  var evCur = (phase === 'settled') ? t.events[t.cur] : null;
+  d.cells.forEach(function(c, i){
+    var act = true;
+    if (phase === 'settled') act = (i >= lo && i <= hi);
+    c.classList.toggle('ex', !act);
+    c.classList.toggle('found', !!(evCur && evCur.found && i === mid && act));
+  });
+
+  // 分段条 + 结果横幅
+  var segs = [], outcome = null;
+  if (phase === 'S0'){
+    segs.push({ from:0, to:N-1, cls:'act', label:'候选 [0..' + (N-1) + '] · ' + N + ' 项' });
+  } else if (phase === 'anticip'){
+    segs.push({ from:lo, to:hi, cls:'act', label:'候选 [' + lo + '..' + hi + '] · ' + (hi-lo+1) + ' 项 · 已读数，边界未动' });
+  } else {
+    var lastLt = null, lastGt = null;
+    for (var i2 = 0; i2 <= t.cur; i2++){
+      if (t.events[i2].cmp === 'lt') lastLt = t.events[i2].mid;
+      if (t.events[i2].cmp === 'gt') lastGt = t.events[i2].mid;
+    }
+    if (lo > 0 && lastLt != null)
+      segs.push({ from:0, to:lo-1, cls:'ex', label:'0..' + (lo-1) + ' 都 ≤ ' + A[lastLt] + ' &lt; ' + t.target + ' ⇒ 已排除' });
+    if (lo <= hi){
+      if (evCur.found) segs.push({ from:lo, to:hi, cls:'act hit', label:'找到 · 下标 ' + lo });
+      else segs.push({ from:lo, to:hi, cls:'act', label:'候选 [' + lo + '..' + hi + '] · ' + (hi-lo+1) + ' 项' });
+    } else {
+      segs.push({ emptyAt: hi });
+    }
+    if (hi < N-1 && lastGt != null)
+      segs.push({ from:hi+1, to:N-1, cls:'ex', label:(hi+1) + '..' + (N-1) + ' 都 ≥ ' + A[lastGt] + ' &gt; ' + t.target + ' ⇒ 已排除' });
+    if (evCur.found) outcome = { ok:true, text:'✓ 找到：' + t.target + ' 在下标 ' + mid + ' —— 第 ' + (t.cur+1) + ' 次比较' };
+    if (evCur.notFound) outcome = { ok:false, text:'✗ ' + t.target + ' 不在数组中 —— 候选范围为空（lo=' + lo + ' &gt; hi=' + hi + '），无处可藏 ⇒ 不存在' };
+  }
+  renderSegs(t, segs);
+  if (outcome){ d.outcome.hidden = false; d.outcome.innerHTML = outcome.text; d.outcome.className = 'outcome ' + (outcome.ok ? 'good' : 'bad'); }
+  else d.outcome.hidden = true;
+
+  // 比较面板
+  if (mid == null){
+    d.cmpL.textContent = '—';
+    d.cmpC.textContent = '还没有比较 —— 按「下一步」读出中间数';
+    ['lt','eq','gt'].forEach(function(s){ d.signs[s].classList.remove('ok'); });
+  } else {
+    d.cmpL.innerHTML = 'a[' + mid + '] = <b>' + A[mid] + '</b>';
+    var evId = (phase === 'anticip') ? t.events[t.revealed].id : t.events[t.cur].id;
+    var nth = (phase === 'anticip') ? (t.revealed + 1) : (t.cur + 1);
+    d.cmpC.textContent = '第 ' + nth + ' 次比较 · 事件 ' + evId;
+    ['lt','eq','gt'].forEach(function(s){ d.signs[s].classList.toggle('ok', s === cmp); });
+  }
+
+  // 状态行 / 进度 / 按钮
+  d.status.innerHTML = statusText;
+  d.prog.textContent = '已揭示 ' + t.revealed + '/' + t.events.length + ' 个事件 · 当前：' + viewName;
+  d.next.disabled = t.anticip || (t.cur + 1 >= t.revealed && t.revealed >= t.events.length);
+  d.next.title = t.anticip ? '先完成上面的预测并提交' : '';
+  d.prev.disabled = !t.anticip && t.cur < 0;
+
+  // 记录选中
+  var selI = t.anticip ? (t.revealed - 1) : t.cur;
+  d.logRows.forEach(function(r){ r.classList.toggle('sel', +r.dataset.i === selI); });
+
+  // 预测卡可见性（提交后保留内容供复盘）
+  if (t.qOpen) d.qcard.hidden = false;
+}
+
+/* ---------- 页签 / 总结 ---------- */
+var tabMain = document.getElementById('tabMain');
+var tabT = document.getElementById('tabT');
+var panelMain = document.getElementById('panelMain');
+var panelT = document.getElementById('panelT');
+var curTab = mainT;
+
+function updateTabs(){
+  var unlocked = mainT.revealed === mainT.events.length;
+  tabT.disabled = !unlocked;
+  tabT.textContent = unlocked ? '② 变式 · 只改一个条件：找 24' : '② 变式 · 找 24（完成主例后解锁）';
+}
+function updateSummary(){
+  var on = transT.qDone;
+  document.getElementById('sumBody').classList.toggle('hidden', !on);
+  document.getElementById('sumLock').classList.toggle('hidden', on);
+}
+function switchTab(t){
+  curTab = t;
+  var isMain = (t === mainT);
+  tabMain.classList.toggle('on', isMain);
+  tabT.classList.toggle('on', !isMain);
+  panelMain.classList.toggle('hidden', !isMain);
+  panelT.classList.toggle('hidden', isMain);
+}
+tabMain.addEventListener('click', function(){ switchTab(mainT); });
+tabT.addEventListener('click', function(){ if (!tabT.disabled) switchTab(transT); });
+
+/* ---------- 启动 ---------- */
+buildPanel(mainT, panelMain);
+buildPanel(transT, panelT);
+render(mainT);
+render(transT);
+updateTabs();
+updateSummary();
+</script>
+</body>
+</html>
