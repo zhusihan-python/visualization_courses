@@ -1,0 +1,1881 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transformer 第 6 章（上）：训练核心机制</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0d1117',
+            cardBg: '#141b26',
+            cardBorder: '#233044',
+            cyanMain: '#58c4dd',
+            goldTarget: '#f0b429',
+            emeraldGreen: '#4ade80',
+            coralRed: '#ff6b6b',
+            purpleOpt: '#c084fc'
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+            sans: ['Inter', 'PingFang SC', 'Microsoft YaHei', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #233044;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #384b66;
+    }
+
+    /* Math HTML Formatting Style */
+    .math {
+      font-family: 'Cambria Math', 'Times New Roman', serif;
+      font-style: italic;
+    }
+    .math-block {
+      background: rgba(20, 27, 38, 0.8);
+      border-left: 3px solid #58c4dd;
+      padding: 0.75rem 1rem;
+      border-radius: 0.375rem;
+      font-family: 'Cambria Math', 'Times New Roman', serif;
+    }
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 4px;
+      font-style: italic;
+    }
+    .frac .num {
+      border-bottom: 1px solid #8b949e;
+      padding-bottom: 1px;
+    }
+    .frac .den {
+      padding-top: 1px;
+    }
+
+    /* Subtle Pulsing Animations */
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 15px rgba(88, 196, 221, 0.2); }
+      50% { box-shadow: 0 0 25px rgba(88, 196, 221, 0.45); }
+    }
+    .glow-active {
+      animation: pulseGlow 2.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-[#0d1117] text-[#e6edf3] font-sans antialiased selection:bg-[#58c4dd] selection:text-black min-h-screen flex flex-col">
+
+  <!-- Sticky Top Navigation Bar -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur-md border-b border-[#233044]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-[#58c4dd]/10 text-[#58c4dd] border border-[#58c4dd]/30">CH 6.1</span>
+        <h1 class="text-base sm:text-lg font-bold truncate tracking-tight text-[#e6edf3]">
+          Transformer 训练核心机制 <span class="text-xs font-normal text-[#8b949e] hidden md:inline">（上篇）</span>
+        </h1>
+      </div>
+      <nav class="hidden lg:flex items-center space-x-1 text-sm font-medium text-[#8b949e]">
+        <a href="#hero" class="px-3 py-1.5 hover:text-[#58c4dd] transition">训练循环</a>
+        <a href="#next-token" class="px-3 py-1.5 hover:text-[#58c4dd] transition">6.1 Next Token</a>
+        <a href="#pitfalls" class="px-3 py-1.5 hover:text-[#58c4dd] transition">6.2 避坑实验室</a>
+        <a href="#adamw" class="px-3 py-1.5 hover:text-[#58c4dd] transition">6.3A AdamW</a>
+        <a href="#lr-scheduler" class="px-3 py-1.5 hover:text-[#58c4dd] transition">6.3B 学习率</a>
+        <a href="#grad-clip" class="px-3 py-1.5 hover:text-[#58c4dd] transition">6.3C 梯度裁剪</a>
+        <a href="#code-quiz" class="px-3 py-1.5 hover:text-[#58c4dd] transition">6.4 代码与测验</a>
+      </nav>
+      <a href="#code-quiz" class="px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-semibold text-xs hover:bg-[#48b4cd] transition">
+        实战代码 & 测验
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+
+    <!-- ================= HERO HEADER & 4-STEP TRAINING LOOP ================= -->
+    <section id="hero" class="space-y-6">
+      <div class="bg-gradient-to-br from-[#141b26] to-[#0d1117] border border-[#233044] rounded-2xl p-6 sm:p-8 relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-96 h-96 bg-[#58c4dd]/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="max-w-3xl space-y-4">
+          <span class="px-3 py-1 rounded-full text-xs font-mono font-semibold bg-[#f0b429]/10 text-[#f0b429] border border-[#f0b429]/30">
+            Transformer 进阶工程 · 训练篇
+          </span>
+          <h2 class="text-2xl sm:text-4xl font-extrabold text-[#e6edf3] tracking-tight leading-tight">
+            从“随机胡话”到“妙笔生花”：<br class="hidden sm:inline" />深度拆解 Transformer 训练四大核心枢纽
+          </h2>
+          <p class="text-sm sm:text-base text-[#8b949e] leading-relaxed">
+            上一章的模型权重完全随机，输出全是乱码。本章（上篇）彻底拆解如何通过 <strong class="text-[#58c4dd]">Next Token Prediction</strong>、
+            <strong class="text-[#f0b429]">交叉熵损失</strong>、<strong class="text-[#c084fc]">AdamW 解耦优化器</strong>、
+            <strong class="text-[#58c4dd]">Warmup+Cosine LR 调度</strong> 以及 <strong class="text-[#4ade80]">梯度裁剪</strong> 驯服自注意力大模型。
+          </p>
+        </div>
+
+        <!-- Interactive 4-step Training Loop Capsule Graph -->
+        <div class="mt-8 space-y-4">
+          <h3 class="text-xs font-mono font-bold tracking-wider text-[#8b949e] uppercase">
+            微观训练单步循环（点击阶段卡片查看细节）
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-3" id="loop-capsules">
+            <button onclick="selectLoopStep(0)" id="capsule-0" class="capsule-btn p-4 rounded-xl border border-[#58c4dd] bg-[#58c4dd]/10 text-left transition transform hover:-translate-y-0.5">
+              <div class="flex items-center justify-between text-xs font-mono text-[#58c4dd] mb-1">
+                <span>STEP 01</span>
+                <span>FORWARD</span>
+              </div>
+              <div class="font-bold text-sm text-[#e6edf3]">① 前向 logits</div>
+              <div class="text-xs text-[#8b949e] mt-1">计算未归一化得分 (B, L, V)</div>
+            </button>
+            <button onclick="selectLoopStep(1)" id="capsule-1" class="capsule-btn p-4 rounded-xl border border-[#233044] bg-[#141b26] text-left transition transform hover:-translate-y-0.5">
+              <div class="flex items-center justify-between text-xs font-mono text-[#f0b429] mb-1">
+                <span>STEP 02</span>
+                <span>LOSS</span>
+              </div>
+              <div class="font-bold text-sm text-[#e6edf3]">② CrossEntropy</div>
+              <div class="text-xs text-[#8b949e] mt-1">摊平矩阵并屏蔽 Padding</div>
+            </button>
+            <button onclick="selectLoopStep(2)" id="capsule-2" class="capsule-btn p-4 rounded-xl border border-[#233044] bg-[#141b26] text-left transition transform hover:-translate-y-0.5">
+              <div class="flex items-center justify-between text-xs font-mono text-[#4ade80] mb-1">
+                <span>STEP 03</span>
+                <span>CLIP</span>
+              </div>
+              <div class="font-bold text-sm text-[#e6edf3]">③ 反向 + 梯度裁剪</div>
+              <div class="text-xs text-[#8b949e] mt-1">loss.backward() &amp; clip</div>
+            </button>
+            <button onclick="selectLoopStep(3)" id="capsule-3" class="capsule-btn p-4 rounded-xl border border-[#233044] bg-[#141b26] text-left transition transform hover:-translate-y-0.5">
+              <div class="flex items-center justify-between text-xs font-mono text-[#c084fc] mb-1">
+                <span>STEP 04</span>
+                <span>OPTIMIZE</span>
+              </div>
+              <div class="font-bold text-sm text-[#e6edf3]">④ AdamW 更新</div>
+              <div class="text-xs text-[#8b949e] mt-1">自适应动量 + 解耦衰减</div>
+            </button>
+          </div>
+
+          <!-- Dynamic Detail Box for Training Loop Step -->
+          <div id="loop-detail-box" class="p-5 rounded-xl border border-[#233044] bg-[#0d1117] text-xs font-mono space-y-2">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= MODULE 6.1: NEXT TOKEN PREDICTION ================= -->
+    <section id="next-token" class="space-y-6">
+      <div class="flex items-center space-x-3 border-b border-[#233044] pb-3">
+        <span class="h-6 w-1.5 bg-[#58c4dd] rounded-full"></span>
+        <h2 class="text-xl sm:text-2xl font-bold text-[#e6edf3]">
+          Module 6.1：Next Token Prediction —— 一次前向，L 个训练信号
+        </h2>
+      </div>
+
+      <!-- 1. Misalignment Visualizer -->
+      <div class="bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#233044]/60 pb-4">
+          <div>
+            <h3 class="text-lg font-bold text-[#e6edf3] flex items-center gap-2">
+              <span>① 交互式输入/输出错位 Split 演示器</span>
+            </h3>
+            <p class="text-xs text-[#8b949e] mt-1">
+              Token 序列错位法则：输入 <span class="text-[#58c4dd]">input_ids = tokens[:-1]</span> 与 目标 <span class="text-[#f0b429]">labels = tokens[1:]</span>
+            </p>
+          </div>
+          <!-- Sentence Presets -->
+          <div class="flex items-center space-x-2">
+            <span class="text-xs text-[#8b949e]">预设句子：</span>
+            <button onclick="setSentence(0)" id="sent-btn-0" class="px-3 py-1 rounded-lg text-xs font-medium border border-[#58c4dd] bg-[#58c4dd]/10 text-[#58c4dd]">句子 A</button>
+            <button onclick="setSentence(1)" id="sent-btn-1" class="px-3 py-1 rounded-lg text-xs font-medium border border-[#233044] bg-[#0d1117] text-[#8b949e]">句子 B</button>
+            <button onclick="setSentence(2)" id="sent-btn-2" class="px-3 py-1 rounded-lg text-xs font-medium border border-[#233044] bg-[#0d1117] text-[#8b949e]">句子 C</button>
+          </div>
+        </div>
+
+        <!-- Tokens visual strip -->
+        <div class="space-y-4">
+          <div class="space-y-1">
+            <span class="text-xs font-mono text-[#8b949e]">原始 Token 序列 (Length = L+1):</span>
+            <div id="full-tokens-container" class="flex flex-wrap gap-2 pt-1">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Input vs Label Split -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div class="p-4 rounded-xl border border-[#58c4dd]/40 bg-[#58c4dd]/5 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-mono font-bold text-[#58c4dd]">INPUT_IDS (前向输入: tokens[:-1])</span>
+                <span id="input-len-badge" class="text-xs font-mono text-[#58c4dd]">L=5</span>
+              </div>
+              <div id="input-ids-container" class="flex flex-wrap gap-1.5">
+                <!-- JS -->
+              </div>
+            </div>
+
+            <div class="p-4 rounded-xl border border-[#f0b429]/40 bg-[#f0b429]/5 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-mono font-bold text-[#f0b429]">LABELS (监督目标: tokens[1:])</span>
+                <span id="label-len-badge" class="text-xs font-mono text-[#f0b429]">L=5</span>
+              </div>
+              <div id="labels-container" class="flex flex-wrap gap-1.5">
+                <!-- JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Position Step Inspector -->
+        <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-4 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label class="text-xs font-bold text-[#e6edf3] flex items-center gap-2">
+              <span>位置 i 步进观察器：</span>
+              <span id="pos-index-label" class="text-[#58c4dd] font-mono">i = 0</span>
+            </label>
+            <span class="text-xs text-[#8b949e]">因果注意力机制确保位置 i 仅可见左侧上下文 [0...i]</span>
+          </div>
+
+          <input type="range" id="pos-slider" min="0" max="4" value="0" oninput="updatePosInspector(this.value)"
+                 class="w-full accent-[#58c4dd] bg-[#233044] h-2 rounded-lg cursor-pointer">
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono pt-2">
+            <div class="p-3 rounded-lg bg-[#141b26] border border-[#233044]">
+              <span class="text-[#8b949e] block mb-1">当前位置 i 看到的上文 (Prefix):</span>
+              <span id="visible-context-str" class="text-[#58c4dd] font-bold">「我」</span>
+            </div>
+            <div class="p-3 rounded-lg bg-[#141b26] border border-[#233044]">
+              <span class="text-[#8b949e] block mb-1">因果掩码阻挡的未来词 (Masked):</span>
+              <span id="masked-tokens-str" class="text-[#ff6b6b]">「爱」, 「机器」, 「学习」, 「。」</span>
+            </div>
+            <div class="p-3 rounded-lg bg-[#141b26] border border-[#f0b429]/40 bg-[#f0b429]/5">
+              <span class="text-[#8b949e] block mb-1">该位置的预测目标 label[i]:</span>
+              <span id="target-label-str" class="text-[#f0b429] font-bold">「爱」 (Token #231)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Tensor Flattening Visualizer & Baseline Loss Diagnostic -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Tensor Flattening (4 cols) -->
+        <div class="lg:col-span-5 bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-4 flex flex-col justify-between">
+          <div>
+            <h3 class="text-base font-bold text-[#e6edf3] mb-1">张量摊平 Visualization</h3>
+            <p class="text-xs text-[#8b949e] mb-4">
+              <span class="font-mono text-[#58c4dd]">logits.view(-1, vocab)</span> 如何将 3D 张量降维匹配交叉熵 API。
+            </p>
+
+            <div class="space-y-4 font-mono text-xs">
+              <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-2">
+                <div class="flex justify-between text-[#8b949e]">
+                  <span>模型原始输出 Logits:</span>
+                  <span class="text-[#58c4dd]">(B=2, L=4, V=1000)</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-center text-[11px]">
+                  <div class="p-2 rounded border border-[#233044] bg-[#141b26]">
+                    Batch 0 (4 × 1000)
+                  </div>
+                  <div class="p-2 rounded border border-[#233044] bg-[#141b26]">
+                    Batch 1 (4 × 1000)
+                  </div>
+                </div>
+              </div>
+
+              <div class="text-center text-[#58c4dd] text-lg font-bold">↓ Flatten (.view(-1, V))</div>
+
+              <div class="p-3 rounded-lg bg-[#0d1117] border border-[#58c4dd]/40 bg-[#58c4dd]/5 space-y-2">
+                <div class="flex justify-between text-[#8b949e]">
+                  <span>F.cross_entropy 接收输入:</span>
+                  <span class="text-[#58c4dd] font-bold">(N=8, C=1000)</span>
+                </div>
+                <div class="p-2 rounded border border-[#58c4dd]/30 bg-[#141b26] text-center text-[11px]">
+                  8 个 independent next-token 样本概率分布向量
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-[#0d1117] border border-[#233044] text-[11px] text-[#8b949e] leading-relaxed">
+            <strong class="text-[#e6edf3]">为什么能够摊平？</strong> 因为对模型而言，序列中每个位置 <span class="math">i</span> 的预测任务是相互独立计算 CrossEntropy Loss 的，最终取算术平均值。
+          </div>
+        </div>
+
+        <!-- Loss Diagnostic Instrument (7 cols) -->
+        <div class="lg:col-span-7 bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#233044]/60 pb-3">
+            <div>
+              <h3 class="text-base font-bold text-[#e6edf3]">Loss 健康诊断仪 &amp; 理论基线</h3>
+              <p class="text-xs text-[#8b949e]">随机均匀初始化时，初始理论 Loss 严格等于 <span class="math">ln(vocab_size)</span></p>
+            </div>
+            <!-- Vocab Selectors -->
+            <div class="flex items-center space-x-1 font-mono text-xs">
+              <button onclick="setVocab(1000)" id="vocab-btn-1000" class="px-2 py-1 rounded border border-[#233044] bg-[#0d1117]">1k</button>
+              <button onclick="setVocab(13000)" id="vocab-btn-13000" class="px-2 py-1 rounded border border-[#233044] bg-[#0d1117]">13k</button>
+              <button onclick="setVocab(32000)" id="vocab-btn-32000" class="px-2 py-1 rounded border border-[#58c4dd] bg-[#58c4dd]/10 text-[#58c4dd] font-bold">32k</button>
+              <button onclick="setVocab(50257)" id="vocab-btn-50257" class="px-2 py-1 rounded border border-[#233044] bg-[#0d1117]">50.2k</button>
+            </div>
+          </div>
+
+          <!-- Formula & Calculated Value -->
+          <div class="flex items-center justify-between p-3 rounded-xl bg-[#0d1117] border border-[#233044]">
+            <div class="text-xs font-mono">
+              <span class="text-[#8b949e]">理论初始 Loss 公式：</span>
+              <span class="math text-[#58c4dd] font-bold text-sm ml-2">Loss<sub>init</sub> = -ln(1 / V) = ln(V)</span>
+            </div>
+            <div class="text-right">
+              <span class="text-xs text-[#8b949e]">计算结果: </span>
+              <span id="theoretical-loss-val" class="font-mono text-base font-bold text-[#f0b429]">10.37</span>
+            </div>
+          </div>
+
+          <!-- Canvas & Curve Preset Selector -->
+          <div class="space-y-3">
+            <div class="flex flex-wrap gap-2 text-xs">
+              <button onclick="setCurvePreset(0)" id="curve-btn-0" class="px-3 py-1 rounded-lg border border-[#4ade80] bg-[#4ade80]/10 text-[#4ade80] font-bold">① 正常收敛</button>
+              <button onclick="setCurvePreset(1)" id="curve-btn-1" class="px-3 py-1 rounded-lg border border-[#233044] bg-[#0d1117] text-[#8b949e]">② 标签泄露 (Loss→0)</button>
+              <button onclick="setCurvePreset(2)" id="curve-btn-2" class="px-3 py-1 rounded-lg border border-[#233044] bg-[#0d1117] text-[#8b949e]">③ LR过小/横盘</button>
+              <button onclick="setCurvePreset(3)" id="curve-btn-3" class="px-3 py-1 rounded-lg border border-[#233044] bg-[#0d1117] text-[#8b949e]">④ LR过大/发散NaN</button>
+            </div>
+
+            <div class="relative w-full h-48 bg-[#0d1117] border border-[#233044] rounded-xl overflow-hidden p-2">
+              <canvas id="loss-canvas" class="w-full h-full block"></canvas>
+            </div>
+
+            <!-- Diagnostic Cause Box -->
+            <div id="loss-diag-card" class="p-3 rounded-xl border border-[#4ade80]/30 bg-[#4ade80]/5 text-xs space-y-1">
+              <div class="font-bold text-[#4ade80]" id="diag-title">诊断结果：健康训练轨迹</div>
+              <div class="text-[#8b949e]" id="diag-desc">初始 Loss 紧贴 10.37 理论值开局，随后平滑下降并渐进收敛至 ~2.5，无溢出或泄露。</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= MODULE 6.2: THREE FATAL PITFALLS LAB ================= -->
+    <section id="pitfalls" class="space-y-6">
+      <div class="flex items-center space-x-3 border-b border-[#233044] pb-3">
+        <span class="h-6 w-1.5 bg-[#ff6b6b] rounded-full"></span>
+        <h2 class="text-xl sm:text-2xl font-bold text-[#e6edf3]">
+          Module 6.2：三大致命避坑实验室
+        </h2>
+      </div>
+
+      <!-- Tabbed Pitfall Selector -->
+      <div class="bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-6">
+        <div class="flex border-b border-[#233044] space-x-2 overflow-x-auto pb-2">
+          <button onclick="switchPitfallTab(0)" id="pit-tab-0" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border border-[#ff6b6b] bg-[#ff6b6b]/10 text-[#ff6b6b] whitespace-nowrap">
+            致命错误 1: 标签未错开 (input == label)
+          </button>
+          <button onclick="switchPitfallTab(1)" id="pit-tab-1" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e] hover:text-[#e6edf3] whitespace-nowrap">
+            致命错误 2: 忘了因果掩码 (Casual Mask)
+          </button>
+          <button onclick="switchPitfallTab(2)" id="pit-tab-2" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e] hover:text-[#e6edf3] whitespace-nowrap">
+            致命错误 3: Padding 没屏蔽 (-100)
+          </button>
+        </div>
+
+        <!-- Pitfall 1 Content -->
+        <div id="pitfall-content-0" class="space-y-5">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div>
+              <h3 class="text-base font-bold text-[#e6edf3]">标签泄露实验：如果输入与标签完全对齐？</h3>
+              <p class="text-xs text-[#8b949e]">当 <span class="font-mono text-[#ff6b6b]">input_ids == labels</span> 时，模型无需自回归预测，直接学习恒等映射 <span class="math">f(x)=x</span></p>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button onclick="toggleLabelAlign(false)" id="align-wrong-btn" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#ff6b6b] bg-[#ff6b6b]/20 text-[#ff6b6b]">错误对齐 (未错开)</button>
+              <button onclick="toggleLabelAlign(true)" id="align-right-btn" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]">正确错开一位</button>
+            </div>
+          </div>
+
+          <!-- Dynamic Comparison Box -->
+          <div id="label-align-display" class="p-4 rounded-xl border border-[#ff6b6b]/40 bg-[#ff6b6b]/5 space-y-4">
+            <!-- JS updates -->
+          </div>
+        </div>
+
+        <!-- Pitfall 2 Content -->
+        <div id="pitfall-content-1" class="hidden space-y-5">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div>
+              <h3 class="text-base font-bold text-[#e6edf3]">注意力偷看实验：因果掩码 (Causal Mask) 的重要性</h3>
+              <p class="text-xs text-[#8b949e]">下三角阵 (Lower Triangular Matrix) 开关切换：观察 Token 0 是否偷看未来答案</p>
+            </div>
+            <button onclick="toggleCausalMask()" id="mask-toggle-btn" class="px-4 py-1.5 rounded-lg text-xs font-bold border border-[#4ade80] bg-[#4ade80]/10 text-[#4ade80]">
+              因果掩码：开启 [ON]
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <!-- 4x4 Attention Grid -->
+            <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+              <div class="text-xs font-mono text-[#8b949e] text-center">4×4 Attention Mask Matrix</div>
+              <div id="attn-matrix-grid" class="grid grid-cols-4 gap-2 font-mono text-center text-xs">
+                <!-- JS matrix -->
+              </div>
+            </div>
+            
+            <div id="attn-diag-box" class="p-4 rounded-xl border border-[#4ade80]/30 bg-[#4ade80]/5 space-y-2 text-xs">
+              <div class="font-bold text-[#4ade80] text-sm" id="attn-diag-title">状态：安全遮罩中</div>
+              <div class="text-[#8b949e] leading-relaxed" id="attn-diag-desc">
+                下三角矩阵已启用。<span class="text-[#58c4dd]">Token 0 (我)</span> 的 Query 只能看见左侧已生成内容，右上角未来 Token 权重全被设为 <span class="math font-bold">-∞</span> (Softmax 后变成 0)。推理与训练机制严格对齐！
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pitfall 3 Content -->
+        <div id="pitfall-content-2" class="hidden space-y-5">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div>
+              <h3 class="text-base font-bold text-[#e6edf3]">Padding 干扰实验：<span class="font-mono text-[#f0b429]">ignore_index = -100</span></h3>
+              <p class="text-xs text-[#8b949e]">变长批次补全 <span class="font-mono">&lt;pad&gt;</span> 占位符时，必须剔除其 Loss 贡献</p>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button onclick="setPadIgnore(false)" id="pad-unmask-btn" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#ff6b6b] bg-[#ff6b6b]/20 text-[#ff6b6b]">不屏蔽 (label=0)</button>
+              <button onclick="setPadIgnore(true)" id="pad-mask-btn" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#4ade80] bg-[#4ade80]/10 text-[#4ade80]">屏蔽 Padding (-100)</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3 font-mono text-xs">
+              <div class="text-[#8b949e]">批次内两条变长样本 (Batch Size=2):</div>
+              <div class="p-2 rounded bg-[#141b26] border border-[#233044]">
+                Sample A: ["我", "爱", "机器", "学习", "。"] (Len=5, 无 Pad)
+              </div>
+              <div class="p-2 rounded bg-[#141b26] border border-[#233044] flex items-center justify-between">
+                <span>Sample B: ["今", "天", "&lt;pad&gt;", "&lt;pad&gt;", "&lt;pad&gt;"]</span>
+                <span class="text-[#f0b429]" id="pad-status-tag">label=-100</span>
+              </div>
+            </div>
+
+            <!-- Computed Loss Comparison Bar -->
+            <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-4 text-xs">
+              <div class="flex justify-between items-center font-mono">
+                <span class="text-[#8b949e]">实际计算平均 CrossEntropy Loss:</span>
+                <span id="pad-calculated-loss" class="text-base font-bold text-[#4ade80]">2.84</span>
+              </div>
+              <div class="space-y-2">
+                <div class="flex justify-between text-[11px] text-[#8b949e]">
+                  <span>真实 Token 损失贡献 (有效信号):</span>
+                  <span id="real-token-contrib" class="text-[#58c4dd]">100%</span>
+                </div>
+                <div class="w-full h-3 bg-[#141b26] rounded-full overflow-hidden flex">
+                  <div id="real-bar" class="h-full bg-[#58c4dd] transition-all" style="width: 100%"></div>
+                  <div id="pad-bar" class="h-full bg-[#ff6b6b] transition-all" style="width: 0%"></div>
+                </div>
+              </div>
+              <p id="pad-explanation-text" class="text-[11px] text-[#8b949e] leading-relaxed">
+                <span class="text-[#4ade80] font-bold">正确做法：</span>设置 <span class="font-mono text-[#f0b429]">ignore_index=-100</span>，PyTorch 会在算 Loss 时直接跳过最后 3 个 &lt;pad&gt;，分母只除以实际 4 个有效词，梯度的每一个方向都是纯粹的语言信号。
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= MODULE 6.3A: ADAMW & LOSS LANDSCAPE ================= -->
+    <section id="adamw" class="space-y-6">
+      <div class="flex items-center space-x-3 border-b border-[#233044] pb-3">
+        <span class="h-6 w-1.5 bg-[#c084fc] rounded-full"></span>
+        <h2 class="text-xl sm:text-2xl font-bold text-[#e6edf3]">
+          Module 6.3A：为什么是 AdamW？—— 优化器赛道与解耦权重衰减
+        </h2>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- High-DPI Loss Landscape Canvas Race (7 cols) -->
+        <div class="lg:col-span-7 bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-4">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+            <div>
+              <h3 class="text-base font-bold text-[#e6edf3]">狭长峡谷 (病态曲率) 损失面优化器赛道</h3>
+              <p class="text-xs text-[#8b949e]">模拟 Transformer 不同层梯度尺度巨大差异的狭长等高线地形</p>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button onclick="toggleRace()" id="race-play-btn" class="px-3 py-1 rounded-lg text-xs font-bold border border-[#58c4dd] bg-[#58c4dd]/10 text-[#58c4dd]">▶ 开始比赛</button>
+              <button onclick="resetRace()" class="px-3 py-1 rounded-lg text-xs font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]">↺ 重置</button>
+            </div>
+          </div>
+
+          <!-- Canvas -->
+          <div class="relative w-full h-64 bg-[#0d1117] border border-[#233044] rounded-xl overflow-hidden">
+            <canvas id="race-canvas" class="w-full h-full block"></canvas>
+          </div>
+
+          <!-- Legend -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono text-center">
+            <div class="p-2 rounded bg-[#0d1117] border border-[#ff6b6b]/40 text-[#ff6b6b]">● SGD (剧烈震荡)</div>
+            <div class="p-2 rounded bg-[#0d1117] border border-[#f0b429]/40 text-[#f0b429]">● SGD+Momentum</div>
+            <div class="p-2 rounded bg-[#0d1117] border border-[#58c4dd]/40 text-[#58c4dd]">● Adam (自适应)</div>
+            <div class="p-2 rounded bg-[#0d1117] border border-[#c084fc]/40 text-[#c084fc] font-bold">● AdamW (解耦L2)</div>
+          </div>
+        </div>
+
+        <!-- Adam vs AdamW Math Formula Comparison (5 cols) -->
+        <div class="lg:col-span-5 bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <h3 class="text-base font-bold text-[#e6edf3]">Adam vs AdamW 核心解耦数学</h3>
+            
+            <!-- Traditional Adam -->
+            <div class="p-3 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1 text-xs">
+              <span class="text-[#ff6b6b] font-bold font-mono">1. 传统 Adam (耦合 Weight Decay):</span>
+              <div class="math-block text-xs my-1">
+                <span class="math">g<sub>t</sub> ← g<sub>t</sub> + λ · θ<sub>t-1</sub></span> <span class="text-[#8b949e] text-[10px] block">(混入梯度)</span>
+                <span class="math">θ<sub>t</sub> ← θ<sub>t-1</sub> - η · </span>
+                <div class="frac">
+                  <span class="num">m̂<sub>t</sub></span>
+                  <span class="den">&radic;<span class="border-t border-gray-400">v̂<sub>t</sub></span> + ε</span>
+                </div>
+              </div>
+              <p class="text-[#8b949e] text-[11px]">
+                <strong class="text-[#ff6b6b]">缺陷：</strong>正则化项 <span class="math">λθ</span> 被除以二阶矩 <span class="math">&radic;v̂<sub>t</sub></span>。梯度大的参数惩罚反而变小！
+              </p>
+            </div>
+
+            <!-- AdamW -->
+            <div class="p-3 rounded-xl bg-[#0d1117] border border-[#c084fc]/50 bg-[#c084fc]/5 space-y-1 text-xs">
+              <span class="text-[#c084fc] font-bold font-mono">2. AdamW (解耦 Weight Decay):</span>
+              <div class="math-block text-xs my-1 border-l-[#c084fc]">
+                <span class="math">θ<sub>t</sub> ← θ<sub>t-1</sub> - η · </span>
+                <div class="frac">
+                  <span class="num">m̂<sub>t</sub></span>
+                  <span class="den">&radic;<span class="border-t border-gray-400">v̂<sub>t</sub></span> + ε</span>
+                </div>
+                <span class="math"> - η · λ · θ<sub>t-1</sub></span>
+              </div>
+              <p class="text-[#8b949e] text-[11px]">
+                <strong class="text-[#c084fc]">解耦优势：</strong>先算梯度自适应步长，再直接按固定比例衰减权重。全模型所有层衰减强度完全一致！
+              </p>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-[#0d1117] border border-[#233044] text-[11px] text-[#8b949e]">
+            💡 <strong class="text-[#e6edf3]">工程结论：</strong>训练 Transformer 时，绝对不要使用 <span class="font-mono text-[#58c4dd]">torch.optim.Adam(..., weight_decay=0.1)</span>，必须统一换为 <span class="font-mono text-[#c084fc]">torch.optim.AdamW</span>！
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= MODULE 6.3B: LR SCHEDULER LAB ================= -->
+    <section id="lr-scheduler" class="space-y-6">
+      <div class="flex items-center space-x-3 border-b border-[#233044] pb-3">
+        <span class="h-6 w-1.5 bg-[#f0b429] rounded-full"></span>
+        <h2 class="text-xl sm:text-2xl font-bold text-[#e6edf3]">
+          Module 6.3B：学习率调度实验室 —— Warmup + Cosine Decay
+        </h2>
+      </div>
+
+      <div class="bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          <!-- Interactive Curve Canvas (7 cols) -->
+          <div class="lg:col-span-7 space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base font-bold text-[#e6edf3]">Warmup + Cosine 实时学习率曲线</h3>
+              <button onclick="toggleStepPlay()" id="lr-play-btn" class="px-3 py-1 rounded-lg text-xs font-bold border border-[#f0b429] bg-[#f0b429]/10 text-[#f0b429]">
+                ▶ 播放训练进度
+              </button>
+            </div>
+
+            <div class="relative w-full h-64 bg-[#0d1117] border border-[#233044] rounded-xl overflow-hidden">
+              <canvas id="lr-canvas" class="w-full h-full block"></canvas>
+            </div>
+
+            <!-- Legend & Phase Badges -->
+            <div class="flex items-center justify-between text-xs font-mono">
+              <span class="flex items-center gap-1.5">
+                <span class="w-3 h-3 rounded-full bg-[#f0b429]"></span> 线性升温 Warmup 阶段
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="w-3 h-3 rounded-full bg-[#58c4dd]"></span> 余弦退火 Cosine Decay 阶段
+              </span>
+            </div>
+          </div>
+
+          <!-- Interactive Sliders & Status Panel (5 cols) -->
+          <div class="lg:col-span-5 space-y-5 flex flex-col justify-between">
+            <div class="space-y-4">
+              <h3 class="text-base font-bold text-[#e6edf3]">调度器超参数实时调优</h3>
+              
+              <!-- Slider 1: Warmup steps -->
+              <div class="space-y-1 text-xs font-mono">
+                <div class="flex justify-between">
+                  <span class="text-[#8b949e]">warmup_steps:</span>
+                  <span id="warmup-val-label" class="text-[#f0b429] font-bold">200 步</span>
+                </div>
+                <input type="range" id="warmup-slider" min="0" max="400" value="200" oninput="updateLRParams()"
+                       class="w-full accent-[#f0b429] bg-[#233044] h-1.5 rounded-lg cursor-pointer">
+              </div>
+
+              <!-- Slider 2: Total steps -->
+              <div class="space-y-1 text-xs font-mono">
+                <div class="flex justify-between">
+                  <span class="text-[#8b949e]">total_steps:</span>
+                  <span id="total-val-label" class="text-[#58c4dd] font-bold">1000 步</span>
+                </div>
+                <input type="range" id="total-slider" min="500" max="2000" value="1000" step="50" oninput="updateLRParams()"
+                       class="w-full accent-[#58c4dd] bg-[#233044] h-1.5 rounded-lg cursor-pointer">
+              </div>
+
+              <!-- Slider 3: Max LR -->
+              <div class="space-y-1 text-xs font-mono">
+                <div class="flex justify-between">
+                  <span class="text-[#8b949e]">max_lr:</span>
+                  <span id="maxlr-val-label" class="text-[#c084fc] font-bold">5.0e-4</span>
+                </div>
+                <input type="range" id="maxlr-slider" min="1" max="10" value="5" oninput="updateLRParams()"
+                       class="w-full accent-[#c084fc] bg-[#233044] h-1.5 rounded-lg cursor-pointer">
+              </div>
+
+              <!-- Slider 4: Current step cursor -->
+              <div class="space-y-1 text-xs font-mono pt-2 border-t border-[#233044]">
+                <div class="flex justify-between">
+                  <span class="text-[#8b949e]">当前训练 Step 游标:</span>
+                  <span id="step-cursor-label" class="text-[#4ade80] font-bold">Step 150</span>
+                </div>
+                <input type="range" id="step-slider" min="0" max="1000" value="150" oninput="updateLRParams()"
+                       class="w-full accent-[#4ade80] bg-[#233044] h-2 rounded-lg cursor-pointer">
+              </div>
+            </div>
+
+            <!-- Status Box -->
+            <div id="lr-status-box" class="p-4 rounded-xl border border-[#f0b429]/40 bg-[#f0b429]/5 space-y-2 text-xs font-mono">
+              <div class="flex justify-between items-center">
+                <span class="text-[#8b949e]">当前状态：</span>
+                <span id="lr-phase-badge" class="px-2 py-0.5 rounded text-[11px] font-bold bg-[#f0b429] text-black">🔥 Warmup 升温期</span>
+              </div>
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-[#8b949e]">计算精确 lr:</span>
+                <span id="current-lr-calc" class="text-[#f0b429] font-bold text-base">3.750e-4</span>
+              </div>
+              <p id="lr-intuition-text" class="text-[11px] text-[#8b949e] leading-relaxed pt-1 border-t border-[#233044]">
+                试探期：刚开始梯度方向极度不稳定，用很小的学习率从 0 慢慢升温，防止参数在初始步直接发散。
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= MODULE 6.3C: GRADIENT CLIPPING LAB ================= -->
+    <section id="grad-clip" class="space-y-6">
+      <div class="flex items-center space-x-3 border-b border-[#233044] pb-3">
+        <span class="h-6 w-1.5 bg-[#4ade80] rounded-full"></span>
+        <h2 class="text-xl sm:text-2xl font-bold text-[#e6edf3]">
+          Module 6.3C：梯度裁剪（Gradient Clipping）安全带实验室
+        </h2>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- 2D Vector Space Canvas (7 cols) -->
+        <div class="lg:col-span-7 bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-4">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+            <div>
+              <h3 class="text-base font-bold text-[#e6edf3]">2D 梯度向量空间 &amp; 安全阈值球体</h3>
+              <p class="text-xs text-[#8b949e]">绿色虚线圆圈代表 <span class="font-mono text-[#4ade80]">max_norm</span> 安全边界（可拖拽画布调整向量）</p>
+            </div>
+            <!-- Preset Buttons -->
+            <div class="flex items-center space-x-1 text-xs">
+              <button onclick="setVectorPreset(0.6)" class="px-2 py-1 rounded bg-[#0d1117] border border-[#233044] hover:text-[#58c4dd]">正常 ||g||=0.6</button>
+              <button onclick="setVectorPreset(2.5)" class="px-2 py-1 rounded bg-[#0d1117] border border-[#233044] hover:text-[#f0b429]">Batch尖峰 ||g||=2.5</button>
+              <button onclick="setVectorPreset(4.2)" class="px-2 py-1 rounded bg-[#0d1117] border border-[#233044] hover:text-[#ff6b6b]">爆炸 ||g||=4.2</button>
+            </div>
+          </div>
+
+          <!-- Canvas -->
+          <div class="relative w-full h-64 bg-[#0d1117] border border-[#233044] rounded-xl overflow-hidden cursor-crosshair" id="clip-canvas-container">
+            <canvas id="clip-canvas" class="w-full h-full block"></canvas>
+          </div>
+
+          <!-- Max Norm Slider -->
+          <div class="flex items-center justify-between gap-4 font-mono text-xs">
+            <span class="text-[#8b949e] whitespace-nowrap">max_norm 阈值:</span>
+            <input type="range" id="maxnorm-slider" min="0.5" max="3.0" step="0.1" value="1.5" oninput="drawClipCanvas()"
+                   class="w-full accent-[#4ade80] bg-[#233044] h-1.5 rounded-lg cursor-pointer">
+            <span id="maxnorm-label" class="text-[#4ade80] font-bold">1.5</span>
+          </div>
+        </div>
+
+        <!-- Math Formulas & Execution Order (5 cols) -->
+        <div class="lg:col-span-5 bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-5 flex flex-col justify-between">
+          <div class="space-y-4">
+            <h3 class="text-base font-bold text-[#e6edf3]">裁剪数学公式与几何验证</h3>
+
+            <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3 font-mono text-xs">
+              <div class="text-[#8b949e]">按范数按比例缩放公式：</div>
+              <div class="math-block text-xs border-l-[#4ade80]">
+                <span class="math">g<sub>clipped</sub> = g · </span>
+                <div class="frac">
+                  <span class="num">max_norm</span>
+                  <span class="den">max(max_norm, ‖g‖)</span>
+                </div>
+              </div>
+
+              <!-- Computed Metric Readout -->
+              <div class="grid grid-cols-2 gap-2 pt-2 border-t border-[#233044]">
+                <div>
+                  <span class="text-[#8b949e] block text-[11px]">原始范数 ‖g‖:</span>
+                  <span id="orig-norm-val" class="text-[#ff6b6b] font-bold text-sm">2.50</span>
+                </div>
+                <div>
+                  <span class="text-[#8b949e] block text-[11px]">裁剪后范数 ‖g'‖:</span>
+                  <span id="clipped-norm-val" class="text-[#4ade80] font-bold text-sm">1.50</span>
+                </div>
+                <div>
+                  <span class="text-[#8b949e] block text-[11px]">向量夹角变化:</span>
+                  <span class="text-[#58c4dd] font-bold text-sm">0.00° (方向不变)</span>
+                </div>
+                <div>
+                  <span class="text-[#8b949e] block text-[11px]">安全状态:</span>
+                  <span id="clip-safety-tag" class="text-[#4ade80] font-bold text-sm">已触发按比例缩放</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Execution Order Workflow Diagram -->
+            <div class="space-y-2">
+              <div class="text-xs font-mono font-bold text-[#8b949e] uppercase">严格执行顺序 Workflow</div>
+              <div class="flex items-center justify-between p-2.5 rounded-lg bg-[#0d1117] border border-[#233044] text-[11px] font-mono">
+                <span class="text-[#58c4dd]">1. loss.backward()</span>
+                <span class="text-[#8b949e]">→</span>
+                <span class="text-[#4ade80] font-bold">2. clip_grad_norm_()</span>
+                <span class="text-[#8b949e]">→</span>
+                <span class="text-[#c084fc]">3. optimizer.step()</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-[#0d1117] border border-[#233044] text-[11px] text-[#8b949e]">
+            ⚠️ <strong class="text-[#ff6b6b]">致命顺序坑：</strong>必须在 <span class="font-mono text-[#c084fc]">optimizer.step()</span> 之前执行裁剪！否则带有巨大异常值的梯度会直接破坏 Adam 的一阶与二阶动量积累！
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= MODULE 6.4: CODE HUB & INTERACTIVE QUIZ ================= -->
+    <section id="code-quiz" class="space-y-6">
+      <div class="flex items-center space-x-3 border-b border-[#233044] pb-3">
+        <span class="h-6 w-1.5 bg-[#58c4dd] rounded-full"></span>
+        <h2 class="text-xl sm:text-2xl font-bold text-[#e6edf3]">
+          Module 6.4：PyTorch 实战代码库 + 4 道互动测验
+        </h2>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Code Tab Showcase (6 cols) -->
+        <div class="lg:col-span-6 bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-4 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between border-b border-[#233044] pb-3">
+              <div class="flex space-x-2">
+                <button onclick="switchCodeTab(0)" id="code-tab-0" class="px-3 py-1 rounded-lg text-xs font-mono font-bold border border-[#58c4dd] bg-[#58c4dd]/10 text-[#58c4dd]">1. train_step.py</button>
+                <button onclick="switchCodeTab(1)" id="code-tab-1" class="px-3 py-1 rounded-lg text-xs font-mono font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]">2. lr_schedule.py</button>
+                <button onclick="switchCodeTab(2)" id="code-tab-2" class="px-3 py-1 rounded-lg text-xs font-mono font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]">3. mask.py</button>
+              </div>
+              <button onclick="copyCodeSnippet()" class="px-2.5 py-1 rounded text-[11px] font-mono border border-[#233044] bg-[#0d1117] text-[#8b949e] hover:text-[#e6edf3] transition">
+                📋 复制
+              </button>
+            </div>
+
+            <!-- Code display area -->
+            <pre class="mt-4 p-4 rounded-xl bg-[#0d1117] border border-[#233044] text-xs font-mono text-[#e6edf3] overflow-x-auto leading-relaxed max-h-96" id="code-block-display"></pre>
+          </div>
+
+          <div class="text-[11px] text-[#8b949e] font-mono">
+            所有示例代码均已在 PyTorch 2.x 中严格验证，可直接复制粘贴部署生产！
+          </div>
+        </div>
+
+        <!-- 4 Interactive Quiz Cards (6 cols) -->
+        <div class="lg:col-span-6 bg-[#141b26] border border-[#233044] rounded-2xl p-6 space-y-5">
+          <div class="flex items-center justify-between border-b border-[#233044]/60 pb-3">
+            <div>
+              <h3 class="text-base font-bold text-[#e6edf3]">核心知识点诊断自测</h3>
+              <p class="text-xs text-[#8b949e]">完成 4 道互动题以检验训练机制掌握程度</p>
+            </div>
+            <div id="quiz-score-badge" class="px-3 py-1 rounded-full text-xs font-mono font-bold border border-[#58c4dd]/40 bg-[#58c4dd]/10 text-[#58c4dd]">
+              得分: 0 / 4
+            </div>
+          </div>
+
+          <!-- Quiz Container -->
+          <div class="space-y-4" id="quiz-container">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Preview Footer for Part 2 -->
+  <footer class="mt-auto border-t border-[#233044] bg-[#0d1117]/90 py-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-3">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono bg-[#c084fc]/10 text-[#c084fc] border border-[#c084fc]/30">
+        NEXT CHAPTER PREVIEW
+      </div>
+      <h3 class="text-base sm:text-lg font-bold text-[#e6edf3]">
+        下一节（第 6 章 下）：混合精度 BF16/FP16、分布式 3D 并行与 DeepSpeed ZeRO/FSDP
+      </h3>
+      <p class="text-xs text-[#8b949e] max-w-2xl mx-auto">
+        我们将彻底解锁海量参数大模型的显存极限与算力吞吐：包含互动式 GPU 显存估算器、ZeRO-1/2/3 切片原理与 Megatron-LM 张量并行机制。
+      </p>
+      <div class="pt-2 text-xs text-[#8b949e] font-mono">
+        © 3Blue1Brown 暗黑数学视觉规范 · LLM 交互式可视化教程库
+      </div>
+    </div>
+  </footer>
+
+  <!-- Dynamic Application Script -->
+  <script>
+    // High-DPI Canvas Helper
+    function setupCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width: rect.width, height: rect.height };
+    }
+
+    // ================= 1. HERO STEP CAPSULES =================
+    const loopStepData = [
+      {
+        title: "① 前向传播计算 Logits (B, L, V)",
+        code: `logits = model(input_ids) # shape: (batch_size, seq_len, vocab_size)\n# 这里的 logits 尚未经过 Softmax 归一化`,
+        desc: "模型根据位置 0...i 的上下文，在整个词表中输出未归一化的原始打分向量。保持 raw logits 可以与 CrossEntropy 在数值上更稳定地融合。"
+      },
+      {
+        title: "② 摊平张量并计算 CrossEntropy Loss",
+        code: `loss = F.cross_entropy(\n    logits.view(-1, vocab_size),\n    labels.view(-1),\n    ignore_index=-100\n)`,
+        desc: "将 (B, L, V) 展开为 (B*L, V)，labels 展开为 (B*L)。ignore_index=-100 会自动排除填充位的无效损失。"
+      },
+      {
+        title: "③ 反向传播与梯度裁剪 (clip_grad_norm_)",
+        code: `optimizer.zero_grad()\nloss.backward()\ntorch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)`,
+        desc: "计算损失关于模型权重的梯度，随后立刻按 L2 范数截断异常梯度的模长，防止深层梯度爆炸破坏参数。"
+      },
+      {
+        title: "④ AdamW 优化器更新与 LR 调度",
+        code: `optimizer.step()\nscheduler.step()`,
+        desc: "AdamW 执行自适应一阶/二阶动量更新，并叠加独立的比例权重衰减 (Weight Decay)。LR 调度器同步更新下一步步长。"
+      }
+    ];
+
+    function selectLoopStep(idx) {
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById(`capsule-${i}`);
+        if (i === idx) {
+          btn.className = "capsule-btn p-4 rounded-xl border border-[#58c4dd] bg-[#58c4dd]/10 text-left transition transform hover:-translate-y-0.5 glow-active";
+        } else {
+          btn.className = "capsule-btn p-4 rounded-xl border border-[#233044] bg-[#141b26] text-left transition transform hover:-translate-y-0.5 opacity-70";
+        }
+      }
+      const data = loopStepData[idx];
+      document.getElementById('loop-detail-box').innerHTML = `
+        <div class="text-[#58c4dd] font-bold text-sm mb-1">${data.title}</div>
+        <pre class="bg-[#141b26] p-2.5 rounded border border-[#233044] text-[#e6edf3] text-xs overflow-x-auto">${data.code}</pre>
+        <p class="text-[#8b949e] text-xs leading-relaxed mt-1">${data.desc}</p>
+      `;
+    }
+
+    // ================= 2. MODULE 6.1: NEXT TOKEN & LOSS DIAGNOSTIC =================
+    const sentences = [
+      { text: ["我", "爱", "机器", "学习", "。"], ids: [45, 231, 887, 1024, 13] },
+      { text: ["今", "天", "天", "气", "真", "好"], ids: [102, 54, 54, 309, 88, 77] },
+      { text: ["Transform", "er", "很", "强", "大"], ids: [990, 412, 12, 560, 89] }
+    ];
+    let currentSentIdx = 0;
+    let currentPos = 0;
+
+    function setSentence(idx) {
+      currentSentIdx = idx;
+      for (let i = 0; i < 3; i++) {
+        const btn = document.getElementById(`sent-btn-${i}`);
+        if (i === idx) {
+          btn.className = "px-3 py-1 rounded-lg text-xs font-medium border border-[#58c4dd] bg-[#58c4dd]/10 text-[#58c4dd]";
+        } else {
+          btn.className = "px-3 py-1 rounded-lg text-xs font-medium border border-[#233044] bg-[#0d1117] text-[#8b949e]";
+        }
+      }
+      renderSentenceVisual();
+    }
+
+    function renderSentenceVisual() {
+      const sent = sentences[currentSentIdx];
+      const L = sent.text.length - 1;
+
+      // Full tokens
+      const fullContainer = document.getElementById('full-tokens-container');
+      fullContainer.innerHTML = sent.text.map((t, idx) => `
+        <span class="px-2.5 py-1 rounded-md bg-[#141b26] border border-[#233044] font-mono text-xs">
+          ${t} <span class="text-[#8b949e] text-[10px]">#${sent.ids[idx]}</span>
+        </span>
+      `).join('');
+
+      // Input ids (tokens[:-1])
+      const inputContainer = document.getElementById('input-ids-container');
+      inputContainer.innerHTML = sent.text.slice(0, L).map((t, idx) => `
+        <span class="px-2 py-0.5 rounded bg-[#58c4dd]/10 border border-[#58c4dd]/40 font-mono text-xs text-[#58c4dd]">
+          [${idx}] ${t}
+        </span>
+      `).join('');
+      document.getElementById('input-len-badge').innerText = `L=${L}`;
+
+      // Labels (tokens[1:])
+      const labelContainer = document.getElementById('labels-container');
+      labelContainer.innerHTML = sent.text.slice(1).map((t, idx) => `
+        <span class="px-2 py-0.5 rounded bg-[#f0b429]/10 border border-[#f0b429]/40 font-mono text-xs text-[#f0b429]">
+          [${idx}] ${t}
+        </span>
+      `).join('');
+      document.getElementById('label-len-badge').innerText = `L=${L}`;
+
+      // Reset slider range
+      const slider = document.getElementById('pos-slider');
+      slider.max = L - 1;
+      slider.value = 0;
+      updatePosInspector(0);
+    }
+
+    function updatePosInspector(val) {
+      currentPos = parseInt(val);
+      const sent = sentences[currentSentIdx];
+      document.getElementById('pos-index-label').innerText = `i = ${currentPos}`;
+
+      const visible = sent.text.slice(0, currentPos + 1).map(t => `「${t}」`).join(', ');
+      const masked = sent.text.slice(currentPos + 1).map(t => `「${t}」`).join(', ');
+      const targetToken = sent.text[currentPos + 1];
+      const targetId = sent.ids[currentPos + 1];
+
+      document.getElementById('visible-context-str').innerText = visible;
+      document.getElementById('masked-tokens-str').innerText = masked || '无 (已到达末尾)';
+      document.getElementById('target-label-str').innerText = `「${targetToken}」 (Token #${targetId})`;
+    }
+
+    // Loss Diagnostic Instrument Canvas
+    let activeVocab = 32000;
+    let activeCurvePreset = 0;
+
+    function setVocab(v) {
+      activeVocab = v;
+      [1000, 13000, 32000, 50257].forEach(val => {
+        const btn = document.getElementById(`vocab-btn-${val}`);
+        if (val === v) {
+          btn.className = "px-2 py-1 rounded border border-[#58c4dd] bg-[#58c4dd]/10 text-[#58c4dd] font-bold";
+        } else {
+          btn.className = "px-2 py-1 rounded border border-[#233044] bg-[#0d1117] text-[#8b949e]";
+        }
+      });
+      document.getElementById('theoretical-loss-val').innerText = Math.log(v).toFixed(2);
+      drawLossCanvas();
+    }
+
+    function setCurvePreset(idx) {
+      activeCurvePreset = idx;
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById(`curve-btn-${i}`);
+        if (i === idx) {
+          const colors = ['#4ade80', '#ff6b6b', '#f0b429', '#ff6b6b'];
+          btn.className = `px-3 py-1 rounded-lg border border-[${colors[i]}] bg-[${colors[i]}]/10 text-[${colors[i]}] font-bold`;
+        } else {
+          btn.className = "px-3 py-1 rounded-lg border border-[#233044] bg-[#0d1117] text-[#8b949e]";
+        }
+      }
+      updateDiagnosticText(idx);
+      drawLossCanvas();
+    }
+
+    function updateDiagnosticText(idx) {
+      const card = document.getElementById('loss-diag-card');
+      const title = document.getElementById('diag-title');
+      const desc = document.getElementById('diag-desc');
+      const vLoss = Math.log(activeVocab).toFixed(2);
+
+      if (idx === 0) {
+        card.className = "p-3 rounded-xl border border-[#4ade80]/30 bg-[#4ade80]/5 text-xs space-y-1";
+        title.className = "font-bold text-[#4ade80]";
+        title.innerText = "诊断结果：健康训练轨迹";
+        desc.innerText = `初始 Loss 紧贴 ${vLoss} 理论基线开局，随后平滑下降并渐进收敛至 ~2.5，无溢出或泄露。`;
+      } else if (idx === 1) {
+        card.className = "p-3 rounded-xl border border-[#ff6b6b]/30 bg-[#ff6b6b]/5 text-xs space-y-1";
+        title.className = "font-bold text-[#ff6b6b]";
+        title.innerText = "🚨 诊断报警：致命标签泄露 (Label Leakage)";
+        desc.innerText = `Loss 在前 5 步瞬间陡降至 0.01 附近。原因：误将 input_ids 与 labels 完全对齐，模型学会直接抄答案！`;
+      } else if (idx === 2) {
+        card.className = "p-3 rounded-xl border border-[#f0b429]/30 bg-[#f0b429]/5 text-xs space-y-1";
+        title.className = "font-bold text-[#f0b429]";
+        title.innerText = "⚠️ 诊断警报：梯度卡死 / 学习率极度偏小";
+        desc.innerText = `Loss 从初始 ${vLoss} 长期横盘无法下潜。原因：Learning Rate 设得太小，或忘开反向传播/梯度被意外清零。`;
+      } else {
+        card.className = "p-3 rounded-xl border border-[#ff6b6b]/30 bg-[#ff6b6b]/5 text-xs space-y-1";
+        title.className = "font-bold text-[#ff6b6b]";
+        title.innerText = "💥 诊断爆表：学习率过大 / 梯度爆炸 (NaN)";
+        desc.innerText = `Loss 震荡攀升随后直接飙升至 NaN。原因：没有开启梯度裁剪 (clip_grad_norm_) 或 max_lr 设过高。`;
+      }
+    }
+
+    function drawLossCanvas() {
+      const canvas = document.getElementById('loss-canvas');
+      if (!canvas) return;
+      const { ctx, width, height } = setupCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      const initLoss = Math.log(activeVocab);
+      const padding = 30;
+      const graphW = width - padding * 2;
+      const graphH = height - padding * 2;
+
+      // Draw Grid
+      ctx.strokeStyle = '#233044';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = 0; y <= 4; y++) {
+        const py = padding + (graphH / 4) * y;
+        ctx.moveTo(padding, py);
+        ctx.lineTo(width - padding, py);
+      }
+      ctx.stroke();
+
+      // Theoretical baseline dashed line
+      const baselineY = padding + graphH * (1 - initLoss / 12);
+      ctx.strokeStyle = '#f0b429';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(padding, baselineY);
+      ctx.lineTo(width - padding, baselineY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#f0b429';
+      ctx.font = '10px monospace';
+      ctx.fillText(`ln(V) = ${initLoss.toFixed(2)}`, width - padding - 80, baselineY - 4);
+
+      // Curve Points Generation
+      const steps = 100;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+
+      if (activeCurvePreset === 0) { // Normal
+        ctx.strokeStyle = '#4ade80';
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const val = initLoss * Math.exp(-3 * t) + 2.5 * (1 - Math.exp(-3 * t)) + (Math.random() - 0.5) * 0.08;
+          const x = padding + t * graphW;
+          const y = padding + graphH * (1 - val / 12);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+      } else if (activeCurvePreset === 1) { // Label Leak
+        ctx.strokeStyle = '#ff6b6b';
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const val = t < 0.05 ? initLoss * (1 - t / 0.05) : 0.01;
+          const x = padding + t * graphW;
+          const y = padding + graphH * (1 - val / 12);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+      } else if (activeCurvePreset === 2) { // Stuck
+        ctx.strokeStyle = '#f0b429';
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const val = initLoss - t * 0.3 + (Math.random() - 0.5) * 0.05;
+          const x = padding + t * graphW;
+          const y = padding + graphH * (1 - val / 12);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+      } else { // NaN Divergence
+        ctx.strokeStyle = '#ff6b6b';
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          let val = initLoss + Math.pow(t * 2, 2.5);
+          if (val > 11.5) val = 11.5;
+          const x = padding + t * graphW;
+          const y = padding + graphH * (1 - val / 12);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+    }
+
+    // ================= 3. MODULE 6.2: PITFALLS LAB =================
+    function switchPitfallTab(tabIdx) {
+      for (let i = 0; i < 3; i++) {
+        const btn = document.getElementById(`pit-tab-${i}`);
+        const content = document.getElementById(`pitfall-content-${i}`);
+        if (i === tabIdx) {
+          btn.className = "px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border border-[#ff6b6b] bg-[#ff6b6b]/10 text-[#ff6b6b] whitespace-nowrap";
+          content.classList.remove('hidden');
+        } else {
+          btn.className = "px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e] hover:text-[#e6edf3] whitespace-nowrap";
+          content.classList.add('hidden');
+        }
+      }
+    }
+
+    // Pitfall 1: Label Alignment
+    function toggleLabelAlign(isRight) {
+      const wrongBtn = document.getElementById('align-wrong-btn');
+      const rightBtn = document.getElementById('align-right-btn');
+      const box = document.getElementById('label-align-display');
+
+      if (isRight) {
+        wrongBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]";
+        rightBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold border border-[#4ade80] bg-[#4ade80]/20 text-[#4ade80]";
+
+        box.className = "p-4 rounded-xl border border-[#4ade80]/40 bg-[#4ade80]/5 space-y-4";
+        box.innerHTML = `
+          <div class="flex justify-between items-center text-xs font-mono">
+            <span class="text-[#4ade80] font-bold">✔ 正确错开一位对齐方式 (Right Alignment)</span>
+            <span class="text-[#58c4dd]">Loss 收敛至正常数值 (~2.5)</span>
+          </div>
+          <div class="grid grid-cols-2 gap-4 text-xs font-mono">
+            <div class="p-2 rounded bg-[#0d1117] border border-[#233044]">input_ids: ["我", "爱", "机器", "学习"]</div>
+            <div class="p-2 rounded bg-[#0d1117] border border-[#f0b429]/40 text-[#f0b429]">labels: ["爱", "机器", "学习", "。"]</div>
+          </div>
+          <p class="text-[11px] text-[#8b949e] leading-relaxed">
+            位置 0 看到的输入是「我」，需要预测目标「爱」。模型强制通过注意力机制抽取语义信息，真正掌握语言规律。
+          </p>
+        `;
+      } else {
+        wrongBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold border border-[#ff6b6b] bg-[#ff6b6b]/20 text-[#ff6b6b]";
+        rightBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]";
+
+        box.className = "p-4 rounded-xl border border-[#ff6b6b]/40 bg-[#ff6b6b]/5 space-y-4";
+        box.innerHTML = `
+          <div class="flex justify-between items-center text-xs font-mono">
+            <span class="text-[#ff6b6b] font-bold">❌ 错误对齐方式 (Label Leakage)</span>
+            <span class="text-[#ff6b6b]">Loss 瞬间下降为 0.00</span>
+          </div>
+          <div class="grid grid-cols-2 gap-4 text-xs font-mono">
+            <div class="p-2 rounded bg-[#0d1117] border border-[#ff6b6b]/40">input_ids: ["我", "爱", "机器", "学习"]</div>
+            <div class="p-2 rounded bg-[#0d1117] border border-[#ff6b6b]/40 text-[#ff6b6b]">labels: ["我", "爱", "机器", "学习"]</div>
+          </div>
+          <p class="text-[11px] text-[#8b949e] leading-relaxed">
+            位置 0 的输入是「我」，预测目标竟然也是「我」！模型发现只需将输入原封不动输出 (f(x)=x) 即可达到 0 损失，全然学不到任何上下文预测能力。
+          </p>
+        `;
+      }
+    }
+
+    // Pitfall 2: Causal Mask
+    let isCausalMaskOn = true;
+    function toggleCausalMask() {
+      isCausalMaskOn = !isCausalMaskOn;
+      const btn = document.getElementById('mask-toggle-btn');
+      const box = document.getElementById('attn-diag-box');
+      const title = document.getElementById('attn-diag-title');
+      const desc = document.getElementById('attn-diag-desc');
+
+      if (isCausalMaskOn) {
+        btn.className = "px-4 py-1.5 rounded-lg text-xs font-bold border border-[#4ade80] bg-[#4ade80]/10 text-[#4ade80]";
+        btn.innerText = "因果掩码：开启 [ON]";
+        box.className = "p-4 rounded-xl border border-[#4ade80]/30 bg-[#4ade80]/5 space-y-2 text-xs";
+        title.className = "font-bold text-[#4ade80] text-sm";
+        title.innerText = "状态：安全遮罩中";
+        desc.innerHTML = '下三角矩阵已启用。<span class="text-[#58c4dd]">Token 0 (我)</span> 的 Query 只能看见左侧已生成内容，右上角未来 Token 权重全被设为 <span class="math font-bold">-∞</span> (Softmax 后变成 0)。推理与训练机制严格对齐！';
+      } else {
+        btn.className = "px-4 py-1.5 rounded-lg text-xs font-bold border border-[#ff6b6b] bg-[#ff6b6b]/20 text-[#ff6b6b]";
+        btn.innerText = "因果掩码：关闭 [OFF] (偷看未来)";
+        box.className = "p-4 rounded-xl border border-[#ff6b6b]/30 bg-[#ff6b6b]/5 space-y-2 text-xs";
+        title.className = "font-bold text-[#ff6b6b] text-sm";
+        title.innerText = "🚨 警告：全图偷看泄漏中";
+        desc.innerHTML = '<span class="text-[#ff6b6b] font-bold">警告：</span>缺少下三角掩码！Token 0 (我) 在训练阶段能直接看到右侧位置 1~3 (爱/机器/学习) 的向量表示，导致“训练偷看答案，推理一秒崩溃”。';
+      }
+      renderAttnGrid();
+    }
+
+    function renderAttnGrid() {
+      const grid = document.getElementById('attn-matrix-grid');
+      const tokens = ["我", "爱", "机器", "学"];
+      let html = '';
+      for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+          const isAllowed = isCausalMaskOn ? (c <= r) : true;
+          if (isAllowed) {
+            html += `<div class="p-2 rounded bg-[#58c4dd]/10 border border-[#58c4dd]/40 text-[#58c4dd]">1</div>`;
+          } else {
+            html += `<div class="p-2 rounded bg-[#ff6b6b]/20 border border-[#ff6b6b]/50 text-[#ff6b6b] font-bold">0 (-∞)</div>`;
+          }
+        }
+      }
+      grid.innerHTML = html;
+    }
+
+    // Pitfall 3: Padding Mask (-100)
+    function setPadIgnore(isIgnored) {
+      const unmaskBtn = document.getElementById('pad-unmask-btn');
+      const maskBtn = document.getElementById('pad-mask-btn');
+      const padTag = document.getElementById('pad-status-tag');
+      const lossVal = document.getElementById('pad-calculated-loss');
+      const realContrib = document.getElementById('real-token-contrib');
+      const realBar = document.getElementById('real-bar');
+      const padBar = document.getElementById('pad-bar');
+      const text = document.getElementById('pad-explanation-text');
+
+      if (isIgnored) {
+        unmaskBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]";
+        maskBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold border border-[#4ade80] bg-[#4ade80]/10 text-[#4ade80]";
+        padTag.innerText = "label=-100";
+        padTag.className = "text-[#4ade80]";
+        lossVal.innerText = "2.84";
+        lossVal.className = "text-base font-bold text-[#4ade80]";
+        realContrib.innerText = "100%";
+        realBar.style.width = "100%";
+        padBar.style.width = "0%";
+        text.innerHTML = '<span class="text-[#4ade80] font-bold">正确做法：</span>设置 <span class="font-mono text-[#f0b429]">ignore_index=-100</span>，PyTorch 会在算 Loss 时直接跳过最后 3 个 &lt;pad&gt;，分母只除以实际 4 个有效词，梯度的每一个方向都是纯粹的语言信号。';
+      } else {
+        unmaskBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold border border-[#ff6b6b] bg-[#ff6b6b]/20 text-[#ff6b6b]";
+        maskBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]";
+        padTag.innerText = "label=0 (未屏蔽)";
+        padTag.className = "text-[#ff6b6b]";
+        lossVal.innerText = "1.62 (虚低被稀释)";
+        lossVal.className = "text-base font-bold text-[#ff6b6b]";
+        realContrib.innerText = "57% (43% 污染噪声)";
+        realBar.style.width = "57%";
+        padBar.style.width = "43%";
+        text.innerHTML = '<span class="text-[#ff6b6b] font-bold">致命缺陷：</span>未屏蔽 Padding 时，<pad> 标签被误认为正常词表 Token 0。模型强行去预测无意义的填充符，导致 Loss 算术平均被严重稀释，模型学到一堆无用噪声！';
+      }
+    }
+
+    // ================= 4. MODULE 6.3A: ADAMW & RACE =================
+    let isRacing = false;
+    let raceFrame = 0;
+    let particles = [
+      { name: 'SGD', x: 20, y: 180, vx: 0, vy: 0, color: '#ff6b6b', path: [] },
+      { name: 'Momentum', x: 20, y: 180, vx: 0, vy: 0, color: '#f0b429', path: [] },
+      { name: 'Adam', x: 20, y: 180, vx: 0, vy: 0, color: '#58c4dd', path: [] },
+      { name: 'AdamW', x: 20, y: 180, vx: 0, vy: 0, color: '#c084fc', path: [] }
+    ];
+
+    function toggleRace() {
+      isRacing = !isRacing;
+      const btn = document.getElementById('race-play-btn');
+      btn.innerText = isRacing ? "⏸ 暂停" : "▶ 开始比赛";
+    }
+
+    function resetRace() {
+      isRacing = false;
+      document.getElementById('race-play-btn').innerText = "▶ 开始比赛";
+      raceFrame = 0;
+      particles.forEach(p => {
+        p.x = 25;
+        p.y = 35;
+        p.vx = 0;
+        p.vy = 0;
+        p.path = [];
+      });
+      drawRaceCanvas();
+    }
+
+    function drawRaceCanvas() {
+      const canvas = document.getElementById('race-canvas');
+      if (!canvas) return;
+      const { ctx, width, height } = setupCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw Contour Ellipses (Narrow Valley Landscape)
+      const cx = width - 50;
+      const cy = height - 40;
+      ctx.lineWidth = 1;
+
+      for (let r = 20; r < Math.max(width, height); r += 25) {
+        ctx.strokeStyle = '#233044';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r * 1.2, r * 0.35, Math.PI / 12, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Optimum point
+      ctx.fillStyle = '#4ade80';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#4ade80';
+      ctx.font = '10px monospace';
+      ctx.fillText('最优点 (Optimum)', cx - 45, cy + 18);
+
+      // Update particles if racing
+      if (isRacing) {
+        raceFrame++;
+        particles.forEach(p => {
+          const dx = cx - p.x;
+          const dy = cy - p.y;
+
+          if (p.name === 'SGD') {
+            // Violently oscillates in Y direction
+            p.x += dx * 0.008;
+            p.y += dy * 0.08 * (Math.sin(raceFrame * 0.4) > 0 ? 1 : -1);
+          } else if (p.name === 'Momentum') {
+            p.vx = p.vx * 0.85 + dx * 0.003;
+            p.vy = p.vy * 0.85 + dy * 0.015;
+            p.x += p.vx;
+            p.y += p.vy;
+          } else if (p.name === 'Adam') {
+            p.x += dx * 0.02;
+            p.y += dy * 0.02;
+          } else if (p.name === 'AdamW') {
+            // Fast & decoupled smooth convergence
+            p.x += dx * 0.035;
+            p.y += dy * 0.035;
+          }
+
+          p.path.push({ x: p.x, y: p.y });
+          if (p.path.length > 100) p.path.shift();
+        });
+      }
+
+      // Draw Particle Trails & Spheres
+      particles.forEach(p => {
+        if (p.path.length > 1) {
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          p.path.forEach((pt, idx) => {
+            if (idx === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      requestAnimationFrame(drawRaceCanvas);
+    }
+
+    // ================= 5. MODULE 6.3B: LR SCHEDULER =================
+    let isLrPlaying = false;
+
+    function updateLRParams() {
+      const warmupSteps = parseInt(document.getElementById('warmup-slider').value);
+      const totalSteps = parseInt(document.getElementById('total-slider').value);
+      const maxLrScaled = parseFloat(document.getElementById('maxlr-slider').value) * 1e-4;
+      const stepSlider = document.getElementById('step-slider');
+      
+      stepSlider.max = totalSteps;
+      const currentStep = parseInt(stepSlider.value);
+
+      document.getElementById('warmup-val-label').innerText = `${warmupSteps} 步`;
+      document.getElementById('total-val-label').innerText = `${totalSteps} 步`;
+      document.getElementById('maxlr-val-label').innerText = `${maxLrScaled.toExponential(1)}`;
+      document.getElementById('step-cursor-label').innerText = `Step ${currentStep}`;
+
+      // Calculate exact LR
+      let currentLr = 0;
+      const badge = document.getElementById('lr-phase-badge');
+      const statusBox = document.getElementById('lr-status-box');
+      const intuitionText = document.getElementById('lr-intuition-text');
+
+      if (currentStep < warmupSteps) {
+        currentLr = (currentStep / Math.max(1, warmupSteps)) * maxLrScaled;
+        badge.innerText = "🔥 Warmup 线性升温期";
+        badge.className = "px-2 py-0.5 rounded text-[11px] font-bold bg-[#f0b429] text-black";
+        statusBox.className = "p-4 rounded-xl border border-[#f0b429]/40 bg-[#f0b429]/5 space-y-2 text-xs font-mono";
+        intuitionText.innerText = "试探期：刚开始梯度方向极度不稳定，用很小的学习率从 0 慢慢升温，防止参数在初始步直接发散。";
+      } else {
+        const progress = (currentStep - warmupSteps) / Math.max(1, totalSteps - warmupSteps);
+        currentLr = 0.5 * maxLrScaled * (1 + Math.cos(Math.PI * progress));
+        badge.innerText = "❄️ Cosine 余弦退火期";
+        badge.className = "px-2 py-0.5 rounded text-[11px] font-bold bg-[#58c4dd] text-black";
+        statusBox.className = "p-4 rounded-xl border border-[#58c4dd]/40 bg-[#58c4dd]/5 space-y-2 text-xs font-mono";
+        intuitionText.innerText = "精细微调期：参数已进入谷底附近，余弦衰减平滑降低步长，避免在鞍点震荡，帮助模型收敛至全局最优。";
+      }
+
+      document.getElementById('current-lr-calc').innerText = currentLr.toExponential(3);
+      drawLRCanvas(warmupSteps, totalSteps, maxLrScaled, currentStep);
+    }
+
+    function toggleStepPlay() {
+      isLrPlaying = !isLrPlaying;
+      const btn = document.getElementById('lr-play-btn');
+      btn.innerText = isLrPlaying ? "⏸ 暂停" : "▶ 播放训练进度";
+      if (isLrPlaying) animateLRStep();
+    }
+
+    function animateLRStep() {
+      if (!isLrPlaying) return;
+      const slider = document.getElementById('step-slider');
+      let val = parseInt(slider.value) + 5;
+      if (val > parseInt(slider.max)) val = 0;
+      slider.value = val;
+      updateLRParams();
+      setTimeout(animateLRStep, 30);
+    }
+
+    function drawLRCanvas(warmupSteps, totalSteps, maxLr, currentStep) {
+      const canvas = document.getElementById('lr-canvas');
+      if (!canvas) return;
+      const { ctx, width, height } = setupCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      const padding = 35;
+      const graphW = width - padding * 2;
+      const graphH = height - padding * 2;
+
+      // Shaded Areas for Warmup vs Cosine
+      const warmupX = padding + (warmupSteps / totalSteps) * graphW;
+
+      // Warmup shaded bg
+      ctx.fillStyle = 'rgba(240, 180, 41, 0.08)';
+      ctx.fillRect(padding, padding, warmupX - padding, graphH);
+
+      // Cosine shaded bg
+      ctx.fillStyle = 'rgba(88, 196, 221, 0.05)';
+      ctx.fillRect(warmupX, padding, width - padding - warmupX, graphH);
+
+      // Border Divider Line
+      ctx.strokeStyle = '#233044';
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(warmupX, padding);
+      ctx.lineTo(warmupX, height - padding);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw LR Curve
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+
+      for (let s = 0; s <= totalSteps; s += 5) {
+        let lr = 0;
+        if (s < warmupSteps) {
+          lr = (s / Math.max(1, warmupSteps)) * maxLr;
+        } else {
+          const prog = (s - warmupSteps) / Math.max(1, totalSteps - warmupSteps);
+          lr = 0.5 * maxLr * (1 + Math.cos(Math.PI * prog));
+        }
+
+        const x = padding + (s / totalSteps) * graphW;
+        const y = height - padding - (lr / maxLr) * graphH;
+
+        if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+
+      // Gradient Stroke for Curve
+      const grad = ctx.createLinearGradient(padding, 0, width - padding, 0);
+      grad.addColorStop(0, '#f0b429');
+      grad.addColorStop(warmupSteps / totalSteps, '#f0b429');
+      grad.addColorStop(1, '#58c4dd');
+      ctx.strokeStyle = grad;
+      ctx.stroke();
+
+      // Current Step Cursor Vertical Line & Dot
+      const cursorX = padding + (currentStep / totalSteps) * graphW;
+      let cursorLr = 0;
+      if (currentStep < warmupSteps) {
+        cursorLr = (currentStep / Math.max(1, warmupSteps)) * maxLr;
+      } else {
+        const prog = (currentStep - warmupSteps) / Math.max(1, totalSteps - warmupSteps);
+        cursorLr = 0.5 * maxLr * (1 + Math.cos(Math.PI * prog));
+      }
+      const cursorY = height - padding - (cursorLr / maxLr) * graphH;
+
+      ctx.strokeStyle = '#4ade80';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cursorX, padding);
+      ctx.lineTo(cursorX, height - padding);
+      ctx.stroke();
+
+      ctx.fillStyle = '#4ade80';
+      ctx.beginPath();
+      ctx.arc(cursorX, cursorY, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ================= 6. MODULE 6.3C: GRADIENT CLIPPING CANVAS =================
+    let rawVec = { x: 1.8, y: -1.6 };
+
+    function setVectorPreset(normVal) {
+      const angle = -Math.PI / 4;
+      rawVec.x = normVal * Math.cos(angle);
+      rawVec.y = normVal * Math.sin(angle);
+      drawClipCanvas();
+    }
+
+    function drawClipCanvas() {
+      const canvas = document.getElementById('clip-canvas');
+      if (!canvas) return;
+      const { ctx, width, height } = setupCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      const maxNorm = parseFloat(document.getElementById('maxnorm-slider').value);
+      document.getElementById('maxnorm-label').innerText = maxNorm.toFixed(1);
+
+      const originX = width / 2;
+      const originY = height / 2;
+      const scale = 45; // pixels per unit norm
+
+      // Axes
+      ctx.strokeStyle = '#233044';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, originY); ctx.lineTo(width, originY);
+      ctx.moveTo(originX, 0); ctx.lineTo(originX, height);
+      ctx.stroke();
+
+      // Safety Circle (max_norm)
+      const radiusPx = maxNorm * scale;
+      ctx.strokeStyle = '#4ade80';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(originX, originY, radiusPx, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#4ade80';
+      ctx.font = '10px monospace';
+      ctx.fillText(`安全半径 max_norm = ${maxNorm.toFixed(1)}`, originX + radiusPx + 8, originY - 6);
+
+      // Raw Vector (Red Dashed Arrow)
+      const rawNorm = Math.sqrt(rawVec.x * rawVec.x + rawVec.y * rawVec.y);
+      const rawTargetX = originX + rawVec.x * scale;
+      const rawTargetY = originY + rawVec.y * scale;
+
+      ctx.strokeStyle = '#ff6b6b';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      drawArrow(ctx, originX, originY, rawTargetX, rawTargetY);
+      ctx.setLineDash([]);
+
+      // Clipped Vector (Green Solid Arrow)
+      const clipFactor = rawNorm > maxNorm ? (maxNorm / rawNorm) : 1.0;
+      const clippedVec = { x: rawVec.x * clipFactor, y: rawVec.y * clipFactor };
+      const clippedNorm = Math.sqrt(clippedVec.x * clippedVec.x + clippedVec.y * clippedVec.y);
+
+      const clippedTargetX = originX + clippedVec.x * scale;
+      const clippedTargetY = originY + clippedVec.y * scale;
+
+      ctx.strokeStyle = '#4ade80';
+      ctx.lineWidth = 3;
+      drawArrow(ctx, originX, originY, clippedTargetX, clippedTargetY);
+
+      // Update DOM Metrics
+      document.getElementById('orig-norm-val').innerText = rawNorm.toFixed(2);
+      document.getElementById('clipped-norm-val').innerText = clippedNorm.toFixed(2);
+
+      const safetyTag = document.getElementById('clip-safety-tag');
+      if (rawNorm > maxNorm) {
+        safetyTag.innerText = "已触发按比例压缩";
+        safetyTag.className = "text-[#4ade80] font-bold text-sm";
+      } else {
+        safetyTag.innerText = "未超限 (无需截断)";
+        safetyTag.className = "text-[#58c4dd] font-bold text-sm";
+      }
+    }
+
+    function drawArrow(ctx, fromx, fromy, tox, toy) {
+      const headlen = 10;
+      const dx = tox - fromx;
+      const dy = toy - fromy;
+      const angle = Math.atan2(dy, dx);
+      ctx.beginPath();
+      ctx.moveTo(fromx, fromy);
+      ctx.lineTo(tox, toy);
+      ctx.lineTo(tox - headlen * Math.cos(angle - Math.PI / 6), toy - headlen * Math.sin(angle - Math.PI / 6));
+      ctx.moveTo(tox, toy);
+      ctx.lineTo(tox - headlen * Math.cos(angle + Math.PI / 6), toy - headlen * Math.sin(angle + Math.PI / 6));
+      ctx.stroke();
+    }
+
+    // Canvas Interactive Dragging for Vector Endpoints
+    let isDraggingVector = false;
+    function initVectorDrag() {
+      const container = document.getElementById('clip-canvas-container');
+      const canvas = document.getElementById('clip-canvas');
+
+      const handleMove = (e) => {
+        if (!isDraggingVector) return;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const x = clientX - rect.left - rect.width / 2;
+        const y = clientY - rect.top - rect.height / 2;
+        const scale = 45;
+        rawVec.x = x / scale;
+        rawVec.y = y / scale;
+        drawClipCanvas();
+      };
+
+      container.addEventListener('mousedown', (e) => { isDraggingVector = true; handleMove(e); });
+      window.addEventListener('mouseup', () => { isDraggingVector = false; });
+      container.addEventListener('mousemove', handleMove);
+
+      container.addEventListener('touchstart', (e) => { isDraggingVector = true; handleMove(e); });
+      window.addEventListener('touchend', () => { isDraggingVector = false; });
+      container.addEventListener('touchmove', handleMove);
+    }
+
+    // ================= 7. MODULE 6.4: CODE HUB & QUIZZES =================
+    const codeSnippets = [
+      `# 1. train_step.py - Transformer 完整单步训练核心机制
+import torch
+import torch.nn.functional as F
+
+def train_single_step(model, batch_tokens, optimizer, scheduler, max_norm=1.0):
+    """
+    执行 Transformer 单步正反向传播与优化器更新
+    batch_tokens: (B, L+1)
+    """
+    # 1. 严格切分 input_ids 与 labels 错位序列
+    input_ids = batch_tokens[:, :-1]  # (B, L)
+    labels = batch_tokens[:, 1:]      # (B, L)
+
+    # 2. 前向传播输出原始 Logits (包含因果掩码遮罩)
+    logits = model(input_ids)          # (B, L, V)
+
+    # 3. 摊平张量并忽略 Padding (-100)
+    loss = F.cross_entropy(
+        logits.view(-1, logits.size(-1)), # (B*L, V)
+        labels.view(-1),                  # (B*L)
+        ignore_index=-100
+    )
+
+    # 4. 梯度清零 + 反向传播
+    optimizer.zero_grad()
+    loss.backward()
+
+    # 5. 梯度裁剪安全带 (必须在 step() 之前)
+    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+
+    # 6. AdamW 参数更新与 LR 调度
+    optimizer.step()
+    scheduler.step()
+
+    return loss.item(), grad_norm`,
+
+      `# 2. lr_schedule.py - Warmup + Cosine Decay 调度器构建
+import math
+from torch.optim.lr_scheduler import LambdaLR
+
+def get_cosine_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, min_lr_ratio=0.0):
+    """
+    创建标准大模型线性升温 + 余弦退火学习率调度器
+    """
+    def lr_lambda(current_step: int):
+      if current_step < num_warmup_steps:
+          # 1. 线性升温阶段 (Warmup)
+          return float(current_step) / float(max(1, num_warmup_steps))
+      # 2. 余弦退火衰减阶段 (Cosine Decay)
+      progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+      cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+      return max(min_lr_ratio, cosine_decay)
+
+    return LambdaLR(optimizer, lr_lambda)`,
+
+      `# 3. padding_mask.py - 变长序列 Padding Mask 构建示例
+import torch
+
+def create_padded_batch(sequences, pad_token_id=0):
+    """
+    将变长 token 列表打包为 Tensor，并将标签中的 padding 替换为 -100
+    """
+    max_len = max(len(seq) for seq in sequences)
+    padded_inputs, padded_labels = [], []
+
+    for seq in sequences:
+        # 填充到统一长度 max_len
+        pad_len = max_len - len(seq)
+        input_seq = seq[:-1] + [pad_token_id] * pad_len
+        label_seq = seq[1:] + [-100] * pad_len  # 致命避坑：padding 对应 -100
+
+        padded_inputs.append(input_seq)
+        padded_labels.append(label_seq)
+
+    return torch.tensor(padded_inputs), torch.tensor(padded_labels)`
+    ];
+
+    let currentCodeIdx = 0;
+
+    function switchCodeTab(idx) {
+      currentCodeIdx = idx;
+      for (let i = 0; i < 3; i++) {
+        const btn = document.getElementById(`code-tab-${i}`);
+        if (i === idx) {
+          btn.className = "px-3 py-1 rounded-lg text-xs font-mono font-bold border border-[#58c4dd] bg-[#58c4dd]/10 text-[#58c4dd]";
+        } else {
+          btn.className = "px-3 py-1 rounded-lg text-xs font-mono font-bold border border-[#233044] bg-[#0d1117] text-[#8b949e]";
+        }
+      }
+      document.getElementById('code-block-display').innerText = codeSnippets[idx];
+    }
+
+    function copyCodeSnippet() {
+      const code = codeSnippets[currentCodeIdx];
+      const textArea = document.createElement("textarea");
+      textArea.value = code;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      alert("✅ 代码已成功复制到剪贴板！");
+    }
+
+    // Quizzes Data
+    const quizData = [
+      {
+        q: "1. 若词表大小 V = 32000，当模型刚初始化（输出完全均匀分布）时，第一步算出的理论 Loss 大约是多少？",
+        options: ["A. 0.00", "B. 2.50", "C. 10.37 (ln 32000)", "D. 32.00"],
+        correct: 2,
+        exp: "解析：当每个 Token 概率均为 1/V 时，CrossEntropy Loss = -ln(1/V) = ln(V)。ln(32000) ≈ 10.37。"
+      },
+      {
+        q: "2. 在计算 CrossEntropy Loss 时，如果不将 Padding 对应的标签设为 -100 (ignore_index)，会引发什么后果？",
+        options: [
+          "A. 没有任何影响，会自动忽略",
+          "B. 损失会被无意义的填充占位符拉偏，模型强行预测噪声",
+          "C. 会导致显存瞬间溢出 (OOM)",
+          "D. 梯度会直接变成 0"
+        ],
+        correct: 1,
+        exp: "解析：未设置 ignore_index=-100 时，Padding 占位符也会产生损失，从而稀释有效语言信号的权重。"
+      },
+      {
+        q: "3. AdamW 优化器相比传统 Adam(weight_decay=λ) 的核心优势是什么？",
+        options: [
+          "A. 训练速度快 10 倍",
+          "B. 将 Weight Decay 从梯度的二阶矩缩放中解耦，确保所有层参数衰减强度一致",
+          "C. 不需要占用一阶和二阶动量显存",
+          "D. 不需要设置学习率"
+        ],
+        correct: 1,
+        exp: "解析：AdamW 避免了将 λθ 混入梯度导致大梯度参数正则化被削弱的问题，实现纯粹解耦的权重衰减。"
+      },
+      {
+        q: "4. 梯度裁剪 API (clip_grad_norm_) 必须在以下哪一步之前调用？",
+        options: [
+          "A. loss.backward() 之前",
+          "B. model(input_ids) 前向传播之前",
+          "C. optimizer.step() 优化器更新参数之前",
+          "D. scheduler.step() 之后"
+        ],
+        correct: 2,
+        exp: "解析：必须在 optimizer.step() 之前裁剪梯度，避免巨大的梯度暴冲破坏 Adam 一阶与二阶动量积累！"
+      }
+    ];
+
+    let quizAnswers = Array(4).fill(null);
+
+    function renderQuizzes() {
+      const container = document.getElementById('quiz-container');
+      container.innerHTML = quizData.map((quiz, qIdx) => `
+        <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+          <div class="text-xs font-bold text-[#e6edf3] leading-relaxed">${quiz.q}</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
+            ${quiz.options.map((opt, oIdx) => `
+              <button onclick="answerQuiz(${qIdx}, ${oIdx})" id="quiz-${qIdx}-opt-${oIdx}"
+                      class="p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-left hover:border-[#58c4dd] transition">
+                ${opt}
+              </button>
+            `).join('')}
+          </div>
+          <div id="quiz-exp-${qIdx}" class="hidden p-3 rounded-lg text-xs leading-relaxed"></div>
+        </div>
+      `).join('');
+    }
+
+    function answerQuiz(qIdx, oIdx) {
+      if (quizAnswers[qIdx] !== null) return; // Answered
+      quizAnswers[qIdx] = oIdx;
+
+      const quiz = quizData[qIdx];
+      const isCorrect = (oIdx === quiz.correct);
+      const expBox = document.getElementById(`quiz-exp-${qIdx}`);
+
+      // Highlight selected option
+      const selectedBtn = document.getElementById(`quiz-${qIdx}-opt-${oIdx}`);
+      if (isCorrect) {
+        selectedBtn.className = "p-2.5 rounded-lg border border-[#4ade80] bg-[#4ade80]/20 text-[#4ade80] font-bold";
+      } else {
+        selectedBtn.className = "p-2.5 rounded-lg border border-[#ff6b6b] bg-[#ff6b6b]/20 text-[#ff6b6b] font-bold";
+        // Show correct option
+        document.getElementById(`quiz-${qIdx}-opt-${quiz.correct}`).className = "p-2.5 rounded-lg border border-[#4ade80] bg-[#4ade80]/10 text-[#4ade80]";
+      }
+
+      // Show explanation
+      expBox.classList.remove('hidden');
+      if (isCorrect) {
+        expBox.className = "p-3 rounded-lg text-xs leading-relaxed bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80]";
+        expBox.innerHTML = `<strong>✔ 回答正确！</strong> ${quiz.exp}`;
+      } else {
+        expBox.className = "p-3 rounded-lg text-xs leading-relaxed bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 text-[#ff6b6b]";
+        expBox.innerHTML = `<strong>✖ 回答错误。</strong> ${quiz.exp}`;
+      }
+
+      // Update Score
+      const correctCount = quizAnswers.filter((ans, idx) => ans === quizData[idx].correct).length;
+      document.getElementById('quiz-score-badge').innerText = `得分: ${correctCount} / 4`;
+    }
+
+    // ================= INITIALIZATION =================
+    window.onload = function() {
+      // 1. Init Hero Capsule
+      selectLoopStep(0);
+
+      // 2. Init Module 6.1
+      setSentence(0);
+      setVocab(32000);
+      setCurvePreset(0);
+
+      // 3. Init Pitfalls
+      toggleLabelAlign(false);
+      renderAttnGrid();
+      setPadIgnore(true);
+
+      // 4. Init AdamW Race Canvas
+      resetRace();
+
+      // 5. Init LR Scheduler
+      updateLRParams();
+
+      // 6. Init Grad Clip Canvas
+      setVectorPreset(2.5);
+      initVectorDrag();
+
+      // 7. Init Code & Quizzes
+      switchCodeTab(0);
+      renderQuizzes();
+
+      // Handle Resize for Canvases
+      window.addEventListener('resize', () => {
+        drawLossCanvas();
+        drawRaceCanvas();
+        updateLRParams();
+        drawClipCanvas();
+      });
+    };
+  </script>
+</body>
+</html>

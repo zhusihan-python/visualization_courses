@@ -1,0 +1,1459 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>为什么注意力机制恰好选择三个矩阵 Q、K、V？—— 3Blue1Brown 风格互动图解</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0d1117',
+                        cardBg: '#141b26',
+                        cardHover: '#1c2636',
+                        borderColor: '#233044',
+                        qCyan: '#58c4dd',
+                        kGold: '#f0b429',
+                        vEmerald: '#4ade80',
+                        coralWarn: '#ff6b6b',
+                        violetExt: '#c084fc',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+                        serif: ['Georgia', 'Cambria', 'Times New Roman', 'serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Modern Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #233044; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3b4f6e; }
+
+        /* Publication-Grade Math Typography Rules */
+        .math {
+            font-family: 'Georgia', 'Cambria', 'Times New Roman', serif;
+            font-style: italic;
+        }
+        .math-up {
+            font-family: 'Georgia', 'Cambria', 'Times New Roman', serif;
+            font-style: normal;
+        }
+        .math-block {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            font-family: 'Georgia', 'Cambria', 'Times New Roman', serif;
+            padding: 0.2rem 0.4rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 0.375rem;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .frac {
+            display: inline-flex;
+            flex-direction: column;
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 4px;
+            font-size: 0.9em;
+        }
+        .frac .top {
+            border-bottom: 1.5px solid currentColor;
+            padding-bottom: 1px;
+            line-height: 1.1;
+        }
+        .frac .bottom {
+            padding-top: 1px;
+            line-height: 1.1;
+        }
+
+        /* 3Blue1Brown Style Glow Effects */
+        .glow-q { box-shadow: 0 0 15px rgba(88, 196, 221, 0.25); }
+        .glow-k { box-shadow: 0 0 15px rgba(240, 180, 41, 0.25); }
+        .glow-v { box-shadow: 0 0 15px rgba(74, 222, 128, 0.25); }
+        .glow-coral { box-shadow: 0 0 15px rgba(255, 107, 107, 0.25); }
+        .glow-violet { box-shadow: 0 0 15px rgba(192, 132, 252, 0.25); }
+
+        /* Dynamic active tab indicator & animations */
+        .tab-btn-active {
+            border-bottom: 2px solid currentColor;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        /* Custom smooth pulse for visual highlight */
+        @keyframes subtlePulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(0.98); }
+        }
+        .pulse-subtle { animation: subtlePulse 3s infinite ease-in-out; }
+    </style>
+</head>
+<body class="bg-darkBg text-gray-200 antialiased min-h-screen selection:bg-qCyan selection:text-black">
+
+    <!-- Sticky Navigation Bar -->
+    <header class="sticky top-0 z-50 bg-darkBg/90 backdrop-blur-md border-b border-borderColor">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-14 text-xs sm:text-sm overflow-x-auto no-scrollbar">
+                <div class="flex items-center space-x-2 font-bold text-qCyan flex-shrink-0">
+                    <span class="w-3 h-3 rounded-full bg-qCyan inline-block animate-ping"></span>
+                    <span class="tracking-wider">3Blue1Brown 互动视觉教程</span>
+                </div>
+                <nav class="flex space-x-1 sm:space-x-4 flex-shrink-0 font-medium">
+                    <a href="#sec-hero" class="px-2 py-1 rounded hover:text-qCyan transition-colors">概览</a>
+                    <a href="#mod-1" class="px-2 py-1 rounded hover:text-qCyan transition-colors">1. 概念纠偏</a>
+                    <a href="#mod-2" class="px-2 py-1 rounded hover:text-kGold transition-colors">2. 软检索原型</a>
+                    <a href="#mod-3" class="px-2 py-1 rounded hover:text-coralWarn transition-colors">3. 对称陷阱(2路)</a>
+                    <a href="#mod-4" class="px-2 py-1 rounded hover:text-coralWarn transition-colors">4. 冗余陷阱(4路)</a>
+                    <a href="#mod-5" class="px-2 py-1 rounded hover:text-vEmerald transition-colors">5. 2+1=3 数学本质</a>
+                    <a href="#mod-6" class="px-2 py-1 rounded hover:text-violetExt transition-colors">6. 变体扩展</a>
+                    <a href="#mod-7" class="px-2 py-1 rounded hover:text-qCyan transition-colors">7. 自测与总结</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Wrapper -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-16">
+
+        <!-- ==================== HERO SECTION ==================== -->
+        <section id="sec-hero" class="text-center pt-6 pb-4">
+            <div class="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-borderColor/60 text-violetExt text-xs font-semibold uppercase tracking-wider mb-4 border border-violetExt/30">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span>深度专题 · 概念纠偏与数学直觉</span>
+            </div>
+            
+            <h1 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight mb-4">
+                为什么注意力机制恰好选择三个矩阵 <span class="text-qCyan">Q</span>、<span class="text-kGold">K</span>、<span class="text-vEmerald">V</span>？
+            </h1>
+            
+            <p class="max-w-3xl mx-auto text-gray-400 text-sm sm:text-base leading-relaxed mb-8">
+                先纠正一个高频误解：<strong class="text-white">Q、K、V 是三个独立的二维矩阵，而不是三维张量</strong>。为什么不是两路（Q=K）？为什么不需要第四路 R？本文用 3Blue1Brown 风格的动态几何实验室，带你一次性推演 <span class="text-vEmerald font-bold">2 + 1 = 3</span> 的最小完备数学结构。
+            </p>
+
+            <!-- Interactive Mini-Equation Banner -->
+            <div class="bg-cardBg border border-borderColor rounded-2xl p-6 shadow-2xl max-w-4xl mx-auto relative overflow-hidden">
+                <div class="text-xs uppercase font-mono tracking-widest text-gray-400 mb-3">鼠标悬停或点击公式中的矩阵视角</div>
+                
+                <div class="text-lg sm:text-2xl font-serif text-white py-4 px-2 flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+                    <span class="math-up font-bold">Attention(</span>
+                    <button id="hero-q" class="px-2 py-1 rounded bg-qCyan/10 border border-qCyan/40 text-qCyan hover:bg-qCyan/20 transition cursor-pointer font-bold">Q</button>
+                    <span>,</span>
+                    <button id="hero-k" class="px-2 py-1 rounded bg-kGold/10 border border-kGold/40 text-kGold hover:bg-kGold/20 transition cursor-pointer font-bold">K</button>
+                    <span>,</span>
+                    <button id="hero-v" class="px-2 py-1 rounded bg-vEmerald/10 border border-vEmerald/40 text-vEmerald hover:bg-vEmerald/20 transition cursor-pointer font-bold">V</button>
+                    <span class="math-up font-bold">) = </span>
+                    <span class="math-up font-bold text-gray-300">softmax</span>
+                    <span>(</span>
+                    <span class="frac">
+                        <span class="top"><button id="hero-q2" class="text-qCyan hover:underline font-bold">Q</button> &middot; <button id="hero-k2" class="text-kGold hover:underline font-bold">K</button><sup>&top;</sup></span>
+                        <span class="bottom">&radic;<span class="math">d<sub>k</sub></span></span>
+                    </span>
+                    <span>) &middot; </span>
+                    <button id="hero-v2" class="text-vEmerald hover:underline font-bold">V</button>
+                </div>
+
+                <!-- Live Dynamic Explanation Card -->
+                <div id="hero-info" class="mt-4 p-4 rounded-xl bg-darkBg/80 border border-borderColor text-left text-xs sm:text-sm text-gray-300 transition-all duration-300 min-h-[72px] flex items-center justify-center">
+                    <p class="text-center">💡 <strong class="text-white">提示：</strong> 移动鼠标悬停在上方 <span class="text-qCyan font-bold">Q</span>、<span class="text-kGold font-bold">K</span> 或 <span class="text-vEmerald font-bold">V</span> 上，查看各自在数值运算与语义空间中的具体形态与作用。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MODULE 1 ==================== -->
+        <section id="mod-1" class="scroll-mt-20">
+            <div class="bg-cardBg border border-borderColor rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center space-x-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-qCyan/20 text-qCyan flex items-center justify-center font-mono font-bold text-sm">01</span>
+                    <h2 class="text-xl sm:text-2xl font-bold text-white">概念纠偏 —— 三个二维矩阵 ≠ 三维张量</h2>
+                </div>
+                
+                <p class="text-gray-300 text-sm leading-relaxed mb-6">
+                    初学者常误以为 Q、K、V 拼成了一个大小为 <span class="math-block">3 &times; T &times; d</span> 的“三维张量切片”。实际上，它们是由输入序列 <span class="math-block">X &in; &mathbb;R<sup>T &times; d<sub>in</sub></sup></span> 分别乘以三个独立投影矩阵 <span class="math-block text-qCyan">W<sub>Q</sub> &in; &mathbb;R<sup>d<sub>in</sub> &times; d<sub>k</sub></sup></span>、<span class="math-block text-kGold">W<sub>K</sub> &in; &mathbb;R<sup>d<sub>in</sub> &times; d<sub>k</sub></sup></span>、<span class="math-block text-vEmerald">W<sub>V</sub> &in; &mathbb;R<sup>d<sub>in</sub> &times; d<sub>v</sub></sup></span> 得到的<strong class="text-white">三个独立二维矩阵</strong>。
+                </p>
+
+                <!-- Interactive Dimension Slider Control -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-darkBg/60 p-4 rounded-xl border border-borderColor/60 text-xs sm:text-sm">
+                    <div>
+                        <div class="flex justify-between font-mono mb-1">
+                            <span class="text-gray-400">序列长度 T (Tokens):</span>
+                            <span id="val-T" class="text-white font-bold">4</span>
+                        </div>
+                        <input type="range" id="slider-T" min="2" max="6" value="4" class="w-full accent-qCyan cursor-pointer">
+                    </div>
+                    <div>
+                        <div class="flex justify-between font-mono mb-1">
+                            <span class="text-gray-400">查询/键维度 d<sub>k</sub>:</span>
+                            <span id="val-dk" class="text-white font-bold">3</span>
+                        </div>
+                        <input type="range" id="slider-dk" min="2" max="6" value="3" class="w-full accent-kGold cursor-pointer">
+                    </div>
+                    <div>
+                        <div class="flex justify-between font-mono mb-1">
+                            <span class="text-gray-400">值向量维度 d<sub>v</sub> (可 &ne; d<sub>k</sub>):</span>
+                            <span id="val-dv" class="text-white font-bold">2</span>
+                        </div>
+                        <input type="range" id="slider-dv" min="2" max="6" value="2" class="w-full accent-vEmerald cursor-pointer">
+                    </div>
+                </div>
+
+                <!-- View Mode Tabs -->
+                <div class="flex border-b border-borderColor mb-6 text-xs sm:text-sm font-medium">
+                    <button id="tab-mod1-a" onclick="switchMod1Tab('a')" class="px-4 py-2 text-qCyan tab-btn-active">视图 A：标准单头 3 个独立 2D 矩阵</button>
+                    <button id="tab-mod1-b" onclick="switchMod1Tab('b')" class="px-4 py-2 text-gray-400 hover:text-white">视图 B：常见误区 (三维张量对比)</button>
+                    <button id="tab-mod1-c" onclick="switchMod1Tab('c')" class="px-4 py-2 text-gray-400 hover:text-white">视图 C：多头注意力 (Multi-Head) 维度</button>
+                </div>
+
+                <!-- Tab Content A: Interactive 2D Grids -->
+                <div id="content-mod1-a" class="space-y-4">
+                    <div class="text-xs text-gray-400 mb-2">点击或悬停任意 Token (行) 查看在 Q、K、V 三个矩阵中的独立投影向量：</div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Matrix Q -->
+                        <div class="bg-darkBg p-4 rounded-xl border border-qCyan/30 glow-q">
+                            <div class="flex items-center justify-between mb-3 border-b border-qCyan/20 pb-2">
+                                <span class="font-bold text-qCyan">Query 矩阵 Q</span>
+                                <span id="shape-q" class="font-mono text-xs text-qCyan/80 bg-qCyan/10 px-2 py-0.5 rounded">T × d_k = (4 × 3)</span>
+                            </div>
+                            <div id="grid-q" class="grid gap-1 font-mono text-xs"></div>
+                        </div>
+                        <!-- Matrix K -->
+                        <div class="bg-darkBg p-4 rounded-xl border border-kGold/30 glow-k">
+                            <div class="flex items-center justify-between mb-3 border-b border-kGold/20 pb-2">
+                                <span class="font-bold text-kGold">Key 矩阵 K</span>
+                                <span id="shape-k" class="font-mono text-xs text-kGold/80 bg-kGold/10 px-2 py-0.5 rounded">T × d_k = (4 × 3)</span>
+                            </div>
+                            <div id="grid-k" class="grid gap-1 font-mono text-xs"></div>
+                        </div>
+                        <!-- Matrix V -->
+                        <div class="bg-darkBg p-4 rounded-xl border border-vEmerald/30 glow-v">
+                            <div class="flex items-center justify-between mb-3 border-b border-vEmerald/20 pb-2">
+                                <span class="font-bold text-vEmerald">Value 矩阵 V</span>
+                                <span id="shape-v" class="font-mono text-xs text-vEmerald/80 bg-vEmerald/10 px-2 py-0.5 rounded">T × d_v = (4 × 2)</span>
+                            </div>
+                            <div id="grid-v" class="grid gap-1 font-mono text-xs"></div>
+                        </div>
+                    </div>
+                    <div class="p-3 bg-violetExt/10 border border-violetExt/30 rounded-lg text-xs text-violetExt flex items-center space-x-2 mt-4">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span>关键证明：<strong class="text-white">d<sub>v</sub> 不需要等于 d<sub>k</sub></strong>！匹配空间（Q, K 点积需要维度对齐）与信息传递空间（V 提取的特征维度）在数学上完全解耦，直接打破了“Q,K,V 必须构成三维正方块”的谣言。</span>
+                    </div>
+                </div>
+
+                <!-- Tab Content B: Isometric Canvas 3D Tensor vs 2D -->
+                <div id="content-mod1-b" class="hidden space-y-4">
+                    <div class="text-xs text-gray-400 mb-2">通过 3D 几何视角辨析“单立体张量”与“三个解耦二维平面”的区别：</div>
+                    <div class="relative bg-darkBg rounded-xl p-4 border border-borderColor flex justify-center">
+                        <canvas id="canvas-isometric" class="w-full max-w-2xl h-72"></canvas>
+                    </div>
+                    <p class="text-xs text-gray-400 text-center">左图：误解的 3D 立体方块（限制 d<sub>v</sub> = d<sub>k</sub>，且强行共享轴）；右图：解耦的 3 个独立 2D 矩阵。</p>
+                </div>
+
+                <!-- Tab Content C: Multi-Head Split Visualizer -->
+                <div id="content-mod1-c" class="hidden space-y-4">
+                    <div class="text-xs text-gray-400 mb-2">多头注意力 (Multi-Head) 才是真正的多组结构，它把 Q, K, V 切分为 <span class="math">h</span> 个子空间：</div>
+                    <div class="relative bg-darkBg rounded-xl p-4 border border-borderColor flex justify-center">
+                        <canvas id="canvas-multihead" class="w-full max-w-2xl h-64"></canvas>
+                    </div>
+                    <div class="text-xs text-gray-300 bg-darkBg/60 p-3 rounded-lg border border-borderColor">
+                        <span class="text-violetExt font-bold">MultiHead(Q, K, V) = Concat(head<sub>1</sub>, ..., head<sub>h</sub>) W<sup>O</sup></span><br>
+                        其中每个 <span class="math">head<sub>i</sub> = Attention(Q W<sub>i</sub><sup>Q</sup>, K W<sub>i</sub><sup>K</sup>, V W<sub>i</sub><sup>V</sup>)</span>。多头是沿特征维度切分，<strong>每一头内部依然是标准的 Q、K、V 三路 2D 矩阵！</strong>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MODULE 2 ==================== -->
+        <section id="mod-2" class="scroll-mt-20">
+            <div class="bg-cardBg border border-borderColor rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center space-x-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-kGold/20 text-kGold flex items-center justify-center font-mono font-bold text-sm">02</span>
+                    <h2 class="text-xl sm:text-2xl font-bold text-white">三路的语义分工 —— 软检索（Soft Retrieval）原型</h2>
+                </div>
+
+                <p class="text-gray-300 text-sm leading-relaxed mb-6">
+                    在经典数据库（如 Python 字典或 SQL）中，查询是硬匹配：<span class="font-mono text-xs bg-darkBg px-2 py-1 rounded text-qCyan">dict[query_key] -> value</span>。而 Self-Attention 实现了<strong class="text-white">可导的软数据库检索（Soft Key-Value Lookup）</strong>。
+                </p>
+
+                <!-- Sentence Preset Selector -->
+                <div class="mb-6 bg-darkBg p-4 rounded-xl border border-borderColor flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div class="text-xs font-mono text-gray-400">选择当前 Token 作为 Query (查询词):</div>
+                    <div id="token-buttons" class="flex flex-wrap gap-2"></div>
+                </div>
+
+                <!-- Live Animated Visualizer Canvas -->
+                <div class="bg-darkBg rounded-xl p-4 border border-borderColor relative mb-6">
+                    <canvas id="canvas-retrieval" class="w-full h-80"></canvas>
+                </div>
+
+                <!-- 3-Column Summary Table -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-qCyan/30">
+                        <div class="flex items-center space-x-2 text-qCyan font-bold mb-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-qCyan"></span>
+                            <span>Query (Q) —— 查询向量</span>
+                        </div>
+                        <p class="text-xs text-gray-300 leading-relaxed">
+                            <strong>核心含义：</strong>“当前 Token 想要寻找什么样的上下文特征？”<br>
+                            <strong>数据库类比：</strong>SQL 语句中的 <span class="font-mono text-qCyan">WHERE condition</span>。
+                        </p>
+                    </div>
+
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-kGold/30">
+                        <div class="flex items-center space-x-2 text-kGold font-bold mb-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-kGold"></span>
+                            <span>Key (K) —— 键 / 标签向量</span>
+                        </div>
+                        <p class="text-xs text-gray-300 leading-relaxed">
+                            <strong>核心含义：</strong>“每个 Token 对外暴露的索引特征与身份标签。”<br>
+                            <strong>数据库类比：</strong>数据库表中的 <span class="font-mono text-kGold">Primary Key / Index</span>。
+                        </p>
+                    </div>
+
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-vEmerald/30">
+                        <div class="flex items-center space-x-2 text-vEmerald font-bold mb-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-vEmerald"></span>
+                            <span>Value (V) —— 值 / 内容向量</span>
+                        </div>
+                        <p class="text-xs text-gray-300 leading-relaxed">
+                            <strong>核心含义：</strong>“一旦被匹配上，该 Token 真正要传播给对方的有效信息。”<br>
+                            <strong>数据库类比：</strong>表中存放的真正 <span class="font-mono text-vEmerald">Row Content</span>。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MODULE 3 ==================== -->
+        <section id="mod-3" class="scroll-mt-20">
+            <div class="bg-cardBg border border-borderColor rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center space-x-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-coralWarn/20 text-coralWarn flex items-center justify-center font-mono font-bold text-sm">03</span>
+                    <h2 class="text-xl sm:text-2xl font-bold text-white">为什么不是两路？（Q = K 的对称陷阱实验室）</h2>
+                </div>
+
+                <p class="text-gray-300 text-sm leading-relaxed mb-6">
+                    有人问：“既然都是表征，为什么不能省掉 W<sub>K</sub>，直接用 <span class="math text-coralWarn">Q = K = X W</span>？”本实验室通过数学定量与图形对比，直观展示强行两路导致的<strong>致命缺陷</strong>。
+                </p>
+
+                <!-- Dynamic Separation Slider Lab -->
+                <div class="bg-darkBg p-4 rounded-xl border border-borderColor mb-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-2">
+                        <label class="text-xs font-mono text-gray-300 font-bold flex items-center space-x-2">
+                            <span>W<sub>Q</sub> 与 W<sub>K</sub> 的独立分离程度:</span>
+                            <span id="sep-val" class="text-qCyan text-sm font-bold">100% (完全独立非对称 Q &ne; K)</span>
+                        </label>
+                        <div class="flex space-x-4 text-xs font-mono">
+                            <span class="text-coralWarn">对称误差 ||S - S<sup>&top;</sup>||: <span id="metric-sym">0.84</span></span>
+                            <span class="text-kGold">自关注占比 (对角线): <span id="metric-diag">22.4%</span></span>
+                        </div>
+                    </div>
+                    <input type="range" id="slider-sep" min="0" max="100" value="100" class="w-full accent-qCyan cursor-pointer">
+                    <div class="flex justify-between text-[10px] text-gray-500 font-mono mt-1">
+                        <span>0% (强行 Q = K，强对称)</span>
+                        <span>50% (半约束)</span>
+                        <span>100% (标准 Self-Attention，非对称)</span>
+                    </div>
+                </div>
+
+                <!-- Side by Side Heatmap & Arc Visualizer -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Left: Forced Symmetry Q=K -->
+                    <div class="bg-darkBg p-4 rounded-xl border border-coralWarn/30 glow-coral">
+                        <div class="flex items-center justify-between mb-3 border-b border-coralWarn/20 pb-2">
+                            <span class="font-bold text-coralWarn flex items-center space-x-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                <span>两路简化版 (强行 Q = K)</span>
+                            </span>
+                            <span class="text-xs font-mono text-coralWarn bg-coralWarn/10 px-2 py-0.5 rounded">S = Q·Qᵀ (完全对称)</span>
+                        </div>
+                        <canvas id="canvas-sym-left" class="w-full h-64 mb-3"></canvas>
+                        <div class="text-xs text-gray-400 space-y-1 bg-darkBg/60 p-3 rounded border border-borderColor/60">
+                            <p class="text-coralWarn font-bold">致命缺陷：</p>
+                            <p>1. <strong>强制对称性：</strong> A 关注 B 必须等于 B 关注 A（如：“它”追“小猫”权重与“小猫”追“它”完全相同，违背自然语言主谓关系）。</p>
+                            <p>2. <strong>自我崇拜陷阱：</strong> <span class="math">q<sub>i</sub> &middot; q<sub>i</sub> = ||q<sub>i</sub>||<sup>2</sup></span> 总是最大，对角线极高，Token 严重自锁。</p>
+                        </div>
+                    </div>
+
+                    <!-- Right: Standard Q != K -->
+                    <div class="bg-darkBg p-4 rounded-xl border border-vEmerald/30 glow-v">
+                        <div class="flex items-center justify-between mb-3 border-b border-vEmerald/20 pb-2">
+                            <span class="font-bold text-vEmerald flex items-center space-x-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                <span>标准三路版 (独立 W<sub>Q</sub>, W<sub>K</sub>)</span>
+                            </span>
+                            <span class="text-xs font-mono text-vEmerald bg-vEmerald/10 px-2 py-0.5 rounded">S = Q·Kᵀ (非对称)</span>
+                        </div>
+                        <canvas id="canvas-sym-right" class="w-full h-64 mb-3"></canvas>
+                        <div class="text-xs text-gray-400 space-y-1 bg-darkBg/60 p-3 rounded border border-borderColor/60">
+                            <p class="text-vEmerald font-bold">完美表现：</p>
+                            <p>1. <strong>有向非对称：</strong> “它”关注“小猫”(高权重 0.78)，而“小猫”关注“它”(低权重 0.08)，精确建模单向指代。</p>
+                            <p>2. <strong>跨 Token 自由检索：</strong> 对角线不受向量模长自锁，注意力机制能灵活将视角投射到全局相关词汇。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MODULE 4 ==================== -->
+        <section id="mod-4" class="scroll-mt-20">
+            <div class="bg-cardBg border border-borderColor rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center space-x-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-coralWarn/20 text-coralWarn flex items-center justify-center font-mono font-bold text-sm">04</span>
+                    <h2 class="text-xl sm:text-2xl font-bold text-white">为什么不是四路或更多？（冗余的第四路 R 实验室）</h2>
+                </div>
+
+                <p class="text-gray-300 text-sm leading-relaxed mb-6">
+                    如果两路太少，那强行加入第 4 个矩阵 <span class="math font-bold text-coralWarn">R</span> 会发生什么？本实验室模拟三种引入第四路 R 的设计尝试，证明其要么退化为线性冗余，要么引发计算灾难。
+                </p>
+
+                <!-- Sandbox Experiment Selector Tabs -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <button id="exp-tab-a" onclick="switchExpTab('a')" class="p-4 rounded-xl border border-borderColor bg-darkBg text-left hover:border-coralWarn transition cursor-pointer">
+                        <div class="text-xs font-mono text-coralWarn font-bold mb-1">实验 A</div>
+                        <div class="text-sm font-bold text-white mb-1">把 R 加进取值端 (V' = V + R)</div>
+                        <div class="text-xs text-gray-400">尝试用 R 增强聚合信息...</div>
+                    </button>
+                    <button id="exp-tab-b" onclick="switchExpTab('b')" class="p-4 rounded-xl border border-borderColor bg-darkBg text-left hover:border-coralWarn transition cursor-pointer">
+                        <div class="text-xs font-mono text-coralWarn font-bold mb-1">实验 B</div>
+                        <div class="text-sm font-bold text-white mb-1">把 R 加进匹配端 (Q·Kᵀ + Q·Rᵀ)</div>
+                        <div class="text-xs text-gray-400">尝试双重匹配评分...</div>
+                    </button>
+                    <button id="exp-tab-c" onclick="switchExpTab('c')" class="p-4 rounded-xl border border-borderColor bg-darkBg text-left hover:border-coralWarn transition cursor-pointer">
+                        <div class="text-xs font-mono text-coralWarn font-bold mb-1">实验 C</div>
+                        <div class="text-sm font-bold text-white mb-1">设计三阶张量交互 (Q ⊗ K ⊗ R)</div>
+                        <div class="text-xs text-gray-400">三维度同时协同打分...</div>
+                    </button>
+                </div>
+
+                <!-- Active Experiment Result Card -->
+                <div id="exp-display-card" class="bg-darkBg rounded-xl p-6 border border-borderColor transition-all">
+                    <!-- Dynamic Javascript Injection -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MODULE 5 ==================== -->
+        <section id="mod-5" class="scroll-mt-20">
+            <div class="bg-cardBg border border-borderColor rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center space-x-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-vEmerald/20 text-vEmerald flex items-center justify-center font-mono font-bold text-sm">05</span>
+                    <h2 class="text-xl sm:text-2xl font-bold text-white">数学本质 —— "双线性打分 + 加权求和" = 2 + 1 = 3</h2>
+                </div>
+
+                <p class="text-gray-300 text-sm leading-relaxed mb-6">
+                    从线性代数与代数几何视角来看，注意力机制本质上是由<strong class="text-white">两个基本数学步骤组合而成</strong>。正是这种物理意义决定了“3”是最小完备解。
+                </p>
+
+                <!-- Interactive Breakdown Card -->
+                <div class="bg-darkBg rounded-xl p-6 border border-borderColor mb-6 space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Part 1: Bilinear Form -->
+                        <div class="p-4 rounded-xl border border-qCyan/30 bg-cardBg/60">
+                            <div class="text-xs font-mono text-qCyan font-bold uppercase mb-2">步骤一：非对称关联度打分 (Bilinear Form)</div>
+                            <div class="text-lg font-serif text-white mb-2">
+                                <span class="math">f(q, k) = q<sup>&top;</sup> A k</span>
+                            </div>
+                            <p class="text-xs text-gray-300 leading-relaxed">
+                                计算两个向量之间的非对称关系，在代数上必须且仅需 <strong>2 个操作数</strong> (Query, Key)。如果只有一个向量（如 <span class="math">q<sup>&top;</sup> A q</span>），形式退化为对称二次型。
+                            </p>
+                            <div class="mt-3 text-xs text-qCyan font-mono">所需矩阵数：2 (Q + K)</div>
+                        </div>
+
+                        <!-- Part 2: Convex Combination Aggregation -->
+                        <div class="p-4 rounded-xl border border-vEmerald/30 bg-cardBg/60">
+                            <div class="text-xs font-mono text-vEmerald font-bold uppercase mb-2">步骤二：凸组合特征聚合 (Weighted Aggregation)</div>
+                            <div class="text-lg font-serif text-white mb-2">
+                                <span class="math">Output = &sum; &alpha;<sub>j</sub> v<sub>j</sub></span>
+                            </div>
+                            <p class="text-xs text-gray-300 leading-relaxed">
+                                打分得到的权重 <span class="math">&alpha;<sub>j</sub></span> 必须作用于某个特征载体。为了解耦“匹配依据”与“传递内容”，必须引入 <strong>1 个独立的操作数</strong> (Value)。
+                            </p>
+                            <div class="mt-3 text-xs text-vEmerald font-mono">所需矩阵数：1 (V)</div>
+                        </div>
+                    </div>
+
+                    <!-- Visual Summary Formula Equation -->
+                    <div class="text-center p-4 bg-darkBg border border-violetExt/30 rounded-xl text-lg sm:text-2xl font-serif text-white">
+                        <span class="text-qCyan font-bold">2 (双线性匹配 Q, K)</span> + <span class="text-vEmerald font-bold">1 (内容聚合 V)</span> = <span class="text-violetExt font-bold">3 (最小完备配置)</span>
+                    </div>
+                </div>
+
+                <!-- Role Removal Interactive Diagnostic -->
+                <div class="bg-darkBg/80 p-5 rounded-xl border border-borderColor">
+                    <div class="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">🛠️ 角色破坏诊断测试：点击下方按钮观察系统瘫痪结果</div>
+                    <div class="flex flex-wrap gap-3 mb-4">
+                        <button onclick="diagnoseRole('no-q')" class="px-3 py-1.5 rounded bg-qCyan/10 border border-qCyan/40 text-qCyan text-xs hover:bg-qCyan/20 transition cursor-pointer">移除 Q (查询)</button>
+                        <button onclick="diagnoseRole('no-k')" class="px-3 py-1.5 rounded bg-kGold/10 border border-kGold/40 text-kGold text-xs hover:bg-kGold/20 transition cursor-pointer">移除 K (键)</button>
+                        <button onclick="diagnoseRole('no-v')" class="px-3 py-1.5 rounded bg-vEmerald/10 border border-vEmerald/40 text-vEmerald text-xs hover:bg-vEmerald/20 transition cursor-pointer">移除 V (值)</button>
+                        <button onclick="diagnoseRole('add-r')" class="px-3 py-1.5 rounded bg-coralWarn/10 border border-coralWarn/40 text-coralWarn text-xs hover:bg-coralWarn/20 transition cursor-pointer">硬塞 R (第四路)</button>
+                    </div>
+                    <div id="diag-output" class="p-4 rounded-lg bg-cardBg border border-borderColor text-xs text-gray-300 font-mono">
+                        点击上方测试按钮，查看具体崩溃原因与代数推导。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MODULE 6 ==================== -->
+        <section id="mod-6" class="scroll-mt-20">
+            <div class="bg-cardBg border border-borderColor rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center space-x-3 mb-4">
+                    <span class="w-8 h-8 rounded-lg bg-violetExt/20 text-violetExt flex items-center justify-center font-mono font-bold text-sm">06</span>
+                    <h2 class="text-xl sm:text-2xl font-bold text-white">真正需要扩展时怎么做？（多头 / 门控 / 跨模态）</h2>
+                </div>
+
+                <p class="text-gray-300 text-sm leading-relaxed mb-6">
+                    当现代 Transformer 架构（如 Llama 3、Sora、CLIP）需要更强的表达能力时，它们**从来不增加第四种检索角色**，而是在 Q、K、V 三路内核之上进行结构扩展：
+                </p>
+
+                <!-- Extension Tabs -->
+                <div class="flex border-b border-borderColor mb-6 text-xs sm:text-sm font-medium">
+                    <button id="tab-ext-1" onclick="switchExtTab(1)" class="px-4 py-2 text-violetExt tab-btn-active">1. 多头注意力 (Multi-Head)</button>
+                    <button id="tab-ext-2" onclick="switchExtTab(2)" class="px-4 py-2 text-gray-400 hover:text-white">2. 门控注意力 (Gated Attention)</button>
+                    <button id="tab-ext-3" onclick="switchExtTab(3)" class="px-4 py-2 text-gray-400 hover:text-white">3. 跨模态注意力 (Cross-Attention)</button>
+                </div>
+
+                <!-- Tab 1: Multi-Head -->
+                <div id="content-ext-1" class="space-y-4">
+                    <div class="bg-darkBg p-4 rounded-xl border border-borderColor relative flex justify-center">
+                        <canvas id="canvas-ext-mh" class="w-full max-w-2xl h-56"></canvas>
+                    </div>
+                    <div class="text-xs text-gray-300 bg-darkBg/60 p-4 rounded-lg border border-borderColor flex items-center justify-between">
+                        <div>
+                            <span class="text-violetExt font-bold">扩展逻辑：增加视角，不增加角色</span><br>
+                            将 d 维空间切分成 h 个独立的 (Q<sub>i</sub>, K<sub>i</sub>, V<sub>i</sub>) 子空间，同时捕捉语法关系、代词指代、空间位置等多重语义。
+                        </div>
+                        <span class="text-xs font-mono text-violetExt bg-violetExt/10 px-2.5 py-1 rounded border border-violetExt/30 flex-shrink-0">角色种类仍 = 3</span>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Gated Attention -->
+                <div id="content-ext-2" class="hidden space-y-4">
+                    <div class="bg-darkBg p-4 rounded-xl border border-borderColor">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="text-xs font-mono text-gray-300 font-bold">门控阀门 (Gate g) 交互调节:</span>
+                            <span id="gate-val-text" class="text-violetExt font-bold text-sm">g = 0.80</span>
+                        </div>
+                        <input type="range" id="slider-gate" min="0" max="100" value="80" class="w-full accent-violetExt cursor-pointer mb-4">
+                        <canvas id="canvas-ext-gate" class="w-full h-44"></canvas>
+                    </div>
+                    <div class="text-xs text-gray-300 bg-darkBg/60 p-4 rounded-lg border border-borderColor">
+                        <span class="text-violetExt font-bold">公式：Output = g &odot; Attn(Q, K, V) + (1 - g) &odot; Residual</span><br>
+                        门控 (Gating) 是控制流动比例的阀门（标量/向量乘法），它只负责“过滤”，不参与 Q/K 之间的配对计算。
+                    </div>
+                </div>
+
+                <!-- Tab 3: Cross Attention -->
+                <div id="content-ext-3" class="hidden space-y-4">
+                    <div class="bg-darkBg p-4 rounded-xl border border-borderColor space-y-4">
+                        <div class="text-xs text-gray-400">点击文本中的单词，观察跨模态注意力如何用文本 Query 去查询图像 Patches 的 K, V：</div>
+                        <div class="flex flex-wrap gap-2 text-sm" id="cross-words">
+                            <button onclick="selectCrossWord(0)" class="px-3 py-1 rounded bg-qCyan/20 text-qCyan border border-qCyan/40 font-bold">"一只"</button>
+                            <button onclick="selectCrossWord(1)" class="px-3 py-1 rounded bg-darkBg text-gray-300 border border-borderColor hover:border-qCyan">"戴墨镜的"</button>
+                            <button onclick="selectCrossWord(2)" class="px-3 py-1 rounded bg-darkBg text-gray-300 border border-borderColor hover:border-qCyan">"酷猫"</button>
+                        </div>
+                        <canvas id="canvas-ext-cross" class="w-full h-56"></canvas>
+                    </div>
+                    <div class="text-xs text-gray-300 bg-darkBg/60 p-4 rounded-lg border border-borderColor">
+                        <span class="text-violetExt font-bold">跨模态原理：Q 来自文本，K, V 来自图像</span><br>
+                        异构数据输入时，改变的是 Q 与 (K, V) 的来源，运算逻辑依然完全符合三路软检索范式。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MODULE 7 ==================== -->
+        <section id="mod-7" class="scroll-mt-20">
+            <div class="bg-cardBg border border-borderColor rounded-2xl p-6 shadow-xl space-y-8">
+                <div>
+                    <div class="flex items-center space-x-3 mb-4">
+                        <span class="w-8 h-8 rounded-lg bg-qCyan/20 text-qCyan flex items-center justify-center font-mono font-bold text-sm">07</span>
+                        <h2 class="text-xl sm:text-2xl font-bold text-white">一句话总结 & 3 题互动自测</h2>
+                    </div>
+
+                    <!-- Highlight Takeaway Summary -->
+                    <div class="p-5 rounded-xl bg-gradient-to-r from-qCyan/10 via-kGold/10 to-vEmerald/10 border border-borderColor relative overflow-hidden">
+                        <div class="text-xs font-mono uppercase tracking-widest text-violetExt mb-2 font-bold">一句话总结 (Core Takeaway)</div>
+                        <blockquote class="text-base sm:text-lg font-serif text-white leading-relaxed">
+                            “注意力机制选择 Q、K、V 三个二维矩阵，是因为 <strong class="text-qCyan">Q与K组成了非对称匹配的最小双线性形式 (2)</strong>，而 <strong class="text-vEmerald">V 实现了匹配结果与实际解耦内容的独立载体 (1)</strong>。<span class="text-kGold font-bold">2 + 1 = 3</span> 是构建软检索数据库的最小完备数学结构，既不会因两路而陷于对称陷阱，也不会因四路而陷入冗余或计算灾难。”
+                        </blockquote>
+                    </div>
+                </div>
+
+                <!-- 3 Concise Interactive Quiz Questions -->
+                <div class="space-y-6">
+                    <h3 class="text-lg font-bold text-white border-b border-borderColor pb-2">🎯 互动自测题 (选择最佳答案)</h3>
+
+                    <!-- Quiz 1 -->
+                    <div class="bg-darkBg p-5 rounded-xl border border-borderColor space-y-3">
+                        <div class="text-sm font-bold text-white">Q1: 关于 Q, K, V 矩阵与维度的描述，以下哪项是正确的？</div>
+                        <div class="space-y-2 text-xs sm:text-sm" id="q1-options">
+                            <label onclick="checkQuiz(1, 'A')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q1" value="A" class="mt-0.5 accent-qCyan">
+                                <span>A. Q, K, V 是打包在一起的 3D 张量，因此 d<sub>v</sub> 必须严格等于 d<sub>k</sub>。</span>
+                            </label>
+                            <label onclick="checkQuiz(1, 'B')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q1" value="B" class="mt-0.5 accent-qCyan">
+                                <span>B. Q, K, V 是 3 个独立的 2D 矩阵，d<sub>v</sub> 在数学上完全可以不等于 d<sub>k</sub>。</span>
+                            </label>
+                            <label onclick="checkQuiz(1, 'C')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q1" value="C" class="mt-0.5 accent-qCyan">
+                                <span>C. 多头注意力中每一头都增加了一个新的角色矩阵 R。</span>
+                            </label>
+                        </div>
+                        <div id="q1-feedback" class="hidden p-3 rounded text-xs font-mono"></div>
+                    </div>
+
+                    <!-- Quiz 2 -->
+                    <div class="bg-darkBg p-5 rounded-xl border border-borderColor space-y-3">
+                        <div class="text-sm font-bold text-white">Q2: 如果强行令 Q = K（两路简化版），会导致什么致命后果？</div>
+                        <div class="space-y-2 text-xs sm:text-sm" id="q2-options">
+                            <label onclick="checkQuiz(2, 'A')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q2" value="A" class="mt-0.5 accent-qCyan">
+                                <span>A. 注意力矩阵退化为完全对称，且对角线 (Token 关注自身) 严重占主导。</span>
+                            </label>
+                            <label onclick="checkQuiz(2, 'B')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q2" value="B" class="mt-0.5 accent-qCyan">
+                                <span>B. 计算复杂度会直接从 O(T²) 暴涨到 O(T³)。</span>
+                            </label>
+                            <label onclick="checkQuiz(2, 'C')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q2" value="C" class="mt-0.5 accent-qCyan">
+                                <span>C. Softmax 函数将无法继续计算梯度。</span>
+                            </label>
+                        </div>
+                        <div id="q2-feedback" class="hidden p-3 rounded text-xs font-mono"></div>
+                    </div>
+
+                    <!-- Quiz 3 -->
+                    <div class="bg-darkBg p-5 rounded-xl border border-borderColor space-y-3">
+                        <div class="text-sm font-bold text-white">Q3: 为什么跨模态注意力 (Cross-Attention) 依然属于三路机制？</div>
+                        <div class="space-y-2 text-xs sm:text-sm" id="q3-options">
+                            <label onclick="checkQuiz(3, 'A')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q3" value="A" class="mt-0.5 accent-qCyan">
+                                <span>A. 因为它强制要求文本和图像的输入维度必须完全相同。</span>
+                            </label>
+                            <label onclick="checkQuiz(3, 'B')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q3" value="B" class="mt-0.5 accent-qCyan">
+                                <span>B. 因为它只是改变了 Q（来自序列A）与 K, V（来自序列B）的来源，内核依然是 Q, K 匹配 + V 提取。</span>
+                            </label>
+                            <label onclick="checkQuiz(3, 'C')" class="flex items-start space-x-3 p-2.5 rounded-lg border border-borderColor hover:bg-cardBg cursor-pointer transition">
+                                <input type="radio" name="q3" value="C" class="mt-0.5 accent-qCyan">
+                                <span>C. 因为它引入了第 4 个矩阵 R 来融合两种模态。</span>
+                            </label>
+                        </div>
+                        <div id="q3-feedback" class="hidden p-3 rounded text-xs font-mono"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="text-center text-xs text-gray-500 py-6 border-t border-borderColor font-mono">
+            3Blue1Brown Style Interactive Tutorial &copy; 2026. Rendered with HTML5 Canvas & Tailwind CSS. Zero Raw Code Artifacts.
+        </footer>
+
+    </main>
+
+    <!-- JavaScript Logic & Canvas Engines -->
+    <script>
+        // High-DPI Canvas Helper Function
+        function setupCanvas(canvas) {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            return { ctx, width: rect.width, height: rect.height };
+        }
+
+        // Global State & Presets
+        const tokensPreset = ["小猫", "追着", "它", "的", "尾巴"];
+        let activeQueryIdx = 2; // Default "它"
+
+        // ==================== HERO SECTION LOGIC ====================
+        const heroInfoMap = {
+            'q': '💡 <strong class="text-qCyan">Query (Q, 查询):</strong> 由 X · W<sub>Q</sub> 得到。代表当前位置向量主动发出的“特征索求指令”（例如：“我是一个代词，需要寻找前文的动画词名词”）。',
+            'k': '💡 <strong class="text-kGold">Key (K, 键):</strong> 由 X · W<sub>K</sub> 得到。代表所有候选向量对外暴露的“检索标签”（例如：“我是实体名词小猫”），与 Q 进行点积计算相关度。',
+            'v': '💡 <strong class="text-vEmerald">Value (V, 值):</strong> 由 X · W<sub>V</sub> 得到。代表一旦被匹配上后，真正要输出和汇聚的“信息内容”。与 Q/K 的特征空间完全解耦。'
+        };
+
+        ['q', 'k', 'v'].forEach(key => {
+            const el1 = document.getElementById(`hero-${key}`);
+            const el2 = document.getElementById(`hero-${key}2`);
+            const update = () => {
+                document.getElementById('hero-info').innerHTML = `<p>${heroInfoMap[key]}</p>`;
+            };
+            if(el1) el1.addEventListener('mouseenter', update);
+            if(el2) el2.addEventListener('mouseenter', update);
+        });
+
+        // ==================== MODULE 1 LOGIC ====================
+        let mod1Params = { T: 4, dk: 3, dv: 2 };
+
+        function updateMod1Grids() {
+            const { T, dk, dv } = mod1Params;
+            document.getElementById('val-T').innerText = T;
+            document.getElementById('val-dk').innerText = dk;
+            document.getElementById('val-dv').innerText = dv;
+
+            document.getElementById('shape-q').innerText = `T × d_k = (${T} × ${dk})`;
+            document.getElementById('shape-k').innerText = `T × d_k = (${T} × ${dk})`;
+            document.getElementById('shape-v').innerText = `T × d_v = (${T} × ${dv})`;
+
+            const createGridHtml = (rows, cols, colorClass, prefix) => {
+                let html = '';
+                for(let i=0; i<rows; i++) {
+                    html += `<div class="flex items-center space-x-1 row-item cursor-pointer hover:bg-white/10 p-1 rounded transition" data-row="${i}" onmouseenter="highlightRow(${i})" onmouseleave="unhighlightRow()">`;
+                    html += `<span class="text-[10px] text-gray-500 w-12 font-mono">Token ${i+1}</span>`;
+                    for(let j=0; j<cols; j++) {
+                        const val = ((Math.sin(i * 3 + j * 7) + 1) / 2).toFixed(2);
+                        html += `<span class="flex-1 text-center py-1 rounded bg-cardBg border border-borderColor ${colorClass}">${val}</span>`;
+                    }
+                    html += `</div>`;
+                }
+                return html;
+            };
+
+            document.getElementById('grid-q').innerHTML = createGridHtml(T, dk, 'text-qCyan border-qCyan/30', 'Q');
+            document.getElementById('grid-k').innerHTML = createGridHtml(T, dk, 'text-kGold border-kGold/30', 'K');
+            document.getElementById('grid-v').innerHTML = createGridHtml(T, dv, 'text-vEmerald border-vEmerald/30', 'V');
+        }
+
+        function highlightRow(rowIdx) {
+            document.querySelectorAll(`.row-item[data-row="${rowIdx}"]`).forEach(el => {
+                el.classList.add('bg-white/15', 'ring-1', 'ring-white/40');
+            });
+        }
+        function unhighlightRow() {
+            document.querySelectorAll(`.row-item`).forEach(el => {
+                el.classList.remove('bg-white/15', 'ring-1', 'ring-white/40');
+            });
+        }
+
+        document.getElementById('slider-T').addEventListener('input', (e) => { mod1Params.T = parseInt(e.target.value); updateMod1Grids(); drawMod1Isometric(); });
+        document.getElementById('slider-dk').addEventListener('input', (e) => { mod1Params.dk = parseInt(e.target.value); updateMod1Grids(); drawMod1Isometric(); });
+        document.getElementById('slider-dv').addEventListener('input', (e) => { mod1Params.dv = parseInt(e.target.value); updateMod1Grids(); drawMod1Isometric(); });
+
+        function switchMod1Tab(tab) {
+            ['a', 'b', 'c'].forEach(t => {
+                document.getElementById(`tab-mod1-${t}`).classList.remove('text-qCyan', 'tab-btn-active');
+                document.getElementById(`tab-mod1-${t}`).classList.add('text-gray-400');
+                document.getElementById(`content-mod1-${t}`).classList.add('hidden');
+            });
+            document.getElementById(`tab-mod1-${tab}`).classList.add('text-qCyan', 'tab-btn-active');
+            document.getElementById(`tab-mod1-${tab}`).classList.remove('text-gray-400', 'hidden');
+            document.getElementById(`content-mod1-${tab}`).classList.remove('hidden');
+
+            if(tab === 'b') drawMod1Isometric();
+            if(tab === 'c') drawMod1MultiHead();
+        }
+
+        // Isometric 3D vs 2D Canvas Drawing
+        function drawMod1Isometric() {
+            const cvs = document.getElementById('canvas-isometric');
+            if(!cvs || cvs.offsetParent === null) return;
+            const { ctx, width, height } = setupCanvas(cvs);
+            ctx.clearRect(0, 0, width, height);
+
+            // Left: Fake 3D Tensor Box
+            ctx.save();
+            ctx.translate(width * 0.25, height * 0.5);
+            ctx.strokeStyle = '#ff6b6b';
+            ctx.fillStyle = 'rgba(255, 107, 107, 0.15)';
+            ctx.lineWidth = 1.5;
+
+            // Draw isometric cuboid (3 x T x d)
+            const dx = 25, dy = 15, dz = 45;
+            for(let layer=0; layer<3; layer++) {
+                const ox = layer * 15, oy = -layer * 15;
+                ctx.beginPath();
+                ctx.rect(ox - dz, oy - dy, dz*2, dy*2);
+                ctx.fill();
+                ctx.stroke();
+            }
+            ctx.fillStyle = '#ff6b6b';
+            ctx.font = '11px sans-serif';
+            ctx.fillText('误区：3D 刚性张量 (3 × T × d)', -60, 50);
+            ctx.restore();
+
+            // Right: 3 Separate 2D Planes
+            ctx.save();
+            ctx.translate(width * 0.65, height * 0.25);
+            
+            const planes = [
+                { title: 'Q 矩阵 (T × d_k)', color: '#58c4dd', y: 0 },
+                { title: 'K 矩阵 (T × d_k)', color: '#f0b429', y: 65 },
+                { title: 'V 矩阵 (T × d_v)', color: '#4ade80', y: 130 }
+            ];
+
+            planes.forEach(p => {
+                ctx.fillStyle = p.color + '20';
+                ctx.strokeStyle = p.color;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.roundRect(0, p.y, 160, 45, 6);
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.fillStyle = p.color;
+                ctx.font = 'bold 11px sans-serif';
+                ctx.fillText(p.title, 12, p.y + 26);
+            });
+
+            ctx.restore();
+        }
+
+        // MultiHead Canvas Drawing
+        function drawMod1MultiHead() {
+            const cvs = document.getElementById('canvas-multihead');
+            if(!cvs || cvs.offsetParent === null) return;
+            const { ctx, width, height } = setupCanvas(cvs);
+            ctx.clearRect(0, 0, width, height);
+
+            const heads = ['Head 1 (语法)', 'Head 2 (指代)', 'Head 3 (语义)', 'Head 4 (位置)'];
+            const w = 110, h = 100;
+            const startX = (width - (4 * w + 3 * 15)) / 2;
+
+            heads.forEach((name, i) => {
+                const x = startX + i * (w + 15);
+                const y = 40;
+
+                ctx.fillStyle = '#141b26';
+                ctx.strokeStyle = '#c084fc';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.roundRect(x, y, w, h, 8);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#c084fc';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.fillText(name, x + 10, y + 22);
+
+                // Small sub-boxes Q, K, V
+                const subColors = ['#58c4dd', '#f0b429', '#4ade80'];
+                ['Q', 'K', 'V'].forEach((sub, j) => {
+                    ctx.fillStyle = subColors[j] + '30';
+                    ctx.strokeStyle = subColors[j];
+                    ctx.beginPath();
+                    ctx.roundRect(x + 10 + j*30, y + 45, 24, 35, 4);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = subColors[j];
+                    ctx.font = 'bold 10px font-mono';
+                    ctx.fillText(sub, x + 16 + j*30, y + 66);
+                });
+            });
+
+            // Concat Arrow at bottom
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Concat(Head₁, ..., Head₄) Wᴼ  ──►  最终多头特征输出', width / 2, height - 20);
+        }
+
+        // ==================== MODULE 2 LOGIC ====================
+        function initMod2() {
+            const btnContainer = document.getElementById('token-buttons');
+            btnContainer.innerHTML = '';
+            tokensPreset.forEach((tok, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `px-3 py-1.5 rounded-lg border text-xs font-bold transition cursor-pointer ${idx === activeQueryIdx ? 'bg-qCyan/20 text-qCyan border-qCyan/60' : 'bg-cardBg text-gray-300 border-borderColor hover:border-qCyan/40'}`;
+                btn.innerText = `${idx+1}. ${tok}`;
+                btn.onclick = () => {
+                    activeQueryIdx = idx;
+                    initMod2();
+                    drawMod2();
+                };
+                btnContainer.appendChild(btn);
+            });
+            drawMod2();
+        }
+
+        function drawMod2() {
+            const cvs = document.getElementById('canvas-retrieval');
+            if(!cvs) return;
+            const { ctx, width, height } = setupCanvas(cvs);
+            ctx.clearRect(0, 0, width, height);
+
+            const n = tokensPreset.length;
+            const queryTok = tokensPreset[activeQueryIdx];
+
+            // Simulated attention weights from active query
+            const weights = [0.12, 0.25, 0.08, 0.05, 0.50];
+            if(activeQueryIdx === 0) weights.splice(0, 5, 0.55, 0.25, 0.10, 0.05, 0.05);
+            if(activeQueryIdx === 2) weights.splice(0, 5, 0.65, 0.15, 0.05, 0.03, 0.12); // "它" -> "小猫" 0.65
+
+            // Draw Query Top Box
+            const qX = width / 2;
+            const qY = 35;
+            ctx.fillStyle = '#58c4dd20';
+            ctx.strokeStyle = '#58c4dd';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(qX - 100, qY - 18, 200, 36, 8);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#58c4dd';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Query (Q): "${queryTok}"`, qX, qY + 5);
+
+            // Draw Bottom Key & Value Nodes
+            const startX = 80;
+            const spacing = (width - 160) / (n - 1);
+            const nodeY = 190;
+
+            tokensPreset.forEach((tok, i) => {
+                const x = startX + i * spacing;
+                const w = weights[i];
+
+                // Animated Line from Q to K
+                ctx.strokeStyle = `rgba(240, 180, 41, ${0.2 + w * 0.8})`;
+                ctx.lineWidth = 1 + w * 5;
+                ctx.beginPath();
+                ctx.moveTo(qX, qY + 18);
+                ctx.lineTo(x, nodeY - 25);
+                ctx.stroke();
+
+                // Softmax Weight Label
+                ctx.fillStyle = '#f0b429';
+                ctx.font = 'bold 11px font-mono';
+                ctx.fillText(`${(w * 100).toFixed(0)}%`, x, nodeY - 35);
+
+                // Key Node
+                ctx.fillStyle = '#141b26';
+                ctx.strokeStyle = '#f0b429';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(x, nodeY - 10, 14, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = '#f0b429';
+                ctx.font = '10px font-mono';
+                ctx.fillText(`K${i+1}`, x, nodeY - 6);
+
+                // Value Node & Bar
+                ctx.fillStyle = '#4ade8030';
+                ctx.strokeStyle = '#4ade80';
+                ctx.beginPath();
+                ctx.roundRect(x - 22, nodeY + 15, 44, 40, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.fillText(tok, x, nodeY + 32);
+
+                ctx.fillStyle = '#4ade80';
+                ctx.font = '10px font-mono';
+                ctx.fillText(`V${i+1}`, x, nodeY + 47);
+            });
+
+            // Weighted Output Box at Bottom Center
+            const outY = height - 30;
+            ctx.fillStyle = '#4ade8020';
+            ctx.strokeStyle = '#4ade80';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(qX - 160, outY - 16, 320, 32, 8);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#4ade80';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillText(`上下文输出 Out = ∑ αⱼ Vⱼ (包含 ${(weights[0]*100).toFixed(0)}% 小猫特征)`, qX, outY + 4);
+        }
+
+        // ==================== MODULE 3 LOGIC ====================
+        let sepVal = 100;
+
+        document.getElementById('slider-sep').addEventListener('input', (e) => {
+            sepVal = parseInt(e.target.value);
+            document.getElementById('sep-val').innerText = `${sepVal}% (${sepVal === 0 ? '强制 Q=K 强对称' : sepVal === 100 ? '完全独立非对称 Q ≠ K' : '过渡态'})`;
+            
+            const symError = (0.84 * (1 - sepVal/100)).toFixed(2);
+            const diagShare = (22.4 + (1 - sepVal/100) * 45.6).toFixed(1);
+
+            document.getElementById('metric-sym').innerText = symError;
+            document.getElementById('metric-diag').innerText = `${diagShare}%`;
+
+            drawMod3();
+        });
+
+        function drawMod3() {
+            drawMod3Panel('canvas-sym-left', 0); // Forced Symmetry
+            drawMod3Panel('canvas-sym-right', sepVal / 100); // Dynamic
+        }
+
+        function drawMod3Panel(canvasId, sepRatio) {
+            const cvs = document.getElementById(canvasId);
+            if(!cvs) return;
+            const { ctx, width, height } = setupCanvas(cvs);
+            ctx.clearRect(0, 0, width, height);
+
+            const n = tokensPreset.length;
+            const cellW = 32;
+            const startX = 60;
+            const startY = 40;
+
+            // Generate Heatmap Matrix Data
+            let S = [];
+            for(let i=0; i<n; i++) {
+                S[i] = [];
+                for(let j=0; j<n; j++) {
+                    if(sepRatio === 0) {
+                        // Symmetric Matrix Q=K
+                        const dist = Math.abs(i - j);
+                        S[i][j] = i === j ? 0.65 : (0.35 / (dist + 0.5));
+                    } else {
+                        // Asymmetric Matrix Q!=K (blended by sepRatio)
+                        const symVal = i === j ? 0.65 : (0.35 / (Math.abs(i - j) + 0.5));
+                        let asymVal = 0.1;
+                        if(i === 2 && j === 0) asymVal = 0.75; // "它" -> "小猫"
+                        if(i === 0 && j === 2) asymVal = 0.08; // "小猫" -> "它"
+                        if(i === j) asymVal = 0.22; // diagonal reasonable
+                        
+                        S[i][j] = symVal * (1 - sepRatio) + asymVal * sepRatio;
+                    }
+                }
+            }
+
+            // Draw Matrix Cells
+            ctx.font = '10px font-mono';
+            ctx.textAlign = 'center';
+
+            for(let i=0; i<n; i++) {
+                // Row Token Label
+                ctx.fillStyle = '#9ca3af';
+                ctx.fillText(tokensPreset[i], startX - 25, startY + i * cellW + 20);
+                // Col Token Label
+                ctx.fillText(tokensPreset[i], startX + i * cellW + 16, startY - 10);
+
+                for(let j=0; j<n; j++) {
+                    const val = S[i][j];
+                    const x = startX + j * cellW;
+                    const y = startY + i * cellW;
+
+                    if(sepRatio === 0) {
+                        ctx.fillStyle = `rgba(255, 107, 107, ${val})`;
+                    } else {
+                        ctx.fillStyle = `rgba(74, 222, 128, ${val})`;
+                    }
+                    ctx.fillRect(x, y, cellW - 2, cellW - 2);
+
+                    ctx.fillStyle = val > 0.4 ? '#000000' : '#ffffff';
+                    ctx.fillText(val.toFixed(2), x + cellW/2 - 1, y + cellW/2 + 3);
+                }
+            }
+
+            // Draw Directed Arcs for Token "它" (Idx 2) -> "小猫" (Idx 0)
+            const arcY = startY + n * cellW + 40;
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '11px sans-serif';
+            ctx.fillText('定向关注弧线 ("它" ⇄ "小猫"):', startX + 60, arcY - 15);
+
+            const pIt = startX + 2 * cellW;
+            const pCat = startX + 0 * cellW;
+
+            // Arc 1: "它" -> "小猫"
+            const weightItToCat = S[2][0];
+            ctx.strokeStyle = sepRatio === 0 ? '#ff6b6b' : '#58c4dd';
+            ctx.lineWidth = 1 + weightItToCat * 4;
+            ctx.beginPath();
+            ctx.arc((pIt + pCat)/2, arcY, (pIt - pCat)/2, Math.PI, 0, false);
+            ctx.stroke();
+
+            // Arc 2: "小猫" -> "它"
+            const weightCatToIt = S[0][2];
+            ctx.strokeStyle = sepRatio === 0 ? '#ff6b6b' : '#f0b429';
+            ctx.lineWidth = 1 + weightCatToIt * 4;
+            ctx.beginPath();
+            ctx.arc((pIt + pCat)/2, arcY + 10, (pIt - pCat)/2, 0, Math.PI, false);
+            ctx.stroke();
+
+            ctx.fillStyle = sepRatio === 0 ? '#ff6b6b' : '#4ade80';
+            ctx.font = 'bold 10px font-mono';
+            ctx.fillText(`它→猫: ${weightItToCat.toFixed(2)} | 猫→它: ${weightCatToIt.toFixed(2)}`, startX + 60, arcY + 35);
+        }
+
+        // ==================== MODULE 4 LOGIC ====================
+        const expData = {
+            'a': {
+                title: "实验 A：把 R 加进取值端 (V' = V + R)",
+                math: "Output = Softmax(...) &middot; (X W<sub>V</sub> + X W<sub>R</sub>) = Softmax(...) &middot; X (W<sub>V</sub> + W<sub>R</sub>)",
+                verdict: "❌ 完全冗余 (线性退化)",
+                desc: "在代数上，两个独立矩阵 W<sub>V</sub> 和 W<sub>R</sub> 相加可以直接合并为一个新矩阵 <span class='text-vEmerald font-bold'>W<sub>V</sub>' = W<sub>V</sub> + W<sub>R</sub></span>。这相当于白白增加了 33% 的参数量，表达能力却完全为 0！"
+            },
+            'b': {
+                title: "实验 B：把 R 加进匹配端 (Q·Kᵀ + Q·Rᵀ)",
+                math: "Score = Q K<sup>&top;</sup> + Q R<sup>&top;</sup> = Q (K + R)<sup>&top;</sup>",
+                verdict: "❌ 毫无新增语义 (退化为单一 Key)",
+                desc: "由于矩阵乘法的分配律，<span class='math'>Q K<sup>&top;</sup> + Q R<sup>&top;</sup></span> 直接等价于 <span class='math'>Q (K + R)<sup>&top;</sup></span>。这并没有创造出第四个独立维度，只是将 Key 的投影矩阵替换成了 <span class='text-kGold font-bold'>W<sub>K</sub>' = W<sub>K</sub> + W<sub>R</sub></span>。"
+            },
+            'c': {
+                title: "实验 C：设计三阶张量交互 (Q ⊗ K ⊗ R)",
+                math: "Score(i, j, k) = &sum; Q<sub>i, d</sub> K<sub>j, d</sub> R<sub>k, d</sub>",
+                verdict: "💥 计算与显存爆炸 O(T³ d)",
+                desc: "如果强行让 R 参与三方协同打分，注意力张量维度将上升为 <span class='math'>T &times; T &times; T</span>。当序列长度 T = 4096 时，显存开销暴涨 4096 倍，直接导致现代 GPU 瞬间 OOM 瘫痪！"
+            }
+        };
+
+        function switchExpTab(expKey) {
+            ['a', 'b', 'c'].forEach(k => {
+                const btn = document.getElementById(`exp-tab-${k}`);
+                btn.classList.remove('border-coralWarn', 'bg-coralWarn/10');
+            });
+            document.getElementById(`exp-tab-${expKey}`).classList.add('border-coralWarn', 'bg-coralWarn/10');
+
+            const data = expData[expKey];
+            const card = document.getElementById('exp-display-card');
+
+            if(expKey === 'c') {
+                card.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-base font-bold text-white">${data.title}</h4>
+                            <span class="text-xs font-mono px-2 py-1 bg-coralWarn/20 text-coralWarn rounded font-bold">${data.verdict}</span>
+                        </div>
+                        <div class="p-3 bg-cardBg rounded border border-borderColor text-sm font-serif text-coralWarn">${data.math}</div>
+                        <p class="text-xs text-gray-300 leading-relaxed">${data.desc}</p>
+                        <div class="pt-2">
+                            <div class="text-xs font-mono text-gray-400 mb-2">复杂度对比图表 (Standard O(T²d) vs 4-Way Tensor O(T³d)):</div>
+                            <canvas id="canvas-exp-c" class="w-full h-48"></canvas>
+                        </div>
+                    </div>
+                `;
+                drawExpCChart();
+            } else {
+                card.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-base font-bold text-white">${data.title}</h4>
+                            <span class="text-xs font-mono px-2 py-1 bg-coralWarn/20 text-coralWarn rounded font-bold">${data.verdict}</span>
+                        </div>
+                        <div class="p-3 bg-cardBg rounded border border-borderColor text-sm font-serif text-coralWarn">${data.math}</div>
+                        <p class="text-xs text-gray-300 leading-relaxed">${data.desc}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function drawExpCChart() {
+            const cvs = document.getElementById('canvas-exp-c');
+            if(!cvs) return;
+            const { ctx, width, height } = setupCanvas(cvs);
+            ctx.clearRect(0, 0, width, height);
+
+            const tVals = [64, 512, 2048, 4096];
+            const oT2 = tVals.map(t => Math.pow(t, 2) / 1e5);
+            const oT3 = tVals.map(t => Math.pow(t, 3) / 1e7);
+
+            const startX = 50;
+            const startY = height - 30;
+            const chartW = width - 80;
+            const chartH = height - 50;
+
+            // Axes
+            ctx.strokeStyle = '#233044';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(startX, 10);
+            ctx.lineTo(startX, startY);
+            ctx.lineTo(startX + chartW, startY);
+            ctx.stroke();
+
+            // Plot lines
+            ctx.font = '10px font-mono';
+            ctx.textAlign = 'center';
+
+            tVals.forEach((t, i) => {
+                const x = startX + (i / 3) * chartW;
+                ctx.fillStyle = '#9ca3af';
+                ctx.fillText(`T=${t}`, x, startY + 15);
+
+                // O(T^2) Emerald Line
+                const y2 = startY - (oT2[i] / oT3[3]) * chartH * 0.1;
+                ctx.fillStyle = '#4ade80';
+                ctx.beginPath();
+                ctx.arc(x, y2, 4, 0, Math.PI*2);
+                ctx.fill();
+
+                // O(T^3) Coral Line
+                const y3 = startY - (oT3[i] / oT3[3]) * chartH;
+                ctx.fillStyle = '#ff6b6b';
+                ctx.beginPath();
+                ctx.arc(x, y3, 4, 0, Math.PI*2);
+                ctx.fill();
+            });
+
+            // Legend
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#4ade80';
+            ctx.fillText('● 标准 3 路 Self-Attention O(T²d)', startX + 20, 25);
+            ctx.fillStyle = '#ff6b6b';
+            ctx.fillText('● 强行 4 路张量 O(T³d) [灾难]', startX + 220, 25);
+        }
+
+        // ==================== MODULE 5 LOGIC ====================
+        const diagMap = {
+            'no-q': "🚨 <strong>移除 Q 的诊断：</strong> 系统失去了主动查询的“意图”。没有 Q，就无法根据当前位置的具体需求计算与前文 Key 的相关程度，退化为无目的的全盘平均抽取。",
+            'no-k': "🚨 <strong>移除 K 的诊断：</strong> 其它 Token 失去了“索引标签”。无法建立与 Q 的匹配相关度，软数据库无法完成 key-value lookup。",
+            'no-v': "🚨 <strong>移除 V 的诊断：</strong> 匹配打分与实际传输的内容强行绑定。当 Q·Kᵀ 打分很高时，传递出的特征强行受限于 Q, K 空间，维度无法解耦，语义表达受严重约束。",
+            'add-r': "🚨 <strong>硬塞 R 的诊断：</strong> 无论是加在取值端还是匹配端，在代数上均等价于矩阵合并 (W_V + W_R)；若构建 3 阶张量则引发 O(T³) 显存爆炸。"
+        };
+
+        function diagnoseRole(type) {
+            document.getElementById('diag-output').innerHTML = diagMap[type];
+        }
+
+        // ==================== MODULE 6 LOGIC ====================
+        function switchExtTab(tabIdx) {
+            [1, 2, 3].forEach(i => {
+                document.getElementById(`tab-ext-${i}`).classList.remove('text-violetExt', 'tab-btn-active');
+                document.getElementById(`tab-ext-${i}`).classList.add('text-gray-400');
+                document.getElementById(`content-ext-${i}`).classList.add('hidden');
+            });
+            document.getElementById(`tab-ext-${tabIdx}`).classList.add('text-violetExt', 'tab-btn-active');
+            document.getElementById(`tab-ext-${tabIdx}`).classList.remove('text-gray-400', 'hidden');
+            document.getElementById(`content-ext-${tabIdx}`).classList.remove('hidden');
+
+            if(tabIdx === 1) drawExtMH();
+            if(tabIdx === 2) drawExtGate();
+            if(tabIdx === 3) drawExtCross();
+        }
+
+        function drawExtMH() {
+            const cvs = document.getElementById('canvas-ext-mh');
+            if(!cvs) return;
+            const { ctx, width, height } = setupCanvas(cvs);
+            ctx.clearRect(0, 0, width, height);
+
+            ctx.fillStyle = '#c084fc';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Multi-Head Attention 架构内部拆解', width/2, 25);
+
+            // Input X
+            ctx.fillStyle = '#141b26';
+            ctx.strokeStyle = '#233044';
+            ctx.beginPath();
+            ctx.roundRect(width/2 - 60, 45, 120, 25, 4);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '11px font-mono';
+            ctx.fillText('输入序列 X', width/2, 61);
+
+            // Parallel Heads
+            const hCount = 4;
+            const hW = 90;
+            const startX = (width - (hCount * hW + 3 * 15)) / 2;
+
+            for(let i=0; i<hCount; i++) {
+                const x = startX + i * (hW + 15);
+                ctx.strokeStyle = '#c084fc';
+                ctx.fillStyle = '#c084fc15';
+                ctx.beginPath();
+                ctx.roundRect(x, 90, hW, 55, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#c084fc';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.fillText(`Head ${i+1}`, x + hW/2, 108);
+
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '9px font-mono';
+                ctx.fillText('Qᵢ, Kᵢ, Vᵢ 三路', x + hW/2, 128);
+            }
+        }
+
+        let gateVal = 0.8;
+        document.getElementById('slider-gate').addEventListener('input', (e) => {
+            gateVal = parseInt(e.target.value) / 100;
+            document.getElementById('gate-val-text').innerText = `g = ${gateVal.toFixed(2)}`;
+            drawExtGate();
+        });
+
+        function drawExtGate() {
+            const cvs = document.getElementById('canvas-ext-gate');
+            if(!cvs) return;
+            const { ctx, width, height } = setupCanvas(cvs);
+            ctx.clearRect(0, 0, width, height);
+
+            ctx.fillStyle = '#c084fc';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Gated Attention 阀门控制示意图', width/2, 25);
+
+            // Attn Box
+            ctx.fillStyle = '#4ade8020';
+            ctx.strokeStyle = '#4ade80';
+            ctx.beginPath();
+            ctx.roundRect(60, 60, 140, 40, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#4ade80';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.fillText('Attn(Q, K, V) 输出', 130, 84);
+
+            // Gate Valve Multiplication
+            ctx.fillStyle = '#c084fc';
+            ctx.font = 'bold 16px font-mono';
+            ctx.fillText('⊙', 240, 85);
+
+            // Gate Box
+            ctx.fillStyle = '#c084fc20';
+            ctx.strokeStyle = '#c084fc';
+            ctx.beginPath();
+            ctx.roundRect(270, 60, 100, 40, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#c084fc';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.fillText(`Gate g (${gateVal.toFixed(2)})`, 320, 84);
+
+            // Output bar
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '12px font-mono';
+            ctx.fillText(`Final Output = ${(gateVal * 100).toFixed(0)}% Attn + ${((1 - gateVal) * 100).toFixed(0)}% Residual`, width/2, 135);
+        }
+
+        let selectedCrossIdx = 2; // "酷猫"
+        function selectCrossWord(idx) {
+            selectedCrossIdx = idx;
+            const btns = document.querySelectorAll('#cross-words button');
+            btns.forEach((b, i) => {
+                if(i === idx) {
+                    b.className = "px-3 py-1 rounded bg-qCyan/20 text-qCyan border border-qCyan/40 font-bold";
+                } else {
+                    b.className = "px-3 py-1 rounded bg-darkBg text-gray-300 border border-borderColor hover:border-qCyan";
+                }
+            });
+            drawExtCross();
+        }
+
+        function drawExtCross() {
+            const cvs = document.getElementById('canvas-ext-cross');
+            if(!cvs) return;
+            const { ctx, width, height } = setupCanvas(cvs);
+            ctx.clearRect(0, 0, width, height);
+
+            ctx.fillStyle = '#58c4dd';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('文本 Query (Q)', 40, 30);
+
+            ctx.fillStyle = '#f0b429';
+            ctx.fillText('图像 Patch (K, V)', width - 180, 30);
+
+            // Draw image patches grid
+            const startX = width - 180;
+            const patchSize = 30;
+            const patchWeights = selectedCrossIdx === 2 ? [0.1, 0.8, 0.9, 0.2] : selectedCrossIdx === 1 ? [0.9, 0.1, 0.1, 0.3] : [0.2, 0.2, 0.3, 0.3];
+
+            for(let r=0; r<2; r++) {
+                for(let c=0; c<2; c++) {
+                    const idx = r*2 + c;
+                    const w = patchWeights[idx];
+                    const px = startX + c * (patchSize + 6);
+                    const py = 50 + r * (patchSize + 6);
+
+                    ctx.fillStyle = `rgba(240, 180, 41, ${w})`;
+                    ctx.strokeStyle = '#f0b429';
+                    ctx.fillRect(px, py, patchSize, patchSize);
+                    ctx.strokeRect(px, py, patchSize, patchSize);
+
+                    ctx.fillStyle = w > 0.5 ? '#000' : '#fff';
+                    ctx.font = '9px font-mono';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`P${idx+1}`, px + patchSize/2, py + patchSize/2 + 3);
+                }
+            }
+
+            // Draw Attention ray from Query text to target patch
+            ctx.strokeStyle = '#58c4dd';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(90, 70);
+            ctx.lineTo(startX + 15, 65);
+            ctx.stroke();
+        }
+
+        // ==================== MODULE 7 QUIZ LOGIC ====================
+        const quizAnswers = {
+            1: {
+                correct: 'B',
+                feedback: {
+                    'A': "❌ 错误。Q, K, V 是 3 个独立的 2D 矩阵，d_v 完全可以不等于 d_k。",
+                    'B': "✅ 正确！Q, K 负责点积匹配需 d_k 对齐，而 V 负责结果特征整合，维度 d_v 完全独立。",
+                    'C': "❌ 错误。多头注意力依然是把 Q, K, V 拆分成多组 2D 矩阵，没有第四个矩阵 R。"
+                }
+            },
+            2: {
+                correct: 'A',
+                feedback: {
+                    'A': "✅ 正确！若 Q = K，S = Q·Qᵀ 强行对称，且对角线 (Self-Attention) 永远占主导。",
+                    'B': "❌ 错误。两路计算复杂度依然是 O(T²d)，并不会暴涨到 O(T³)。",
+                    'C': "❌ 错误。Softmax 函数梯度依然可导，只是失去了表达非对称语境的能力。"
+                }
+            },
+            3: {
+                correct: 'B',
+                feedback: {
+                    'A': "❌ 错误。跨模态注意力不要求输入维度相同，只需要通过投影变换矩阵齐次化。",
+                    'B': "✅ 正确！跨模态只是把 Q（文本）与 K,V（图像）的来源替换，内核依然是 Q, K 匹配 + V 聚合。",
+                    'C': "❌ 错误。跨模态没有引入第四个矩阵 R。"
+                }
+            }
+        };
+
+        function checkQuiz(qNum, choice) {
+            const data = quizAnswers[qNum];
+            const feedbackEl = document.getElementById(`q${qNum}-feedback`);
+            feedbackEl.classList.remove('hidden', 'bg-vEmerald/10', 'text-vEmerald', 'bg-coralWarn/10', 'text-coralWarn');
+
+            if(choice === data.correct) {
+                feedbackEl.classList.add('bg-vEmerald/10', 'text-vEmerald');
+                feedbackEl.innerHTML = data.feedback[choice];
+            } else {
+                feedbackEl.classList.add('bg-coralWarn/10', 'text-coralWarn');
+                feedbackEl.innerHTML = data.feedback[choice];
+            }
+        }
+
+        // ==================== WINDOW INITIALIZATION ====================
+        window.onload = function() {
+            updateMod1Grids();
+            initMod2();
+            drawMod3();
+            switchExpTab('a');
+            switchExtTab(1);
+
+            // Window resize handler for crisp canvas redrawing
+            window.addEventListener('resize', () => {
+                drawMod1Isometric();
+                drawMod1MultiHead();
+                drawMod2();
+                drawMod3();
+                drawExpCChart();
+                drawExtMH();
+                drawExtGate();
+                drawExtCross();
+            });
+        }
+    </script>
+</body>
+</html>

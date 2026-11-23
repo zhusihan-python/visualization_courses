@@ -1,0 +1,1693 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transformer 第 6 章（下）：工程加速与硬件实战 —— 混合精度、分布式并行与显存法则</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            darkBg: '#0d1117',
+            cardBg: '#141b26',
+            elevatedBg: '#1b2434',
+            borderColor: '#233044',
+            textPrimary: '#e6edf3',
+            textSecondary: '#8b949e',
+            accentCyan: '#58c4dd',   // BF16 / Compute / Mantissa
+            accentGold: '#f0b429',   // Exponent / Highlights / AdamW
+            accentEmerald: '#4ade80',// OK / Savings / FSDP
+            accentCoral: '#ff6b6b',  // Overflow / OOM / FP16 danger
+            accentViolet: '#c084fc'   // Sign bit / LoRA / 3D Parallel
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['Fira Code', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #233044;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #58c4dd;
+    }
+
+    /* Math Typography (Zero Raw LaTeX Rule) */
+    .math {
+      font-family: 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif;
+      font-style: italic;
+      color: #58c4dd;
+    }
+    .math-block {
+      font-family: 'Cambria Math', 'STIX Two Math', serif;
+      background: rgba(35, 48, 68, 0.4);
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.5rem;
+      border-left: 3px solid #58c4dd;
+      text-align: center;
+      margin: 1rem 0;
+      font-size: 1.05rem;
+      color: #e6edf3;
+      overflow-x: auto;
+    }
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 4px;
+      font-size: 0.9em;
+    }
+    .frac .num {
+      border-bottom: 1px solid #8b949e;
+      padding-bottom: 1px;
+    }
+    .frac .den {
+      padding-top: 1px;
+    }
+
+    /* Bit box visual styles */
+    .bit-box {
+      font-family: 'Fira Code', monospace;
+      transition: all 0.2s ease;
+    }
+    .bit-box:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(88, 196, 221, 0.2);
+    }
+  </style>
+</head>
+<body class="bg-darkBg text-textPrimary font-sans antialiased selection:bg-accentCyan selection:text-darkBg min-h-screen">
+
+  <!-- Sticky Top Navigation Bar -->
+  <header class="sticky top-0 z-50 backdrop-blur-md bg-darkBg/80 border-b border-borderColor transition-all duration-300">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-accentCyan to-accentViolet flex items-center justify-center text-darkBg font-bold text-lg">
+          6
+        </div>
+        <div>
+          <span class="text-xs uppercase tracking-wider text-accentCyan font-semibold block">Transformer 核心原理与实战</span>
+          <span class="font-bold text-sm sm:text-base text-textPrimary">第 6 章（下）：工程加速与硬件实战</span>
+        </div>
+      </div>
+      
+      <!-- Nav Links -->
+      <nav class="hidden md:flex items-center space-x-1 lg:space-x-2 text-xs font-medium">
+        <a href="#module-6-4" class="px-3 py-2 rounded-md hover:bg-elevatedBg text-textSecondary hover:text-accentCyan transition-colors">6.4 混合精度实验室</a>
+        <a href="#module-6-5" class="px-3 py-2 rounded-md hover:bg-elevatedBg text-textSecondary hover:text-accentGold transition-colors">6.5 分布式并行剧场</a>
+        <a href="#module-6-6" class="px-3 py-2 rounded-md hover:bg-elevatedBg text-textSecondary hover:text-accentEmerald transition-colors">6.6 显存法则计算器</a>
+        <a href="#module-6-7" class="px-3 py-2 rounded-md hover:bg-elevatedBg text-textSecondary hover:text-accentViolet transition-colors">6.7 代码与全章总结</a>
+      </nav>
+
+      <div class="flex items-center space-x-2">
+        <a href="#vram-calculator" class="bg-accentCyan/10 border border-accentCyan/30 text-accentCyan hover:bg-accentCyan hover:text-darkBg px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
+          ⚡ 显存速算器
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="relative overflow-hidden pt-12 pb-16 border-b border-borderColor bg-gradient-to-b from-darkBg via-cardBg/40 to-darkBg">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <div class="text-center max-w-4xl mx-auto">
+        <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-accentViolet/10 border border-accentViolet/30 text-accentViolet text-xs font-semibold mb-4">
+          <span class="w-2 h-2 rounded-full bg-accentViolet animate-pulse"></span>
+          <span>第 6 章（下）· 工程加速与硬件实战</span>
+        </div>
+        
+        <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight text-textPrimary mb-6 leading-tight">
+          混合精度、分布式并行与<br><span class="bg-clip-text text-transparent bg-gradient-to-r from-accentCyan via-accentGold to-accentEmerald">大模型显存法则</span>
+        </h1>
+        
+        <p class="text-base sm:text-lg text-textSecondary mb-8 leading-relaxed">
+          从单卡 FP32 到千卡 BF16 / ZeRO-3 / FSDP 3D 并行，全面揭秘大模型训练与推理背后的硬件物理瓶颈、算力利用率（MFU）与 16 Bytes/参数 显存法则。
+        </p>
+
+        <!-- KPI Pill Badges -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto">
+          <div class="bg-cardBg border border-borderColor p-3 rounded-xl hover:border-accentCyan/50 transition-all">
+            <div class="text-xs text-textSecondary mb-1">BF16 动态范围</div>
+            <div class="text-lg font-bold text-accentCyan">±3.4 × 10<sup>38</sup></div>
+            <div class="text-[10px] text-textSecondary mt-0.5">保持 FP32 8-bit Exponent</div>
+          </div>
+          <div class="bg-cardBg border border-borderColor p-3 rounded-xl hover:border-accentGold/50 transition-all">
+            <div class="text-xs text-textSecondary mb-1">全量训练静态显存</div>
+            <div class="text-lg font-bold text-accentGold">≈ 16 Bytes / 参数</div>
+            <div class="text-[10px] text-textSecondary mt-0.5">权重+梯度+AdamW FP32</div>
+          </div>
+          <div class="bg-cardBg border border-borderColor p-3 rounded-xl hover:border-accentEmerald/50 transition-all">
+            <div class="text-xs text-textSecondary mb-1">7B 模型推理 (BF16)</div>
+            <div class="text-lg font-bold text-accentEmerald">≈ 14.0 GB 权重</div>
+            <div class="text-[10px] text-textSecondary mt-0.5">INT4 仅需 3.5 GB</div>
+          </div>
+          <div class="bg-cardBg border border-borderColor p-3 rounded-xl hover:border-accentViolet/50 transition-all">
+            <div class="text-xs text-textSecondary mb-1">LoRA 微调显存省</div>
+            <div class="text-lg font-bold text-accentViolet">降至 ≈ 1/6</div>
+            <div class="text-[10px] text-textSecondary mt-0.5">冻结基座权重与 AdamW</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-16">
+
+    <!-- MODULE 6.4: 混合精度训练实验室 -->
+    <section id="module-6-4" class="scroll-mt-20">
+      <div class="border border-borderColor bg-cardBg rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-96 h-96 bg-accentCyan/5 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="flex items-center space-x-3 mb-6">
+          <span class="w-3 h-8 bg-accentCyan rounded-full"></span>
+          <div>
+            <h2 class="text-2xl font-bold text-textPrimary">6.4 混合精度训练实验室 (FP32 / FP16 / BF16)</h2>
+            <p class="text-sm text-textSecondary">深入比特位底层：为何 FP16 频频溢出崩溃，而 BF16 成为现代 LLM 的标准配置？</p>
+          </div>
+        </div>
+
+        <!-- Bit Level Diagram -->
+        <div class="mb-10">
+          <h3 class="text-base font-semibold text-textPrimary mb-3 flex items-center">
+            <span>比特级结构拆解 (Bit-Level Bit Fields)</span>
+          </h3>
+          <div class="space-y-4">
+            
+            <!-- FP32 -->
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor">
+              <div class="flex justify-between items-center mb-2">
+                <span class="font-mono text-sm font-bold text-textPrimary">FP32 (单精度 32-bit / 4 Bytes)</span>
+                <span class="text-xs font-mono text-accentCyan">范围: ±1.18×10<sup>-38</sup> ~ ±3.40×10<sup>38</sup></span>
+              </div>
+              <div class="grid grid-cols-32 gap-0.5 font-mono text-[10px] text-center select-none overflow-x-auto pb-1">
+                <!-- Sign 1 bit -->
+                <div class="bg-accentViolet/30 text-accentViolet border border-accentViolet/50 py-1 rounded-l font-bold" title="Sign: 1 bit">S</div>
+                <!-- Exponent 8 bits -->
+                <div class="col-span-8 bg-accentGold/20 text-accentGold border border-accentGold/40 py-1 font-bold" title="Exponent: 8 bits">Exponent (8-bit)</div>
+                <!-- Mantissa 23 bits -->
+                <div class="col-span-23 bg-accentCyan/20 text-accentCyan border border-accentCyan/40 py-1 rounded-r font-bold" title="Mantissa: 23 bits">Mantissa / Fraction (23-bit)</div>
+              </div>
+            </div>
+
+            <!-- FP16 -->
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor">
+              <div class="flex justify-between items-center mb-2">
+                <span class="font-mono text-sm font-bold text-accentCoral">FP16 (半精度 16-bit / 2 Bytes)</span>
+                <span class="text-xs font-mono text-accentCoral">最大值仅 65504！极大溢出风险 (Overflow)</span>
+              </div>
+              <div class="grid grid-cols-16 gap-0.5 font-mono text-[10px] text-center select-none overflow-x-auto pb-1">
+                <!-- Sign 1 bit -->
+                <div class="bg-accentViolet/30 text-accentViolet border border-accentViolet/50 py-1 rounded-l font-bold">S</div>
+                <!-- Exponent 5 bits -->
+                <div class="col-span-5 bg-accentGold/20 text-accentGold border border-accentGold/40 py-1 font-bold">Exp (5-bit)</div>
+                <!-- Mantissa 10 bits -->
+                <div class="col-span-10 bg-accentCyan/20 text-accentCyan border border-accentCyan/40 py-1 rounded-r font-bold">Mantissa (10-bit)</div>
+              </div>
+            </div>
+
+            <!-- BF16 -->
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor border-l-4 border-l-accentCyan">
+              <div class="flex justify-between items-center mb-2">
+                <span class="font-mono text-sm font-bold text-accentCyan">BF16 (Bfloat16 16-bit / 2 Bytes - 推荐!)</span>
+                <span class="text-xs font-mono text-accentEmerald">范围与 FP32 完全一致! (8-bit Exponent)</span>
+              </div>
+              <div class="grid grid-cols-16 gap-0.5 font-mono text-[10px] text-center select-none overflow-x-auto pb-1">
+                <!-- Sign 1 bit -->
+                <div class="bg-accentViolet/30 text-accentViolet border border-accentViolet/50 py-1 rounded-l font-bold">S</div>
+                <!-- Exponent 8 bits -->
+                <div class="col-span-8 bg-accentGold/20 text-accentGold border border-accentGold/40 py-1 font-bold">Exponent (8-bit 保持 FP32 动态范围)</div>
+                <!-- Mantissa 7 bits -->
+                <div class="col-span-7 bg-accentCyan/20 text-accentCyan border border-accentCyan/40 py-1 rounded-r font-bold">Mant (7-bit)</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Interactive Numerical Overflow / Underflow Simulator -->
+        <div class="mb-10 bg-elevatedBg p-5 rounded-xl border border-borderColor">
+          <h3 class="text-base font-semibold text-textPrimary mb-3 flex items-center justify-between">
+            <span>实时数值下溢 / 溢出模拟器 (Overflow & Underflow Simulator)</span>
+            <span class="text-xs text-textSecondary font-normal">拖动滑动条或点击预设值</span>
+          </h3>
+
+          <div class="space-y-4">
+            <!-- Preset Buttons -->
+            <div class="flex flex-wrap gap-2">
+              <button onclick="setSimValue(100000)" class="px-3 py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono text-accentCoral border border-borderColor transition">100000 (1e5) [FP16 溢出]</button>
+              <button onclick="setSimValue(65504)" class="px-3 py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono text-accentGold border border-borderColor transition">65504 [FP16 上限]</button>
+              <button onclick="setSimValue(3.14159265)" class="px-3 py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono text-accentCyan border border-borderColor transition">3.14159 (π) [正常值]</button>
+              <button onclick="setSimValue(0.00001)" class="px-3 py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono text-accentGold border border-borderColor transition">0.00001 (1e-5) [FP16 边界]</button>
+              <button onclick="setSimValue(0.00000001)" class="px-3 py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono text-accentCoral border border-borderColor transition">0.00000001 (1e-8) [FP16 梯度下溢]</button>
+            </div>
+
+            <!-- Slider -->
+            <div class="flex items-center space-x-4">
+              <span class="text-xs font-mono text-textSecondary">1e-10</span>
+              <input type="range" id="sim-slider" min="-10" max="6" step="0.1" value="5" oninput="updateSimFromSlider(this.value)" class="w-full accent-accentCyan cursor-pointer">
+              <span class="text-xs font-mono text-textSecondary">1e6</span>
+            </div>
+
+            <!-- Output Comparison Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              
+              <!-- FP32 Card -->
+              <div class="bg-cardBg p-4 rounded-lg border border-borderColor">
+                <div class="text-xs text-textSecondary mb-1 font-mono">FP32 标准值</div>
+                <div id="fp32-val" class="text-base font-bold font-mono text-textPrimary">100000.0</div>
+                <div class="mt-2 text-xs font-mono text-accentEmerald">✅ 精确表达</div>
+              </div>
+
+              <!-- FP16 Card -->
+              <div id="fp16-card" class="bg-cardBg p-4 rounded-lg border border-borderColor transition-all">
+                <div class="text-xs text-textSecondary mb-1 font-mono">FP16 半精度转换</div>
+                <div id="fp16-val" class="text-base font-bold font-mono text-accentCoral">Infinity (溢出崩溃!)</div>
+                <div id="fp16-status" class="mt-2 text-xs font-mono text-accentCoral">❌ 超过最大值 65504</div>
+              </div>
+
+              <!-- BF16 Card -->
+              <div id="bf16-card" class="bg-cardBg p-4 rounded-lg border border-borderColor transition-all">
+                <div class="text-xs text-textSecondary mb-1 font-mono">BF16 转换</div>
+                <div id="bf16-val" class="text-base font-bold font-mono text-accentCyan">100000.0</div>
+                <div id="bf16-status" class="mt-2 text-xs font-mono text-accentEmerald">✅ 安全表示 (舍入尾数)</div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Mixed Precision Pipeline Card (autocast + GradScaler) -->
+        <div class="bg-elevatedBg p-5 rounded-xl border border-borderColor">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+            <h3 class="text-base font-semibold text-textPrimary">混合精度训练 Pipeline (torch.cuda.amp / autocast)</h3>
+            
+            <div class="flex items-center bg-cardBg rounded-lg p-1 border border-borderColor text-xs font-medium">
+              <button id="btn-mode-fp16" onclick="setAmpMode('fp16')" class="px-3 py-1 rounded-md bg-accentCoral text-darkBg font-bold transition">FP16 模式 (需 GradScaler)</button>
+              <button id="btn-mode-bf16" onclick="setAmpMode('bf16')" class="px-3 py-1 rounded-md text-textSecondary hover:text-textPrimary transition">BF16 模式 (更稳健)</button>
+            </div>
+          </div>
+
+          <!-- Amp Pipeline Visualization -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Operator Routing Table -->
+            <div class="space-y-3">
+              <div class="text-xs font-semibold text-textSecondary uppercase tracking-wider">算子精度分配路由 (Operator Precision Routing)</div>
+              
+              <div class="bg-cardBg p-3 rounded-lg border border-borderColor flex justify-between items-center">
+                <div>
+                  <span class="text-sm font-bold text-accentCyan">MatMul / Linear / Conv2d / Attention</span>
+                  <p class="text-xs text-textSecondary mt-0.5">密集矩阵乘法计算量占 99%+</p>
+                </div>
+                <span class="px-2.5 py-1 rounded text-xs font-mono font-bold bg-accentCyan/20 text-accentCyan border border-accentCyan/30">
+                  <span id="label-matmul-prec">BF16 / FP16</span> (加速 2~8x)
+                </span>
+              </div>
+
+              <div class="bg-cardBg p-3 rounded-lg border border-borderColor flex justify-between items-center">
+                <div>
+                  <span class="text-sm font-bold text-accentGold">Softmax / LayerNorm / CrossEntropyLoss</span>
+                  <p class="text-xs text-textSecondary mt-0.5">归一化与指数累加，涉及数值敏感计算</p>
+                </div>
+                <span class="px-2.5 py-1 rounded text-xs font-mono font-bold bg-accentGold/20 text-accentGold border border-accentGold/30">
+                  保持 FP32
+                </span>
+              </div>
+
+              <div class="bg-cardBg p-3 rounded-lg border border-borderColor flex justify-between items-center">
+                <div>
+                  <span class="text-sm font-bold text-accentViolet">FP32 Master Weights (主权重) & AdamW</span>
+                  <p class="text-xs text-textSecondary mt-0.5">防止微小梯度更新在低精度下被舍入截断为 0</p>
+                </div>
+                <span class="px-2.5 py-1 rounded text-xs font-mono font-bold bg-accentViolet/20 text-accentViolet border border-accentViolet/30">
+                  保持 FP32
+                </span>
+              </div>
+            </div>
+
+            <!-- Dynamic Dynamic Explanation -->
+            <div id="amp-explanation-box" class="bg-cardBg p-4 rounded-lg border border-borderColor flex flex-col justify-between">
+              <div>
+                <div class="flex items-center space-x-2 mb-2">
+                  <span id="amp-tag" class="px-2 py-0.5 rounded text-xs font-bold bg-accentCoral/20 text-accentCoral border border-accentCoral/30">FP16 模式</span>
+                  <span class="text-sm font-bold text-textPrimary">为什么必须使用 GradScaler？</span>
+                </div>
+                <p id="amp-text" class="text-xs text-textSecondary leading-relaxed">
+                  在 FP16 模式下，梯度值通常极小（如 <span class="math">10<sup>-6</sup></span>），会直接触碰 FP16 的下溢边界（<span class="math">6.1×10<sup>-5</sup></span>）从而变成 0.0。因此必须使用 <span class="font-mono text-accentGold">GradScaler</span> 在反向传播前将 Loss 放大 <span class="math">S</span> 倍（例如 <span class="math">2<sup>16</sup> = 65536</span>），更新前再缩小回去！若检测到 Inf/NaN 则跳过该 Step。
+                </p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-borderColor font-mono text-xs text-accentGold">
+                torch.cuda.amp.GradScaler(enabled=True)
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- MODULE 6.5: 分布式并行与显存切分剧场 -->
+    <section id="module-6-5" class="scroll-mt-20">
+      <div class="border border-borderColor bg-cardBg rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        
+        <div class="flex items-center space-x-3 mb-6">
+          <span class="w-3 h-8 bg-accentGold rounded-full"></span>
+          <div>
+            <h2 class="text-2xl font-bold text-textPrimary">6.5 分布式并行与显存切分剧场 (DP / TP / PP & ZeRO / FSDP)</h2>
+            <p class="text-sm text-textSecondary">从单机多卡数据并行到千卡 3D 混合并行与全切分 Fully Sharded Data Parallel (FSDP)</p>
+          </div>
+        </div>
+
+        <!-- Part A: 3D Parallelism Canvas Theater -->
+        <div class="mb-10 bg-elevatedBg p-5 rounded-xl border border-borderColor">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+            <h3 class="text-base font-semibold text-textPrimary">Part A: 3D 并行策略交互式剧场 (Interactive Parallelism Canvas)</h3>
+            
+            <!-- Tabs -->
+            <div class="flex flex-wrap gap-1 bg-cardBg p-1 rounded-lg border border-borderColor text-xs font-medium">
+              <button onclick="setParallelTab('dp')" id="tab-dp" class="px-3 py-1.5 rounded-md bg-accentCyan text-darkBg font-bold transition">① 数据并行 (DP)</button>
+              <button onclick="setParallelTab('tp')" id="tab-tp" class="px-3 py-1.5 rounded-md text-textSecondary hover:text-textPrimary transition">② 张量并行 (TP)</button>
+              <button onclick="setParallelTab('pp')" id="tab-pp" class="px-3 py-1.5 rounded-md text-textSecondary hover:text-textPrimary transition">③ 流水线并行 (PP)</button>
+              <button onclick="setParallelTab('3d')" id="tab-3d" class="px-3 py-1.5 rounded-md text-textSecondary hover:text-textPrimary transition">④ 3D 并行组合</button>
+            </div>
+          </div>
+
+          <!-- Canvas Display -->
+          <div class="relative w-full bg-darkBg rounded-xl border border-borderColor overflow-hidden p-2">
+            <canvas id="canvas-parallel" class="w-full h-80 block"></canvas>
+          </div>
+
+          <!-- Tab Dynamic Description -->
+          <div id="parallel-desc" class="mt-4 p-4 rounded-lg bg-cardBg border border-borderColor text-xs text-textSecondary leading-relaxed">
+            <span class="font-bold text-accentCyan block mb-1">数据并行 (Data Parallelism, DP):</span>
+            每张 GPU 拥有完整的模型权重副本，各自处理不同的 Mini-batch 数据。在反向传播完成后，通过 NVLink / All-Reduce 通信同步所有 GPU 上的梯度。适用于模型能单卡装下的场景。
+          </div>
+
+          <!-- Sliders for 3D Parallel (Visible only in 3D Tab) -->
+          <div id="3d-sliders" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-borderColor">
+            <div>
+              <label class="text-xs font-semibold text-accentCyan flex justify-between mb-1">
+                <span>DP (数据并行):</span> <span id="val-dp">8</span>
+              </label>
+              <input type="range" min="1" max="16" value="8" step="1" oninput="update3DCluster()" id="slider-dp" class="w-full accent-accentCyan">
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-accentGold flex justify-between mb-1">
+                <span>TP (张量并行 Megatron):</span> <span id="val-tp">4</span>
+              </label>
+              <input type="range" min="1" max="8" value="4" step="1" oninput="update3DCluster()" id="slider-tp" class="w-full accent-accentGold">
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-accentViolet flex justify-between mb-1">
+                <span>PP (流水线并行 Deepspeed):</span> <span id="val-pp">2</span>
+              </label>
+              <input type="range" min="1" max="8" value="2" step="1" oninput="update3DCluster()" id="slider-pp" class="w-full accent-accentViolet">
+            </div>
+          </div>
+        </div>
+
+        <!-- Part B: DeepSpeed ZeRO & PyTorch FSDP Sharding Simulator -->
+        <div class="bg-elevatedBg p-5 rounded-xl border border-borderColor">
+          <h3 class="text-base font-semibold text-textPrimary mb-3">Part B: DeepSpeed ZeRO & PyTorch FSDP 显存切分模拟器</h3>
+          
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Controls & Controls -->
+            <div class="space-y-4">
+              <div>
+                <label class="text-xs text-textSecondary block mb-2 font-medium">选择 ZeRO / FSDP 切分阶段:</label>
+                <div class="space-y-2">
+                  <button onclick="setZeroStage(0)" id="btn-zero-0" class="w-full text-left px-3 py-2 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs transition font-semibold">
+                    <div class="text-textPrimary">标准 DDP (不切分 Stage 0)</div>
+                    <div class="text-[10px] text-textSecondary">每卡复制 100% 权重、梯度、优化器</div>
+                  </button>
+                  <button onclick="setZeroStage(1)" id="btn-zero-1" class="w-full text-left px-3 py-2 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs transition font-semibold">
+                    <div class="text-accentCyan">ZeRO-1 / FSDP Optimizer Shard</div>
+                    <div class="text-[10px] text-textSecondary">仅切分 AdamW 优化器状态 (省 4x 显存)</div>
+                  </button>
+                  <button onclick="setZeroStage(2)" id="btn-zero-2" class="w-full text-left px-3 py-2 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs transition font-semibold">
+                    <div class="text-accentGold">ZeRO-2 / FSDP Grad+Opt Shard</div>
+                    <div class="text-[10px] text-textSecondary">切分优化器状态 + 梯度</div>
+                  </button>
+                  <button onclick="setZeroStage(3)" id="btn-zero-3" class="w-full text-left px-3 py-2 rounded-lg border border-accentEmerald/50 bg-accentEmerald/10 text-xs transition font-semibold">
+                    <div class="text-accentEmerald font-bold">ZeRO-3 / PyTorch FSDP (FULL_SHARD)</div>
+                    <div class="text-[10px] text-textSecondary">全切分：权重 + 梯度 + 优化器状态 (可扩展至千卡!)</div>
+                  </button>
+                </div>
+              </div>
+
+              <!-- GPU Count Slider -->
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="text-textSecondary">并行 GPU 节点数 (N):</span>
+                  <span id="gpu-count-label" class="font-bold text-accentCyan">8 卡</span>
+                </div>
+                <input type="range" id="zero-gpu-slider" min="1" max="8" step="1" value="8" oninput="updateZeroSim()" class="w-full accent-accentCyan cursor-pointer">
+              </div>
+
+              <div class="p-3 bg-cardBg rounded-lg border border-borderColor text-[11px] text-textSecondary leading-normal">
+                💡 <span class="font-bold text-textPrimary">对应关系说明：</span><br>
+                PyTorch FSDP <span class="font-mono text-accentEmerald">FULL_SHARD</span> ≈ DeepSpeed ZeRO-3<br>
+                PyTorch FSDP <span class="font-mono text-accentGold">SHARD_GRAD_OP</span> ≈ DeepSpeed ZeRO-2
+              </div>
+            </div>
+
+            <!-- Dynamic Memory Visualization Bars -->
+            <div class="lg:col-span-2 space-y-4">
+              <div class="flex justify-between items-center">
+                <span class="text-xs font-semibold text-textPrimary">7B BF16 训练单卡静态显存拆解 (不含激活值)</span>
+                <span id="zero-total-vram" class="text-sm font-bold font-mono text-accentEmerald">14.0 GB / 卡</span>
+              </div>
+
+              <!-- Progress bar representation -->
+              <div class="bg-darkBg p-4 rounded-xl border border-borderColor space-y-3">
+                
+                <!-- Weights Bar -->
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span class="text-accentCyan">模型权重 (Weights - BF16):</span>
+                    <span id="bar-val-w">1.75 GB</span>
+                  </div>
+                  <div class="w-full h-4 bg-cardBg rounded-full overflow-hidden">
+                    <div id="bar-w" class="h-full bg-accentCyan transition-all duration-300" style="width: 12.5%;"></div>
+                  </div>
+                </div>
+
+                <!-- Gradients Bar -->
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span class="text-accentGold">梯度 (Gradients - BF16):</span>
+                    <span id="bar-val-g">1.75 GB</span>
+                  </div>
+                  <div class="w-full h-4 bg-cardBg rounded-full overflow-hidden">
+                    <div id="bar-g" class="h-full bg-accentGold transition-all duration-300" style="width: 12.5%;"></div>
+                  </div>
+                </div>
+
+                <!-- Optimizer States Bar -->
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span class="text-accentViolet">AdamW 状态 & Master Weights (FP32):</span>
+                    <span id="bar-val-opt">10.5 GB</span>
+                  </div>
+                  <div class="w-full h-4 bg-cardBg rounded-full overflow-hidden">
+                    <div id="bar-opt" class="h-full bg-accentViolet transition-all duration-300" style="width: 75%;"></div>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- Memory Reduction Comparison Box -->
+              <div class="grid grid-cols-2 gap-4 text-center">
+                <div class="bg-cardBg p-3 rounded-lg border border-borderColor">
+                  <div class="text-[10px] text-textSecondary uppercase">未切分前总静态显存</div>
+                  <div class="text-base font-bold font-mono text-accentCoral">112.0 GB</div>
+                  <div class="text-[10px] text-textSecondary">(单卡全装需 112GB+)</div>
+                </div>
+                <div class="bg-cardBg p-3 rounded-lg border border-borderColor border-accentEmerald/40">
+                  <div class="text-[10px] text-textSecondary uppercase">当前切分模式单卡显存</div>
+                  <div id="zero-reduced-val" class="text-base font-bold font-mono text-accentEmerald">14.0 GB</div>
+                  <div id="zero-ratio-val" class="text-[10px] text-accentEmerald font-semibold">(节省 87.5%)</div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- MODULE 6.6: GPU 架构与大模型显存实战计算器 -->
+    <section id="module-6-6" class="scroll-mt-20">
+      <div class="border border-borderColor bg-cardBg rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        
+        <div class="flex items-center space-x-3 mb-6">
+          <span class="w-3 h-8 bg-accentEmerald rounded-full"></span>
+          <div>
+            <h2 class="text-2xl font-bold text-textPrimary">6.6 GPU 架构与大模型显存实战计算器</h2>
+            <p class="text-sm text-textSecondary">从硬件并行执行模型，到精准预测推理、全量训练与 LoRA 微调显存占用</p>
+          </div>
+        </div>
+
+        <!-- Part A: CPU vs GPU Parallelism Canvas -->
+        <div class="mb-10 bg-elevatedBg p-5 rounded-xl border border-borderColor">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-base font-semibold text-textPrimary">Part A: CPU vs GPU 架构与矩阵乘法并行度演练</h3>
+            <button id="btn-anim-cpugpu" onclick="toggleCpuGpuAnim()" class="px-3 py-1 rounded bg-cardBg border border-borderColor hover:bg-borderColor text-xs font-mono text-accentCyan">
+              ▶ 重新播放并行演示
+            </button>
+          </div>
+
+          <div class="bg-darkBg rounded-xl border border-borderColor p-2 overflow-hidden mb-4">
+            <canvas id="canvas-cpugpu" class="w-full h-56 block"></canvas>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="bg-cardBg p-3 rounded-lg border border-borderColor">
+              <span class="font-bold text-accentCyan block mb-1">CPU (延时优化型 Core):</span>
+              拥有少量超强核心（如 16-64 核），适合复杂的顺序逻辑分支与串行计算；内存带宽较低（100-200 GB/s）。
+            </div>
+            <div class="bg-cardBg p-3 rounded-lg border border-borderColor">
+              <span class="font-bold text-accentEmerald block mb-1">GPU (吞吐优化型 Array):</span>
+              拥有数以万计的 CUDA Cores / Tensor Cores，专为海量大规模矩阵乘法设计；高带宽显存 HBM3 可达 3.35 TB/s！
+            </div>
+          </div>
+        </div>
+
+        <!-- Part B: Interactive LLM VRAM Estimator -->
+        <div id="vram-calculator" class="bg-elevatedBg p-5 sm:p-6 rounded-xl border border-borderColor mb-10">
+          <h3 class="text-lg font-bold text-textPrimary mb-4 flex items-center">
+            <span class="mr-2">🧮</span>
+            <span>大模型显存黄金法则速算器 (Interactive LLM VRAM Estimator)</span>
+          </h3>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Form Controls -->
+            <div class="lg:col-span-5 space-y-4">
+              
+              <!-- Model Presets -->
+              <div>
+                <label class="text-xs font-semibold text-textSecondary block mb-1.5">模型参数量 (Model Size):</label>
+                <div class="grid grid-cols-5 gap-1 mb-2">
+                  <button onclick="setCalcParam(1.5)" class="py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono border border-borderColor">1.5B</button>
+                  <button onclick="setCalcParam(7)" class="py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono border border-borderColor text-accentCyan font-bold">7B</button>
+                  <button onclick="setCalcParam(13)" class="py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono border border-borderColor">13B</button>
+                  <button onclick="setCalcParam(34)" class="py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono border border-borderColor">34B</button>
+                  <button onclick="setCalcParam(70)" class="py-1 rounded bg-cardBg hover:bg-borderColor text-xs font-mono border border-borderColor">70B</button>
+                </div>
+                <div class="flex items-center space-x-2">
+                  <input type="range" id="slider-params" min="0.5" max="100" step="0.5" value="7" oninput="updateCalcFromInputs()" class="w-full accent-accentCyan">
+                  <span id="lbl-params" class="text-xs font-mono font-bold text-accentCyan min-w-[50px]">7.0 B</span>
+                </div>
+              </div>
+
+              <!-- Scenario -->
+              <div>
+                <label class="text-xs font-semibold text-textSecondary block mb-1.5">应用场景 (Task Scenario):</label>
+                <div class="grid grid-cols-3 gap-1 bg-cardBg p-1 rounded-lg border border-borderColor text-xs">
+                  <button onclick="setCalcScenario('infer')" id="scen-infer" class="py-1.5 rounded-md bg-accentCyan text-darkBg font-bold">推理 (Inference)</button>
+                  <button onclick="setCalcScenario('full')" id="scen-full" class="py-1.5 rounded-md text-textSecondary">全量微调 (Full)</button>
+                  <button onclick="setCalcScenario('lora')" id="scen-lora" class="py-1.5 rounded-md text-textSecondary">LoRA (r=8)</button>
+                </div>
+              </div>
+
+              <!-- Precision -->
+              <div>
+                <label class="text-xs font-semibold text-textSecondary block mb-1.5">数值精度 (Precision):</label>
+                <select id="calc-prec" onchange="updateCalcFromInputs()" class="w-full bg-cardBg border border-borderColor rounded-lg px-3 py-2 text-xs font-mono text-textPrimary focus:outline-none focus:border-accentCyan">
+                  <option value="4">FP32 (4 Bytes/param)</option>
+                  <option value="2" selected>BF16 / FP16 (2 Bytes/param)</option>
+                  <option value="1">INT8 量化 (1 Byte/param)</option>
+                  <option value="0.5">INT4 量化 (0.5 Byte/param)</option>
+                </select>
+              </div>
+
+              <!-- Sequence Length & Batch Size -->
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-textSecondary">序列长度 L:</span>
+                    <span id="lbl-seq" class="font-mono text-accentGold">4096</span>
+                  </div>
+                  <input type="range" id="slider-seq" min="512" max="32768" step="512" value="4096" oninput="updateCalcFromInputs()" class="w-full accent-accentGold">
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-textSecondary">Batch Size B:</span>
+                    <span id="lbl-batch" class="font-mono text-accentGold">4</span>
+                  </div>
+                  <input type="range" id="slider-batch" min="1" max="64" step="1" value="4" oninput="updateCalcFromInputs()" class="w-full accent-accentGold">
+                </div>
+              </div>
+
+              <!-- Toggles -->
+              <div class="space-y-2 pt-2 border-t border-borderColor text-xs">
+                <label class="flex items-center justify-between cursor-pointer">
+                  <span class="text-textSecondary">激活值检查点 (Gradient Checkpointing)</span>
+                  <input type="checkbox" id="chk-ckpt" checked onchange="updateCalcFromInputs()" class="accent-accentEmerald w-4 h-4">
+                </label>
+                <label class="flex items-center justify-between cursor-pointer">
+                  <span class="text-textSecondary">CUDA 缓冲区 & 碎片安全余量 (×1.2)</span>
+                  <input type="checkbox" id="chk-safety" checked onchange="updateCalcFromInputs()" class="accent-accentCyan w-4 h-4">
+                </label>
+              </div>
+
+            </div>
+
+            <!-- Calculation Output Cards -->
+            <div class="lg:col-span-7 flex flex-col justify-between space-y-4">
+              
+              <!-- Total Header Card -->
+              <div class="bg-cardBg p-4 rounded-xl border border-borderColor flex justify-between items-center">
+                <div>
+                  <span class="text-xs text-textSecondary uppercase font-medium">预计所需总显存 (Total VRAM)</span>
+                  <div id="out-total-vram" class="text-3xl font-extrabold font-mono text-accentEmerald">16.1 GB</div>
+                  <div id="out-vram-subtext" class="text-xs text-textSecondary mt-0.5">含 1.2x 安全余量缓冲区</div>
+                </div>
+                <div class="text-right">
+                  <span class="px-3 py-1 rounded-full text-xs font-bold bg-accentEmerald/20 text-accentEmerald border border-accentEmerald/30" id="out-recommend-card">
+                    单卡 24GB (RTX 4090) 可顺畅运行
+                  </span>
+                </div>
+              </div>
+
+              <!-- Stacked Bar Visual -->
+              <div>
+                <div class="text-xs font-semibold text-textSecondary mb-2 flex justify-between">
+                  <span>显存分布拆解 (VRAM Breakdown)</span>
+                  <span class="font-mono">单位: GB</span>
+                </div>
+                <div class="w-full h-6 bg-darkBg rounded-lg overflow-hidden flex font-mono text-[10px] text-darkBg font-bold">
+                  <div id="vbar-weights" class="bg-accentCyan h-full flex items-center justify-center transition-all" style="width: 70%;" title="模型权重">W</div>
+                  <div id="vbar-grads" class="bg-accentGold h-full flex items-center justify-center transition-all" style="width: 0%;" title="梯度">G</div>
+                  <div id="vbar-opt" class="bg-accentViolet h-full flex items-center justify-center transition-all" style="width: 0%;" title="优化器状态">Opt</div>
+                  <div id="vbar-act" class="bg-accentEmerald h-full flex items-center justify-center transition-all" style="width: 30%;" title="KV Cache / 激活值">Act</div>
+                </div>
+              </div>
+
+              <!-- Detailed Table -->
+              <div class="bg-cardBg rounded-xl border border-borderColor p-4 font-mono text-xs space-y-2">
+                <div class="flex justify-between border-b border-borderColor/60 pb-1.5">
+                  <span class="text-textSecondary">1. 模型权重 (Weights):</span>
+                  <span id="out-w-gb" class="text-accentCyan font-bold">14.00 GB</span>
+                </div>
+                <div class="flex justify-between border-b border-borderColor/60 pb-1.5">
+                  <span class="text-textSecondary">2. 梯度 (Gradients):</span>
+                  <span id="out-g-gb" class="text-accentGold font-bold">0.00 GB</span>
+                </div>
+                <div class="flex justify-between border-b border-borderColor/60 pb-1.5">
+                  <span class="text-textSecondary">3. AdamW 优化器状态 (Optimizer):</span>
+                  <span id="out-opt-gb" class="text-accentViolet font-bold">0.00 GB</span>
+                </div>
+                <div class="flex justify-between border-b border-borderColor/60 pb-1.5">
+                  <span class="text-textSecondary">4. KV Cache / 激活值 (Activations):</span>
+                  <span id="out-act-gb" class="text-accentEmerald font-bold">1.42 GB</span>
+                </div>
+                <div class="flex justify-between pt-1">
+                  <span class="text-textPrimary font-bold">理论裸显存:</span>
+                  <span id="out-raw-gb" class="text-textPrimary font-bold">15.42 GB</span>
+                </div>
+              </div>
+
+              <!-- Cheat-Sheet Box -->
+              <div class="p-3 bg-cardBg/80 rounded-lg border border-accentGold/30 text-xs text-textSecondary leading-relaxed">
+                🔥 <span class="font-bold text-accentGold">速记口诀：</span> 
+                7B 模型 BF16 推理静态存 <span class="text-accentCyan font-mono font-bold">14GB</span> (2B/param)；
+                全量训练静态显存高达 <span class="text-accentCoral font-mono font-bold">112GB</span> (<span class="text-accentGold font-mono">16 Bytes/param</span>: 权重2B + 梯度2B + AdamW/主权重12B)；
+                LoRA 微调显存可大幅降至 <span class="text-accentEmerald font-mono font-bold">~21GB</span>！
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Part C: GPU Compatibility Matrix -->
+        <div class="bg-elevatedBg p-5 rounded-xl border border-borderColor">
+          <h3 class="text-base font-semibold text-textPrimary mb-3 flex justify-between items-center">
+            <span>Part C: "我的显卡能跑什么？" (GPU Hardware Compatibility Matrix)</span>
+            <span class="text-xs text-textSecondary font-normal">点击选择您的硬件配置</span>
+          </h3>
+
+          <!-- GPU Pills -->
+          <div class="flex flex-wrap gap-2 mb-4">
+            <button onclick="selectGPU(8)" id="gpu-pill-8" class="px-3 py-1.5 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs font-mono transition">8 GB (RTX 4060)</button>
+            <button onclick="selectGPU(16)" id="gpu-pill-16" class="px-3 py-1.5 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs font-mono transition">16 GB (RTX 4060 Ti / M-series)</button>
+            <button onclick="selectGPU(24)" id="gpu-pill-24" class="px-3 py-1.5 rounded-lg border border-accentCyan bg-accentCyan/10 text-accentCyan text-xs font-mono font-bold transition">24 GB (RTX 3090 / 4090)</button>
+            <button onclick="selectGPU(40)" id="gpu-pill-40" class="px-3 py-1.5 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs font-mono transition">40 GB (A100-40G)</button>
+            <button onclick="selectGPU(80)" id="gpu-pill-80" class="px-3 py-1.5 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs font-mono transition">80 GB (A100 / H100-80G)</button>
+          </div>
+
+          <!-- Dynamic Compatibility Table -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs text-left border-collapse font-mono">
+              <thead>
+                <tr class="border-b border-borderColor bg-cardBg text-textSecondary">
+                  <th class="p-3">模型参数量</th>
+                  <th class="p-3">BF16 推理</th>
+                  <th class="p-3">INT4 量化推理</th>
+                  <th class="p-3">LoRA 微调 (r=8)</th>
+                  <th class="p-3">全量微调 (Full Training)</th>
+                </tr>
+              </thead>
+              <tbody id="gpu-matrix-body" class="divide-y divide-borderColor/50">
+                <!-- Dynamically Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- MODULE 6.7: 实战代码库、5题互动测验与全章总结 -->
+    <section id="module-6-7" class="scroll-mt-20">
+      <div class="border border-borderColor bg-cardBg rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        
+        <div class="flex items-center space-x-3 mb-6">
+          <span class="w-3 h-8 bg-accentViolet rounded-full"></span>
+          <div>
+            <h2 class="text-2xl font-bold text-textPrimary">6.7 PyTorch 实战代码库、5 题互动测验与第 6 章全章总结</h2>
+            <p class="text-sm text-textSecondary">工业级标准代码模块、自我检测与 12 条关键法则复习</p>
+          </div>
+        </div>
+
+        <!-- Code Viewer -->
+        <div class="mb-10 bg-elevatedBg rounded-xl border border-borderColor overflow-hidden">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-cardBg px-4 py-3 border-b border-borderColor gap-2">
+            
+            <div class="flex space-x-2 text-xs font-medium">
+              <button onclick="setCodeTab('amp')" id="codetab-amp" class="px-3 py-1.5 rounded-md bg-accentCyan text-darkBg font-bold transition">1. mixed_precision_bf16.py</button>
+              <button onclick="setCodeTab('fsdp')" id="codetab-fsdp" class="px-3 py-1.5 rounded-md text-textSecondary hover:text-textPrimary transition">2. fsdp_minimal.py</button>
+              <button onclick="setCodeTab('calc')" id="codetab-calc" class="px-3 py-1.5 rounded-md text-textSecondary hover:text-textPrimary transition">3. ch6_memory_calc.py</button>
+            </div>
+
+            <button onclick="copyCurrentCode()" class="flex items-center space-x-1.5 px-3 py-1 rounded bg-elevatedBg hover:bg-borderColor text-xs font-mono text-accentCyan border border-borderColor transition">
+              <span>📋 复制完整代码</span>
+            </button>
+          </div>
+
+          <div class="p-4 bg-darkBg overflow-x-auto">
+            <pre><code id="code-content" class="font-mono text-xs text-textPrimary leading-relaxed"></code></pre>
+          </div>
+        </div>
+
+        <!-- 5 Interactive Quiz Questions -->
+        <div class="mb-12 bg-elevatedBg p-5 sm:p-6 rounded-xl border border-borderColor">
+          <h3 class="text-lg font-bold text-textPrimary mb-6 flex items-center">
+            <span class="mr-2">📝</span>
+            <span>第 6 章核心概念 5 题互动测验 (Interactive Quiz)</span>
+          </h3>
+
+          <div class="space-y-6" id="quiz-container">
+            <!-- Dynamically populated by JS -->
+          </div>
+        </div>
+
+        <!-- Chapter 6 Complete Summary Checklist (12 Core Cards) -->
+        <div>
+          <h3 class="text-lg font-bold text-textPrimary mb-4 flex items-center">
+            <span class="mr-2">🏆</span>
+            <span>第 6 章全章 12 条大模型工程核心总结法则</span>
+          </h3>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentCyan transition">
+              <div class="text-xs font-mono text-accentCyan font-bold mb-1">法则 01</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">Shift-by-1 错位对齐</div>
+              <p class="text-xs text-textSecondary">Autoregressive 训练的目标是根据 <span class="math">x<sub>0..t-1</sub></span> 预测 <span class="math">x<sub>t</sub></span>，Inputs 与 Targets 必须做 1 个 Token 的平移切片。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentCyan transition">
+              <div class="text-xs font-mono text-accentCyan font-bold mb-1">法则 02</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">ln(vocab_size) 初始 Baseline</div>
+              <p class="text-xs text-textSecondary">随机未训练模型的交叉熵 Loss 理论值为 <span class="math">ln(V)</span>（如 GPT-2 对应 <span class="math">ln(50257) ≈ 10.82</span>）。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentCyan transition">
+              <div class="text-xs font-mono text-accentCyan font-bold mb-1">法则 03</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">-100 Padding Mask 机制</div>
+              <p class="text-xs text-textSecondary">PyTorch <span class="font-mono">CrossEntropyLoss</span> 忽略 <span class="font-mono">ignore_index=-100</span>，防止补全 Padding 污染梯度。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentGold transition">
+              <div class="text-xs font-mono text-accentGold font-bold mb-1">法则 04</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">AdamW 解耦权重衰减</div>
+              <p class="text-xs text-textSecondary">必须将 Weight Decay 与动量解耦更新，防止梯度一、二阶矩平滑过程破坏 L2 正则效应。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentGold transition">
+              <div class="text-xs font-mono text-accentGold font-bold mb-1">法则 05</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">Warmup + Cosine 调度</div>
+              <p class="text-xs text-textSecondary">前期线性 Warmup 避免未稳定二阶矩破坏权重，后期余弦退火平滑收敛至全局极小值。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentGold transition">
+              <div class="text-xs font-mono text-accentGold font-bold mb-1">法则 06</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">clip_grad_norm = 1.0</div>
+              <p class="text-xs text-textSecondary">梯度范数裁剪是防止大模型训练中梯度爆炸、数值飞逸的最佳护城河。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentEmerald transition">
+              <div class="text-xs font-mono text-accentEmerald font-bold mb-1">法则 07</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">BF16 胜过 FP16</div>
+              <p class="text-xs text-textSecondary">BF16 放弃部分尾数精度，保留 FP32 完整的 8-bit Exponent，从根源消除溢出而无需复杂的 Scaler。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentEmerald transition">
+              <div class="text-xs font-mono text-accentEmerald font-bold mb-1">法则 08</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">Mixed Precision autocast</div>
+              <p class="text-xs text-textSecondary">将 MatMul 自动路由至 16 位，而 Softmax/LayerNorm/Loss 与主权重强行保持 FP32。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentEmerald transition">
+              <div class="text-xs font-mono text-accentEmerald font-bold mb-1">法则 09</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">3D 并行组合原则</div>
+              <p class="text-xs text-textSecondary">单机 8 卡走 TP，跨节点走 PP，海量数据走 DP / ZeRO-3，极致压缩通信开销与显存。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentViolet transition">
+              <div class="text-xs font-mono text-accentViolet font-bold mb-1">法则 10</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">16 Bytes/Param 训练法则</div>
+              <p class="text-xs text-textSecondary">BF16 全量训练：2B 权重 + 2B 梯度 + 12B AdamW(一二阶矩+Master) = 16 Bytes/参数。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentViolet transition">
+              <div class="text-xs font-mono text-accentViolet font-bold mb-1">法则 11</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">2 Bytes/Param 推理法则</div>
+              <p class="text-xs text-textSecondary">BF16/FP16 推理仅需 2 Bytes/参数；INT4 量化推理压缩至 0.5 Byte/参数（7B 仅 3.5GB）。</p>
+            </div>
+
+            <div class="bg-elevatedBg p-4 rounded-xl border border-borderColor hover:border-accentViolet transition">
+              <div class="text-xs font-mono text-accentViolet font-bold mb-1">法则 12</div>
+              <div class="text-sm font-bold text-textPrimary mb-1">KV Cache 线性增长</div>
+              <p class="text-xs text-textSecondary">推理与长上下文训练中，KV Cache / 激活值随 Batch Size <span class="math">B</span> 与序列长度 <span class="math">L</span> 呈强线性增长。</p>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-borderColor bg-cardBg py-8 text-center text-xs text-textSecondary">
+    <div class="max-w-7xl mx-auto px-4">
+      <p class="mb-2">Transformer 核心原理与实战教程 · 第 6 章（下）工程加速与硬件实战</p>
+      <p class="text-[11px] opacity-70">Designed with 3Blue1Brown Mathematical Dark Aesthetic & High-DPI Canvas Engine</p>
+    </div>
+  </footer>
+
+  <!-- JavaScript Engine -->
+  <script>
+    /* ==========================================================================
+       1. Canvas High-DPI Retina Scaler Helper
+       ========================================================================== */
+    function initCanvas(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return null;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width: rect.width, height: rect.height, canvas };
+    }
+
+    /* ==========================================================================
+       2. Module 6.4: Numerical Overflow / Underflow Simulator
+       ========================================================================== */
+    function updateSimFromSlider(expVal) {
+      const val = Math.pow(10, parseFloat(expVal));
+      calculateFloatFormats(val);
+    }
+
+    function setSimValue(val) {
+      const slider = document.getElementById('sim-slider');
+      slider.value = Math.log10(val);
+      calculateFloatFormats(val);
+    }
+
+    function calculateFloatFormats(val) {
+      // FP32 Display
+      document.getElementById('fp32-val').innerText = val.toExponential(4);
+
+      // FP16 Check
+      const fp16Card = document.getElementById('fp16-card');
+      const fp16Val = document.getElementById('fp16-val');
+      const fp16Status = document.getElementById('fp16-status');
+
+      if (val > 65504) {
+        fp16Val.innerText = "Infinity (溢出崩溃!)";
+        fp16Status.innerText = "❌ 超过 FP16 上限 65504 (Overflow)";
+        fp16Val.className = "text-base font-bold font-mono text-accentCoral";
+        fp16Card.style.borderColor = "#ff6b6b";
+      } else if (val > 0 && val < 0.000061) {
+        fp16Val.innerText = "0.0000 (梯度消失)";
+        fp16Status.innerText = "❌ 低于下溢点 6.1e-5 (Underflow)";
+        fp16Val.className = "text-base font-bold font-mono text-accentCoral";
+        fp16Card.style.borderColor = "#ff6b6b";
+      } else {
+        fp16Val.innerText = val.toExponential(4);
+        fp16Status.innerText = "✅ FP16 范围内";
+        fp16Val.className = "text-base font-bold font-mono text-accentEmerald";
+        fp16Card.style.borderColor = "#233044";
+      }
+
+      // BF16 Check (Exponent matches FP32)
+      const bf16Card = document.getElementById('bf16-card');
+      const bf16Val = document.getElementById('bf16-val');
+      const bf16Status = document.getElementById('bf16-status');
+
+      bf16Val.innerText = val.toExponential(4);
+      bf16Status.innerText = "✅ 8-bit 指数无溢出风险";
+      bf16Val.className = "text-base font-bold font-mono text-accentCyan";
+      bf16Card.style.borderColor = "#58c4dd";
+    }
+
+    // AMP Mode Toggle
+    function setAmpMode(mode) {
+      const btnFp16 = document.getElementById('btn-mode-fp16');
+      const btnBf16 = document.getElementById('btn-mode-bf16');
+      const tag = document.getElementById('amp-tag');
+      const text = document.getElementById('amp-text');
+
+      if (mode === 'fp16') {
+        btnFp16.className = "px-3 py-1 rounded-md bg-accentCoral text-darkBg font-bold transition";
+        btnBf16.className = "px-3 py-1 rounded-md text-textSecondary hover:text-textPrimary transition";
+        tag.className = "px-2 py-0.5 rounded text-xs font-bold bg-accentCoral/20 text-accentCoral border border-accentCoral/30";
+        tag.innerText = "FP16 模式";
+        text.innerHTML = "在 FP16 模式下，梯度极易下溢为 0.0。必须使用 <span class='font-mono text-accentGold'>GradScaler</span> 将 Loss 放大 2<sup>16</sup> 倍进行反向传播，更新前再 unscale！";
+      } else {
+        btnBf16.className = "px-3 py-1 rounded-md bg-accentCyan text-darkBg font-bold transition";
+        btnFp16.className = "px-3 py-1 rounded-md text-textSecondary hover:text-textPrimary transition";
+        tag.className = "px-2 py-0.5 rounded text-xs font-bold bg-accentCyan/20 text-accentCyan border border-accentCyan/30";
+        tag.innerText = "BF16 模式 (推荐)";
+        text.innerHTML = "BF16 拥有与 FP32 完全相同的 8-bit 指数范围（最高 ±3.4×10<sup>38</sup>），在 LLM 训练中 <span class='font-mono text-accentEmerald'>几乎不再需要 GradScaler</span>，极少发生溢出！";
+      }
+    }
+
+    /* ==========================================================================
+       3. Module 6.5: 3D Parallelism Canvas & ZeRO Simulator
+       ========================================================================== */
+    let currentParallelTab = 'dp';
+
+    function setParallelTab(tab) {
+      currentParallelTab = tab;
+      const tabs = ['dp', 'tp', 'pp', '3d'];
+      tabs.forEach(t => {
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tab) {
+          btn.className = "px-3 py-1.5 rounded-md bg-accentCyan text-darkBg font-bold transition";
+        } else {
+          btn.className = "px-3 py-1.5 rounded-md text-textSecondary hover:text-textPrimary transition";
+        }
+      });
+
+      const slidersBox = document.getElementById('3d-sliders');
+      if (tab === '3d') {
+        slidersBox.classList.remove('hidden');
+      } else {
+        slidersBox.classList.add('hidden');
+      }
+
+      const descBox = document.getElementById('parallel-desc');
+      if (tab === 'dp') {
+        descBox.innerHTML = "<span class='font-bold text-accentCyan block mb-1'>数据并行 (Data Parallelism, DP):</span>每张 GPU 独立保存一份全量模型副本，处理不同 Batch 的数据，反向传播后通过 NVLink All-Reduce 同步梯度。";
+      } else if (tab === 'tp') {
+        descBox.innerHTML = "<span class='font-bold text-accentGold block mb-1'>张量并行 (Tensor Parallelism, TP - Megatron-LM):</span>将单层的权重矩阵切分（如 RowParallel/ColParallel）到多张 GPU 上，单次前向进行矩阵相乘后通过 All-Gather / All-Reduce 聚合。";
+      } else if (tab === 'pp') {
+        descBox.innerHTML = "<span class='font-bold text-accentViolet block mb-1'>流水线并行 (Pipeline Parallelism, PP):</span>按 Layer 将模型层切分成 Stage 分配给不同 GPU，存在“流水线气泡 Bubble”等待时间。";
+      } else {
+        descBox.innerHTML = "<span class='font-bold text-accentEmerald block mb-1'>3D 混合并行 (3D Parallelism):</span>DP × TP × PP 组合拳！例如 GPT-3 使用 64 张 GPU = 8 DP × 4 TP × 2 PP。";
+      }
+
+      drawParallelCanvas();
+    }
+
+    function drawParallelCanvas() {
+      const res = initCanvas('canvas-parallel');
+      if (!res) return;
+      const { ctx, width, height } = res;
+      ctx.clearRect(0, 0, width, height);
+
+      const tab = currentParallelTab;
+
+      if (tab === 'dp') {
+        // Draw 4 GPUs for DP
+        const gpuW = 100, gpuH = 140;
+        const gap = (width - 4 * gpuW) / 5;
+        for (let i = 0; i < 4; i++) {
+          const x = gap + i * (gpuW + gap);
+          const y = (height - gpuH) / 2;
+
+          ctx.fillStyle = '#141b26';
+          ctx.strokeStyle = '#58c4dd';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(x, y, gpuW, gpuH, 8);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#e6edf3';
+          ctx.font = 'bold 12px Inter';
+          ctx.fillText(`GPU ${i}`, x + 30, y + 25);
+
+          // Weights
+          ctx.fillStyle = '#58c4dd22';
+          ctx.fillRect(x + 10, y + 40, gpuW - 20, 30);
+          ctx.fillStyle = '#58c4dd';
+          ctx.font = '10px Fira Code';
+          ctx.fillText('Full Weights', x + 15, y + 60);
+
+          // Batch
+          ctx.fillStyle = '#f0b42922';
+          ctx.fillRect(x + 10, y + 80, gpuW - 20, 30);
+          ctx.fillStyle = '#f0b429';
+          ctx.fillText(`Batch ${i}`, x + 25, y + 100);
+        }
+
+        // All Reduce Arrow
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(gap + 50, height - 30);
+        ctx.lineTo(width - gap - 50, height - 30);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#4ade80';
+        ctx.font = '11px Inter';
+        ctx.fillText('↔ All-Reduce 梯度同步通信 ↔', width / 2 - 80, height - 15);
+
+      } else if (tab === 'tp') {
+        // Draw TP Matrix Split
+        ctx.fillStyle = '#e6edf3';
+        ctx.font = 'bold 13px Inter';
+        ctx.fillText('Weight Matrix W [Col-Parallel 切分除以 4 GPUs]', 40, 30);
+
+        const gridW = 240, gridH = 140;
+        const startX = (width - gridW) / 2;
+        const startY = 60;
+
+        const subW = gridW / 4;
+        const colors = ['#58c4dd', '#f0b429', '#4ade80', '#c084fc'];
+        for (let i = 0; i < 4; i++) {
+          ctx.fillStyle = colors[i] + '33';
+          ctx.strokeStyle = colors[i];
+          ctx.lineWidth = 2;
+          ctx.fillRect(startX + i * subW, startY, subW, gridH);
+          ctx.strokeRect(startX + i * subW, startY, subW, gridH);
+
+          ctx.fillStyle = colors[i];
+          ctx.font = 'bold 11px Fira Code';
+          ctx.fillText(`W_${i}`, startX + i * subW + 15, startY + gridH / 2);
+        }
+
+        ctx.fillStyle = '#e6edf3';
+        ctx.font = '11px Inter';
+        ctx.fillText('NVLink 极速 All-Gather 结果拼接', startX + 30, startY + gridH + 30);
+
+      } else if (tab === 'pp') {
+        // Draw PP Timeline Bubbles
+        ctx.fillStyle = '#e6edf3';
+        ctx.font = 'bold 12px Inter';
+        ctx.fillText('流水线并行 (Pipeline Timeline & Bubble) 4-Stage', 30, 30);
+
+        const stages = ['GPU 0 (L0-7)', 'GPU 1 (L8-15)', 'GPU 2 (L16-23)', 'GPU 3 (L24-31)'];
+        const startY = 60;
+        const barH = 30;
+
+        stages.forEach((st, idx) => {
+          const y = startY + idx * (barH + 15);
+          ctx.fillStyle = '#8b949e';
+          ctx.font = '11px Fira Code';
+          ctx.fillText(st, 20, y + 20);
+
+          // Forward Block
+          const fwdX = 140 + idx * 45;
+          ctx.fillStyle = '#58c4dd';
+          ctx.fillRect(fwdX, y, 40, barH);
+          ctx.fillStyle = '#0d1117';
+          ctx.font = '10px Fira Code';
+          ctx.fillText('Fwd', fwdX + 10, y + 18);
+
+          // Bubble Block (Hatched)
+          if (idx < 3) {
+            ctx.fillStyle = '#ff6b6b33';
+            ctx.fillRect(140, y, idx * 45, barH);
+            ctx.fillStyle = '#ff6b6b';
+            ctx.font = '9px Inter';
+            if (idx > 0) ctx.fillText('Bubble 空闲等待', 150, y + 18);
+          }
+
+          // Backward Block
+          const bwdX = 350 + (3 - idx) * 45;
+          ctx.fillStyle = '#f0b429';
+          ctx.fillRect(bwdX, y, 40, barH);
+          ctx.fillStyle = '#0d1117';
+          ctx.font = '10px Fira Code';
+          ctx.fillText('Bwd', bwdX + 10, y + 18);
+        });
+
+      } else {
+        // 3D Parallel Cluster Diagram
+        update3DCluster();
+      }
+    }
+
+    function update3DCluster() {
+      if (currentParallelTab !== '3d') return;
+      const dp = parseInt(document.getElementById('slider-dp').value);
+      const tp = parseInt(document.getElementById('slider-tp').value);
+      const pp = parseInt(document.getElementById('slider-pp').value);
+
+      document.getElementById('val-dp').innerText = dp;
+      document.getElementById('val-tp').innerText = tp;
+      document.getElementById('val-pp').innerText = pp;
+
+      const total = dp * tp * pp;
+
+      const res = initCanvas('canvas-parallel');
+      if (!res) return;
+      const { ctx, width, height } = res;
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.fillStyle = '#e6edf3';
+      ctx.font = 'bold 14px Inter';
+      ctx.fillText(`3D 集群集群拓扑: Total GPUs = ${dp} (DP) × ${tp} (TP) × ${pp} (PP) = ${total} 卡`, 30, 35);
+
+      // Draw grid of GPU nodes
+      const cols = Math.min(total, 16);
+      const rows = Math.ceil(total / cols);
+      const nodeW = Math.min((width - 60) / cols - 4, 30);
+      const nodeH = 24;
+
+      for (let i = 0; i < total; i++) {
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const x = 30 + c * (nodeW + 4);
+        const y = 60 + r * (nodeH + 4);
+
+        ctx.fillStyle = (i % tp === 0) ? '#58c4dd' : '#141b26';
+        ctx.strokeStyle = '#233044';
+        ctx.beginPath();
+        ctx.roundRect(x, y, nodeW, nodeH, 4);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    // ZeRO Simulator Logic
+    let currentZeroStage = 3;
+
+    function setZeroStage(stage) {
+      currentZeroStage = stage;
+      for (let s = 0; s <= 3; s++) {
+        const btn = document.getElementById(`btn-zero-${s}`);
+        if (s === stage) {
+          btn.className = "w-full text-left px-3 py-2 rounded-lg border border-accentEmerald bg-accentEmerald/10 text-xs transition font-semibold";
+        } else {
+          btn.className = "w-full text-left px-3 py-2 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs transition font-semibold";
+        }
+      }
+      updateZeroSim();
+    }
+
+    function updateZeroSim() {
+      const gpus = parseInt(document.getElementById('zero-gpu-slider').value);
+      document.getElementById('gpu-count-label').innerText = `${gpus} 卡`;
+
+      // 7B Model BF16 values:
+      // Weights W = 14 GB, Gradients G = 14 GB, AdamW Opt = 84 GB
+      // Total = 112 GB
+      const baseW = 14.0;
+      const baseG = 14.0;
+      const baseOpt = 84.0;
+
+      let w = baseW, g = baseG, opt = baseOpt;
+
+      if (currentZeroStage === 1) {
+        opt = baseOpt / gpus;
+      } else if (currentZeroStage === 2) {
+        opt = baseOpt / gpus;
+        g = baseG / gpus;
+      } else if (currentZeroStage === 3) {
+        w = baseW / gpus;
+        g = baseG / gpus;
+        opt = baseOpt / gpus;
+      }
+
+      const totalPerGpu = w + g + opt;
+      const totalBaseline = 112.0;
+
+      document.getElementById('zero-total-vram').innerText = `${totalPerGpu.toFixed(1)} GB / 卡`;
+      document.getElementById('bar-val-w').innerText = `${w.toFixed(2)} GB`;
+      document.getElementById('bar-val-g').innerText = `${g.toFixed(2)} GB`;
+      document.getElementById('bar-val-opt').innerText = `${opt.toFixed(2)} GB`;
+
+      document.getElementById('bar-w').style.width = `${(w / totalPerGpu) * 100}%`;
+      document.getElementById('bar-g').style.width = `${(g / totalPerGpu) * 100}%`;
+      document.getElementById('bar-opt').style.width = `${(opt / totalPerGpu) * 100}%`;
+
+      document.getElementById('zero-reduced-val').innerText = `${totalPerGpu.toFixed(1)} GB`;
+      const ratio = ((1 - totalPerGpu / totalBaseline) * 100).toFixed(1);
+      document.getElementById('zero-ratio-val').innerText = `(静态显存省 ${ratio}%)`;
+    }
+
+    /* ==========================================================================
+       4. Module 6.6: CPU vs GPU Animation & LLM VRAM Calculator
+       ========================================================================== */
+    let animIdCpuGpu = null;
+    let animStep = 0;
+
+    function drawCpuGpuAnim() {
+      const res = initCanvas('canvas-cpugpu');
+      if (!res) return;
+      const { ctx, width, height } = res;
+      ctx.clearRect(0, 0, width, height);
+
+      // CPU Left
+      ctx.fillStyle = '#e6edf3';
+      ctx.font = 'bold 12px Inter';
+      ctx.fillText('CPU: 4 强力核心 (串行执行)', 20, 25);
+
+      for (let i = 0; i < 4; i++) {
+        const x = 20 + i * 55;
+        const y = 40;
+        ctx.fillStyle = (i === (animStep % 4)) ? '#58c4dd' : '#141b26';
+        ctx.strokeStyle = '#58c4dd';
+        ctx.lineWidth = 2;
+        ctx.fillRect(x, y, 45, 60);
+        ctx.strokeRect(x, y, 45, 60);
+
+        ctx.fillStyle = (i === (animStep % 4)) ? '#0d1117' : '#e6edf3';
+        ctx.font = '10px Fira Code';
+        ctx.fillText(`Core${i}`, x + 5, y + 35);
+      }
+
+      // GPU Right
+      ctx.fillStyle = '#e6edf3';
+      ctx.font = 'bold 12px Inter';
+      ctx.fillText('GPU: 64+ CUDA / Tensor Cores (并行爆发)', width / 2 + 20, 25);
+
+      const gpuStartX = width / 2 + 20;
+      const gridCols = 8, gridRows = 4;
+      const boxW = 20, boxH = 20;
+
+      for (let r = 0; r < gridRows; r++) {
+        for (let c = 0; c < gridCols; c++) {
+          const x = gpuStartX + c * 24;
+          const y = 40 + r * 24;
+          ctx.fillStyle = '#4ade80';
+          ctx.fillRect(x, y, boxW, boxH);
+        }
+      }
+
+      animStep++;
+    }
+
+    function toggleCpuGpuAnim() {
+      if (animIdCpuGpu) clearInterval(animIdCpuGpu);
+      animStep = 0;
+      animIdCpuGpu = setInterval(drawCpuGpuAnim, 200);
+    }
+
+    // LLM VRAM Calculator Implementation
+    let calcScenario = 'infer';
+
+    function setCalcParam(p) {
+      document.getElementById('slider-params').value = p;
+      updateCalcFromInputs();
+    }
+
+    function setCalcScenario(scen) {
+      calcScenario = scen;
+      const btnInfer = document.getElementById('scen-infer');
+      const btnFull = document.getElementById('scen-full');
+      const btnLora = document.getElementById('scen-lora');
+
+      btnInfer.className = scen === 'infer' ? "py-1.5 rounded-md bg-accentCyan text-darkBg font-bold" : "py-1.5 rounded-md text-textSecondary";
+      btnFull.className = scen === 'full' ? "py-1.5 rounded-md bg-accentGold text-darkBg font-bold" : "py-1.5 rounded-md text-textSecondary";
+      btnLora.className = scen === 'lora' ? "py-1.5 rounded-md bg-accentViolet text-darkBg font-bold" : "py-1.5 rounded-md text-textSecondary";
+
+      updateCalcFromInputs();
+    }
+
+    function updateCalcFromInputs() {
+      const params = parseFloat(document.getElementById('slider-params').value);
+      document.getElementById('lbl-params').innerText = `${params.toFixed(1)} B`;
+
+      const bytesPerParam = parseFloat(document.getElementById('calc-prec').value);
+      const seqLen = parseInt(document.getElementById('slider-seq').value);
+      document.getElementById('lbl-seq').innerText = seqLen;
+
+      const batchSize = parseInt(document.getElementById('slider-batch').value);
+      document.getElementById('lbl-batch').innerText = batchSize;
+
+      const useCkpt = document.getElementById('chk-ckpt').checked;
+      const useSafety = document.getElementById('chk-safety').checked;
+
+      // Calculations (in GB)
+      let wGB = params * bytesPerParam;
+      let gGB = 0;
+      let optGB = 0;
+      let actGB = 0;
+
+      if (calcScenario === 'infer') {
+        gGB = 0;
+        optGB = 0;
+        // KV Cache ≈ 2 * 2 * N_layers * N_heads * d_head * B * L * bytes
+        // Approx KV Cache: 2 * B * L * (params * 1e9 / 1000) * 2 / 1e9 or simple formula
+        actGB = (2 * batchSize * seqLen * params * 0.0002);
+      } else if (calcScenario === 'full') {
+        gGB = params * 2; // BF16 grads
+        optGB = params * 12; // AdamW FP32 (4B m + 4B v + 4B Master Weight)
+        // Activation memory
+        const factor = useCkpt ? Math.sqrt(seqLen / 2048) : (seqLen / 512);
+        actGB = batchSize * factor * 1.5;
+      } else if (calcScenario === 'lora') {
+        // Base frozen
+        gGB = (params * 0.01) * 2; // only 1% trainable params
+        optGB = (params * 0.01) * 12;
+        const factor = useCkpt ? Math.sqrt(seqLen / 2048) : (seqLen / 512);
+        actGB = batchSize * factor * 1.2;
+      }
+
+      const rawTotal = wGB + gGB + optGB + actGB;
+      const safeTotal = useSafety ? rawTotal * 1.2 : rawTotal;
+
+      // Update DOM
+      document.getElementById('out-w-gb').innerText = `${wGB.toFixed(2)} GB`;
+      document.getElementById('out-g-gb').innerText = `${gGB.toFixed(2)} GB`;
+      document.getElementById('out-opt-gb').innerText = `${optGB.toFixed(2)} GB`;
+      document.getElementById('out-act-gb').innerText = `${actGB.toFixed(2)} GB`;
+
+      document.getElementById('out-raw-gb').innerText = `${rawTotal.toFixed(2)} GB`;
+      document.getElementById('out-total-vram').innerText = `${safeTotal.toFixed(1)} GB`;
+
+      // Stacked bar widths
+      document.getElementById('vbar-weights').style.width = `${(wGB / rawTotal) * 100}%`;
+      document.getElementById('vbar-grads').style.width = `${(gGB / rawTotal) * 100}%`;
+      document.getElementById('vbar-opt').style.width = `${(optGB / rawTotal) * 100}%`;
+      document.getElementById('vbar-act').style.width = `${(actGB / rawTotal) * 100}%`;
+
+      // Recommendation Card
+      const card = document.getElementById('out-recommend-card');
+      if (safeTotal <= 16) {
+        card.className = "px-3 py-1 rounded-full text-xs font-bold bg-accentEmerald/20 text-accentEmerald border border-accentEmerald/30";
+        card.innerText = "✅ 单卡 16GB / 24GB 可轻松运行";
+      } else if (safeTotal <= 24) {
+        card.className = "px-3 py-1 rounded-full text-xs font-bold bg-accentCyan/20 text-accentCyan border border-accentCyan/30";
+        card.innerText = "✅ 单卡 24GB (RTX 4090) 刚好满足";
+      } else if (safeTotal <= 80) {
+        card.className = "px-3 py-1 rounded-full text-xs font-bold bg-accentGold/20 text-accentGold border border-accentGold/30";
+        card.innerText = "⚠️ 需 A100-80G 或多卡 Parallel 分布式";
+      } else {
+        card.className = "px-3 py-1 rounded-full text-xs font-bold bg-accentCoral/20 text-accentCoral border border-accentCoral/30";
+        card.innerText = "❌ 必须使用 FSDP / ZeRO-3 多节点千卡并行!";
+      }
+    }
+
+    // GPU Matrix Selector
+    let selectedGPUCapacity = 24;
+
+    function selectGPU(vram) {
+      selectedGPUCapacity = vram;
+      const vrams = [8, 16, 24, 40, 80];
+      vrams.forEach(v => {
+        const p = document.getElementById(`gpu-pill-${v}`);
+        if (v === vram) {
+          p.className = "px-3 py-1.5 rounded-lg border border-accentCyan bg-accentCyan/10 text-accentCyan text-xs font-mono font-bold transition";
+        } else {
+          p.className = "px-3 py-1.5 rounded-lg border border-borderColor bg-cardBg hover:bg-borderColor text-xs font-mono transition";
+        }
+      });
+      renderGPUMatrix();
+    }
+
+    function renderGPUMatrix() {
+      const tbody = document.getElementById('gpu-matrix-body');
+      const models = [
+        { name: '1.5B (DeepSeek-R1-1.5B)', bf16Inf: 3.5, int4Inf: 1.0, lora: 5.5, full: 28.0 },
+        { name: '7B (Qwen2.5-7B)', bf16Inf: 16.1, int4Inf: 4.2, lora: 21.1, full: 119.0 },
+        { name: '13B (Llama2-13B)', bf16Inf: 29.5, int4Inf: 8.0, lora: 36.0, full: 220.0 },
+        { name: '34B (Yi-34B)', bf16Inf: 74.0, int4Inf: 19.5, lora: 85.0, full: 570.0 },
+        { name: '70B (Llama3-70B)', bf16Inf: 152.0, int4Inf: 39.0, lora: 165.0, full: 1180.0 }
+      ];
+
+      tbody.innerHTML = models.map(m => {
+        return `
+          <tr class="hover:bg-elevatedBg/50 transition">
+            <td class="p-3 font-bold text-textPrimary">${m.name}</td>
+            <td class="p-3">${getBadge(m.bf16Inf)}</td>
+            <td class="p-3">${getBadge(m.int4Inf)}</td>
+            <td class="p-3">${getBadge(m.lora)}</td>
+            <td class="p-3">${getBadge(m.full)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function getBadge(reqVram) {
+      if (reqVram <= selectedGPUCapacity) {
+        return `<span class="px-2 py-0.5 rounded bg-accentEmerald/20 text-accentEmerald font-bold border border-accentEmerald/30">[OK] ${reqVram}G</span>`;
+      } else {
+        return `<span class="px-2 py-0.5 rounded bg-accentCoral/20 text-accentCoral font-bold border border-accentCoral/30">[OOM] ${reqVram}G</span>`;
+      }
+    }
+
+    /* ==========================================================================
+       5. Module 6.7: Code Viewer & Quiz Engine
+       ========================================================================== */
+    const codeSnippets = {
+      amp: `import torch
+import torch.nn as nn
+
+# 1. 自动混合精度 (autocast) 与 GradScaler 示例
+model = MyTransformerModel().cuda()
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
+# FP16 需要 GradScaler；若为 BF16，enabled 可为 False
+scaler = torch.cuda.amp.GradScaler(enabled=True)
+
+for input_ids, targets in dataloader:
+    optimizer.zero_grad()
+    
+    # 自动将 Linear/MatMul 降精度，Softmax/LayerNorm 保持 FP32
+    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        logits = model(input_ids)
+        loss = torch.nn.functional.cross_entropy(logits.view(-1, vocab_size), targets.view(-1))
+    
+    # 放大 Loss 并反向传播
+    scaler.scale(loss).backward()
+    
+    # 梯度裁剪 (需先 unscale)
+    scaler.unscale_(optimizer)
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    
+    # 更新参数
+    scaler.step(optimizer)
+    scaler.update()`,
+
+      fsdp: `import torch
+import torch.nn as nn
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.fully_sharded_data_parallel import MixedPrecision, ShardingStrategy
+
+# 2. PyTorch 原生 FSDP (ZeRO-3 全切分) 最小配置
+def setup_fsdp_model(model):
+    bf16_policy = MixedPrecision(
+        param_dtype=torch.bfloat16,
+        reduce_dtype=torch.bfloat16,
+        buffer_dtype=torch.bfloat16,
+    )
+    
+    fsdp_model = FSDP(
+        model,
+        sharding_strategy=ShardingStrategy.FULL_SHARD, # 对应 DeepSpeed ZeRO-3
+        mixed_precision=bf16_policy,
+        device_id=torch.cuda.current_device()
+    )
+    return fsdp_model`,
+
+      calc: `def estimate_llm_memory(params_b, seq_len=4096, batch_size=4, precision_bytes=2, scenario='infer'):
+    """
+    大模型显存法则 Python 速算器
+    """
+    weights_gb = params_b * precision_bytes
+    if scenario == 'infer':
+        grads_gb = 0
+        opt_gb = 0
+        act_gb = 2 * batch_size * seq_len * params_b * 0.0002
+    elif scenario == 'full':
+        grads_gb = params_b * 2  # BF16 grads
+        opt_gb = params_b * 12   # AdamW FP32 (4B m + 4B v + 4B Master)
+        act_gb = batch_size * (seq_len / 2048) * 2.0
+    
+    raw_total = weights_gb + grads_gb + opt_gb + act_gb
+    safe_total = raw_total * 1.2
+    return {"weights_gb": weights_gb, "safe_total_gb": safe_total}`
+    };
+
+    let currentCodeTab = 'amp';
+
+    function setCodeTab(tab) {
+      currentCodeTab = tab;
+      ['amp', 'fsdp', 'calc'].forEach(t => {
+        const btn = document.getElementById(`codetab-${t}`);
+        if (t === tab) {
+          btn.className = "px-3 py-1.5 rounded-md bg-accentCyan text-darkBg font-bold transition";
+        } else {
+          btn.className = "px-3 py-1.5 rounded-md text-textSecondary hover:text-textPrimary transition";
+        }
+      });
+      document.getElementById('code-content').innerText = codeSnippets[tab];
+    }
+
+    function copyCurrentCode() {
+      const code = codeSnippets[currentCodeTab];
+      const el = document.createElement('textarea');
+      el.value = code;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      alert('已成功复制代码至剪贴板！');
+    }
+
+    // Quiz Questions Data
+    const quizData = [
+      {
+        q: "1. 为什么在大模型 (LLM) 训练中，BF16 显著优于 FP16？",
+        options: [
+          "A. BF16 占用的显存空间比 FP16 少一半",
+          "B. BF16 保持了 FP32 的 8-bit Exponent 动态范围，极难发生上溢或下溢",
+          "C. BF16 的 Mantissa 尾数多达 23 bit，精度更高",
+          "D. BF16 不需要 GPU Tensor Core 硬件支持"
+        ],
+        correct: 1,
+        explain: "正确答案是 B。BF16 与 FP16 同样占用 2 Bytes，但 BF16 牺牲了部分尾数精度，保留了与 FP32 完全相同的 8-bit 指数位（范围达 ±3.4×10³⁸），因此在 LLM 训练中从根源消除了溢出崩溃。"
+      },
+      {
+        q: "2. 根据 16 Bytes/参数 黄金法则，全量训练一个 7B BF16 模型，单卡静态显存（不含激活值）至少需要多少？",
+        options: [
+          "A. 14 GB",
+          "B. 28 GB",
+          "C. 112 GB",
+          "D. 224 GB"
+        ],
+        correct: 2,
+        explain: "正确答案是 C。全量训练静态显存 = 权重 (2B) + 梯度 (2B) + AdamW 状态 (4B m + 4B v + 4B FP32 Master Weight = 12B) = 16 Bytes/参数。7B × 16 = 112 GB！"
+      },
+      {
+        q: "3. DeepSpeed ZeRO-3 与 PyTorch FSDP (FULL_SHARD) 的核心原理是什么？",
+        options: [
+          "A. 仅在 GPU 之间切分 Batch 数据",
+          "B. 将模型层分发给不同 GPU 串行执行",
+          "C. 在所有 GPU 之间全面切分模型权重、梯度与 AdamW 优化器状态",
+          "D. 将模型权重全部量化为 INT4"
+        ],
+        correct: 2,
+        explain: "正确答案是 C。ZeRO-3 / FSDP FULL_SHARD 实现了‘全切分’（Full Sharding），在 N 张 GPU 间共享静态显存，将单卡 112GB 降至 112/N GB。"
+      },
+      {
+        q: "4. 流水线并行 (Pipeline Parallelism, PP) 的主要性能瓶颈是什么？",
+        options: [
+          "A. NVLink 通信带宽不足",
+          "B. 流水线气泡 (Pipeline Bubbles)，导致上游 GPU 在等待下游反向传播时空闲",
+          "C. 无法处理超过 4096 的序列长度",
+          "D. 无法使用 BF16 精度"
+        ],
+        correct: 1,
+        explain: "正确答案是 B。PP 按照 Layer 层切分模型，在 Forward 和 Backward 的充能与排空阶段，部分 GPU 必须等待数据传递，产生‘流水线气泡 Bubble’。"
+      },
+      {
+        q: "5. 为什么 LoRA 微调可以将 7B 模型的训练显存从 119GB 骤降至 ~21GB？",
+        options: [
+          "A. LoRA 自动将所有权重转换为 INT4",
+          "B. LoRA 冻结了基座模型权重，无需为 7B 参数保存梯度和巨大的 AdamW 状态",
+          "C. LoRA 不需要计算任何反向传播",
+          "D. LoRA 删除了 Transformer 中的 Self-Attention 层"
+        ],
+        correct: 1,
+        explain: "正确答案是 B。LoRA 冻结了基座模型的 7B 参数，仅训练少量低秩矩阵（<1% 参数）。这直接省去了基座权重对应的 14GB 梯度与 84GB AdamW 优化器状态！"
+      }
+    ];
+
+    function renderQuiz() {
+      const container = document.getElementById('quiz-container');
+      container.innerHTML = quizData.map((item, idx) => `
+        <div class="bg-cardBg p-5 rounded-xl border border-borderColor space-y-3">
+          <div class="font-bold text-sm text-textPrimary">${item.q}</div>
+          <div class="space-y-2">
+            ${item.options.map((opt, oIdx) => `
+              <button onclick="checkAnswer(${idx}, ${oIdx})" id="q-${idx}-opt-${oIdx}" class="w-full text-left px-4 py-2 rounded-lg bg-elevatedBg hover:bg-borderColor text-xs font-mono text-textSecondary transition border border-borderColor">
+                ${opt}
+              </button>
+            `).join('')}
+          </div>
+          <div id="q-${idx}-explain" class="hidden p-3 rounded-lg text-xs leading-relaxed font-mono"></div>
+        </div>
+      `).join('');
+    }
+
+    function checkAnswer(qIdx, optionIdx) {
+      const q = quizData[qIdx];
+      const explainBox = document.getElementById(`q-${qIdx}-explain`);
+      
+      for (let i = 0; i < q.options.length; i++) {
+        const btn = document.getElementById(`q-${qIdx}-opt-${i}`);
+        if (i === q.correct) {
+          btn.className = "w-full text-left px-4 py-2 rounded-lg bg-accentEmerald/20 text-accentEmerald font-bold text-xs font-mono transition border border-accentEmerald/50";
+        } else if (i === optionIdx) {
+          btn.className = "w-full text-left px-4 py-2 rounded-lg bg-accentCoral/20 text-accentCoral font-bold text-xs font-mono transition border border-accentCoral/50";
+        }
+      }
+
+      explainBox.classList.remove('hidden');
+      if (optionIdx === q.correct) {
+        explainBox.className = "p-3 rounded-lg text-xs leading-relaxed bg-accentEmerald/10 text-accentEmerald border border-accentEmerald/30";
+        explainBox.innerText = "🎉 回答正确！ " + q.explain;
+      } else {
+        explainBox.className = "p-3 rounded-lg text-xs leading-relaxed bg-accentCoral/10 text-accentCoral border border-accentCoral/30";
+        explainBox.innerText = "💡 解答提示： " + q.explain;
+      }
+    }
+
+    /* ==========================================================================
+       6. Global Page Initialization
+       ========================================================================== */
+    window.onload = function() {
+      // Init Simulators
+      calculateFloatFormats(100000);
+      drawParallelCanvas();
+      updateZeroSim();
+      toggleCpuGpuAnim();
+      updateCalcFromInputs();
+      selectGPU(24);
+      setCodeTab('amp');
+      renderQuiz();
+
+      // Window Resize Handler for Canvas
+      window.addEventListener('resize', () => {
+        drawParallelCanvas();
+        drawCpuGpuAnim();
+      });
+    };
+  </script>
+</body>
+</html>

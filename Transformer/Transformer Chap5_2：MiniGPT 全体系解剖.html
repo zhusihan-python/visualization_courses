@@ -1,0 +1,2024 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer 第 5 章（下）：MiniGPT 完整组装、参数缩放与现代架构进阶</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        bgDark: '#0d1117',
+                        cardDark: '#141b26',
+                        elevatedDark: '#1a2332',
+                        borderDark: '#233044',
+                        cyanAccent: '#58c4dd',
+                        goldAccent: '#f0b429',
+                        emeraldAccent: '#4ade80',
+                        coralAccent: '#ff6b6b',
+                        violetAccent: '#c084fc',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbars & math styles */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #233044;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #58c4dd;
+        }
+
+        /* Math Display styling strictly avoiding LaTeX delimiters */
+        .math-block {
+            display: inline-flex;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(26, 35, 50, 0.7);
+            padding: 0.25rem 0.6rem;
+            border-radius: 0.375rem;
+            border: 1px solid #233044;
+        }
+        .frac {
+            display: inline-flex;
+            flex-direction: column;
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 0.2rem;
+        }
+        .numerator {
+            border-bottom: 1px solid currentColor;
+            padding-bottom: 1px;
+        }
+        .denominator {
+            padding-top: 1px;
+        }
+        .glow-cyan { box-shadow: 0 0 15px rgba(88, 196, 221, 0.25); }
+        .glow-gold { box-shadow: 0 0 15px rgba(240, 180, 41, 0.25); }
+        .glow-emerald { box-shadow: 0 0 15px rgba(74, 222, 128, 0.25); }
+        .glow-coral { box-shadow: 0 0 15px rgba(255, 107, 107, 0.25); }
+        .glow-violet { box-shadow: 0 0 15px rgba(192, 132, 252, 0.25); }
+
+        /* Animation for custom pulse */
+        @keyframes pulseSlow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .animate-pulse-slow {
+            animation: pulseSlow 2.5s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-bgDark text-gray-200 font-sans antialiased min-h-screen flex flex-col selection:bg-cyanAccent selection:text-bgDark">
+
+    <!-- Sticky Navigation Bar -->
+    <header class="sticky top-0 z-50 bg-cardDark/90 backdrop-blur-md border-b border-borderDark px-4 lg:px-8 py-3 transition-all">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <span class="px-2.5 py-1 text-xs font-bold rounded bg-cyanAccent/10 text-cyanAccent border border-cyanAccent/30">Chapter 5 (Part 2)</span>
+                <h1 class="text-base md:text-lg font-bold text-white tracking-wide">MiniGPT 完整组装、参数缩放与现代架构进阶</h1>
+            </div>
+            <nav class="flex items-center gap-1 md:gap-2 text-xs md:text-sm font-medium overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+                <a href="#section-blueprint" class="nav-btn px-3 py-1.5 rounded-lg text-gray-400 hover:text-cyanAccent hover:bg-elevatedDark transition">5.5A 组装与生成</a>
+                <a href="#section-preln" class="nav-btn px-3 py-1.5 rounded-lg text-gray-400 hover:text-emeraldAccent hover:bg-elevatedDark transition">5.5B Pre-LN 实验室</a>
+                <a href="#section-params" class="nav-btn px-3 py-1.5 rounded-lg text-gray-400 hover:text-goldAccent hover:bg-elevatedDark transition">5.4.3 参数与缩放</a>
+                <a href="#section-upgrades" class="nav-btn px-3 py-1.5 rounded-lg text-gray-400 hover:text-violetAccent hover:bg-elevatedDark transition">5.6 现代工程升级</a>
+                <a href="#section-code-quiz" class="nav-btn px-3 py-1.5 rounded-lg text-gray-400 hover:text-coralAccent hover:bg-elevatedDark transition">5.7 代码/测试/小结</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 lg:px-8 py-8 space-y-12">
+
+        <!-- Hero Title Banner -->
+        <div class="bg-gradient-to-r from-cardDark via-elevatedDark to-cardDark border border-borderDark rounded-2xl p-6 md:p-8 relative overflow-hidden shadow-2xl">
+            <div class="absolute -right-16 -top-16 w-64 h-64 bg-cyanAccent/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -left-16 -bottom-16 w-64 h-64 bg-violetAccent/10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="relative z-10 max-w-4xl space-y-4">
+                <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+                    <span class="px-2.5 py-0.5 rounded-full bg-cyanAccent/20 text-cyanAccent border border-cyanAccent/40">Transformer 进阶教程</span>
+                    <span class="px-2.5 py-0.5 rounded-full bg-emeraldAccent/20 text-emeraldAccent border border-emeraldAccent/40">Pre-LN vs Post-LN</span>
+                    <span class="px-2.5 py-0.5 rounded-full bg-goldAccent/20 text-goldAccent border border-goldAccent/40">Weight Tying</span>
+                    <span class="px-2.5 py-0.5 rounded-full bg-violetAccent/20 text-violetAccent border border-violetAccent/40">KV Cache 加速</span>
+                </div>
+                <h2 class="text-2xl md:text-4xl font-extrabold text-white tracking-tight">
+                    从零把组件拼成 GPT：<span class="text-transparent bg-clip-text bg-gradient-to-r from-cyanAccent via-goldAccent to-emeraldAccent">MiniGPT 全体系解剖与工程演进</span>
+                </h2>
+                <p class="text-gray-300 text-sm md:text-base leading-relaxed">
+                    在第 5 章（上）中，我们拆解了 Masked Causal Attention 与 FeedForward 模块。在本章（下）中，我们将这些积木**完整拼装为一个双层 MiniGPT 语言模型**，深度剖析自回归文本生成的底层运作逻辑，对比 Pre-LN 与 Post-LN 在超深网络中的梯度高速公路机制，精准计算每一个参数的来源与缩放规律，并探索 RMSNorm 和 KV Cache 等现代大模型的核心工程升级。
+                </p>
+            </div>
+        </div>
+
+        <!-- MODULE 5.5A: MiniGPT 完整组装蓝图与自回归生成剧场 -->
+        <section id="section-blueprint" class="space-y-6 scroll-mt-20">
+            <div class="flex items-center gap-3 border-l-4 border-cyanAccent pl-4 py-1">
+                <h3 class="text-xl md:text-2xl font-bold text-white">5.5A MiniGPT 2 层完整组装蓝图与自回归生成剧场</h3>
+                <span class="text-xs bg-cyanAccent/10 text-cyanAccent px-2.5 py-0.5 rounded border border-cyanAccent/30">模块 1</span>
+            </div>
+
+            <p class="text-sm text-gray-300">
+                下图展示了一个标准的 2 层 MiniGPT 架构（<span class="font-mono text-cyanAccent">vocab_size=1000, d_model=64, n_heads=4, n_layers=2, max_len=32</span>）。点击架构图中的任意组件，可在右侧查看其 Tensor 形状变化、残差维度不变性以及 PyTorch 代码实现。
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Architecture Interactive Diagram (Left Column) -->
+                <div class="lg:col-span-7 bg-cardDark border border-borderDark rounded-xl p-5 space-y-3">
+                    <h4 class="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>MiniGPT 计算流图 (点击节点交互)</span>
+                        <span class="text-xs font-mono text-emeraldAccent">输入 Shape: (B, L) → 输出: (B, L, V)</span>
+                    </h4>
+
+                    <!-- Architecture Flow Container -->
+                    <div class="space-y-2 text-xs font-mono">
+                        <!-- Input Tokens -->
+                        <div id="node-input" onclick="selectBlueprintNode('input')" class="blueprint-node bg-elevatedDark hover:border-cyanAccent border border-borderDark p-3 rounded-lg flex items-center justify-between cursor-pointer transition glow-cyan">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-cyanAccent"></span>
+                                <span class="font-bold text-white">1. Input Token IDs</span>
+                            </div>
+                            <span class="text-cyanAccent bg-cyanAccent/10 px-2 py-0.5 rounded">idx: (B, L)</span>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="text-center text-gray-500 py-0.5">↓ + 坐标位置编码 (Position Embedding)</div>
+
+                        <!-- Embedding Layer -->
+                        <div id="node-emb" onclick="selectBlueprintNode('emb')" class="blueprint-node bg-elevatedDark hover:border-cyanAccent border border-borderDark p-3 rounded-lg flex items-center justify-between cursor-pointer transition">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-cyanAccent"></span>
+                                <span class="font-bold text-white">2. Token + Pos Embedding</span>
+                            </div>
+                            <span class="text-cyanAccent bg-cyanAccent/10 px-2 py-0.5 rounded">x: (B, L, 64)</span>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="text-center text-gray-500 py-0.5">↓ 进入 Transformer Block 0 (Pre-LN)</div>
+
+                        <!-- Block 0 -->
+                        <div id="node-block0" onclick="selectBlueprintNode('block0')" class="blueprint-node bg-elevatedDark hover:border-goldAccent border border-borderDark p-3 rounded-lg space-y-2 cursor-pointer transition">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full bg-goldAccent"></span>
+                                    <span class="font-bold text-goldAccent">3. Transformer Block 0</span>
+                                </div>
+                                <span class="text-emeraldAccent bg-emeraldAccent/10 px-2 py-0.5 rounded">保持 (B, L, 64)</span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-3xs text-gray-300">
+                                <div class="bg-bgDark/80 p-2 rounded border border-borderDark">
+                                    <div class="font-semibold text-cyanAccent">LN1 → Causal MHA</div>
+                                    <div>残差连接: + x</div>
+                                </div>
+                                <div class="bg-bgDark/80 p-2 rounded border border-borderDark">
+                                    <div class="font-semibold text-goldAccent">LN2 → FeedForward</div>
+                                    <div>残差连接: + x</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="text-center text-gray-500 py-0.5">↓ 进入 Transformer Block 1 (Pre-LN)</div>
+
+                        <!-- Block 1 -->
+                        <div id="node-block1" onclick="selectBlueprintNode('block1')" class="blueprint-node bg-elevatedDark hover:border-goldAccent border border-borderDark p-3 rounded-lg space-y-2 cursor-pointer transition">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full bg-goldAccent"></span>
+                                    <span class="font-bold text-goldAccent">4. Transformer Block 1</span>
+                                </div>
+                                <span class="text-emeraldAccent bg-emeraldAccent/10 px-2 py-0.5 rounded">保持 (B, L, 64)</span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-3xs text-gray-300">
+                                <div class="bg-bgDark/80 p-2 rounded border border-borderDark">
+                                    <div class="font-semibold text-cyanAccent">LN1 → Causal MHA</div>
+                                    <div>残差连接: + x</div>
+                                </div>
+                                <div class="bg-bgDark/80 p-2 rounded border border-borderDark">
+                                    <div class="font-semibold text-goldAccent">LN2 → FeedForward</div>
+                                    <div>残差连接: + x</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="text-center text-gray-500 py-0.5">↓ 终极层归一化</div>
+
+                        <!-- Final LayerNorm -->
+                        <div id="node-lnf" onclick="selectBlueprintNode('lnf')" class="blueprint-node bg-elevatedDark hover:border-violetAccent border border-borderDark p-3 rounded-lg flex items-center justify-between cursor-pointer transition">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-violetAccent"></span>
+                                <span class="font-bold text-white">5. Final LayerNorm (ln_f)</span>
+                            </div>
+                            <span class="text-violetAccent bg-violetAccent/10 px-2 py-0.5 rounded">x: (B, L, 64)</span>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="text-center text-gray-500 py-0.5">↓ 线性投影输出</div>
+
+                        <!-- LM Head -->
+                        <div id="node-lmhead" onclick="selectBlueprintNode('lmhead')" class="blueprint-node bg-elevatedDark hover:border-violetAccent border border-borderDark p-3 rounded-lg flex items-center justify-between cursor-pointer transition">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-violetAccent"></span>
+                                <span class="font-bold text-white">6. Language Model Head (lm_head)</span>
+                            </div>
+                            <span class="text-violetAccent bg-violetAccent/10 px-2 py-0.5 rounded">logits: (B, L, 1000)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inspector Panel (Right Column) -->
+                <div class="lg:col-span-5 bg-cardDark border border-borderDark rounded-xl p-5 flex flex-col justify-between space-y-4">
+                    <div>
+                        <h4 id="inspector-title" class="text-base font-bold text-cyanAccent border-b border-borderDark pb-2 mb-3 flex items-center justify-between">
+                            <span>组件解剖面板: Input Token IDs</span>
+                            <span class="text-xs bg-emeraldAccent/20 text-emeraldAccent px-2 py-0.5 rounded font-mono">残差不变性: 成立</span>
+                        </h4>
+
+                        <div class="space-y-4 text-sm">
+                            <!-- Tensor Shapes -->
+                            <div class="bg-elevatedDark p-3 rounded-lg border border-borderDark space-y-1">
+                                <div class="text-xs text-gray-400 font-semibold">Tensor Shape 变换轨迹</div>
+                                <div id="inspector-shapes" class="font-mono text-xs text-emeraldAccent">
+                                    输入: (B, L) [如 Batch=1, Sequence Length=3]
+                                </div>
+                            </div>
+
+                            <!-- Residual Shape Invariance Info -->
+                            <div class="bg-elevatedDark p-3 rounded-lg border border-borderDark space-y-1">
+                                <div class="text-xs text-gray-400 font-semibold">残差形状不变性 (Residual Shape Invariance)</div>
+                                <p id="inspector-invariance" class="text-xs text-gray-300 leading-relaxed">
+                                    在 Block 内部，经过自注意力与前馈网络后，Tensor 形状始终精准锁定为 <span class="font-mono text-cyanAccent">(B, L, d_model)</span>。这保证了加法残差连接 <span class="font-mono text-emeraldAccent">x + Sublayer(x)</span> 可以在数十层中畅通无阻。
+                                </p>
+                            </div>
+
+                            <!-- Param Count -->
+                            <div class="bg-elevatedDark p-3 rounded-lg border border-borderDark space-y-1">
+                                <div class="text-xs text-gray-400 font-semibold">该组件参数量 (Parameter Count)</div>
+                                <div id="inspector-params" class="font-mono text-sm text-goldAccent font-bold">
+                                    0 参数 (纯离散 ID 输入)
+                                </div>
+                            </div>
+
+                            <!-- PyTorch Code Codeblock -->
+                            <div class="space-y-1">
+                                <div class="text-xs text-gray-400 font-semibold flex items-center justify-between">
+                                    <span>PyTorch 核心实现</span>
+                                    <span class="text-3xs text-gray-500 font-mono">nn.Module</span>
+                                </div>
+                                <pre id="inspector-code" class="bg-bgDark p-3 rounded-lg text-xs font-mono text-cyanAccent border border-borderDark overflow-x-auto"># 离散词索引输入
+idx = torch.tensor([[45, 231, 887]]) # (B=1, L=3)</pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-cyanAccent/10 border border-cyanAccent/30 p-3 rounded-lg text-xs text-cyanAccent">
+                        💡 <strong>提示：</strong> Transformer 核心设计美学在于**形状的统一性**。除注意力内部权重矩阵 `(B, h, L, L)` 和最终投影 `lm_head` 扩展至 `V` 维外，主干网络始终保持 `(B, L, d_model)` 尺寸。
+                    </div>
+                </div>
+            </div>
+
+            <!-- Autoregressive Generator Simulator -->
+            <div class="bg-cardDark border border-borderDark rounded-xl p-5 md:p-6 space-y-5 shadow-xl">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-borderDark pb-4">
+                    <div>
+                        <h4 class="text-lg font-bold text-white flex items-center gap-2">
+                            <span>🎮 .generate() 自回归生成动态演练剧场</span>
+                        </h4>
+                        <p class="text-xs text-gray-400 mt-1">
+                            观察 Transformer 如何在每一步取 logits 的最后一个位置 <span class="font-mono text-cyanAccent font-bold">logits[:, -1, :]</span>，应用 Temperature 采样并追加新 Token。
+                        </p>
+                    </div>
+
+                    <!-- Mode Selectors & Controls -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <select id="gen-weights-mode" class="bg-elevatedDark text-xs font-mono border border-borderDark rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyanAccent">
+                            <option value="trained">模拟训练后权重 (输出通顺语义)</option>
+                            <option value="random">随机初始化权重 (输出乱码验证前向)</option>
+                        </select>
+                        <button id="btn-step-gen" onclick="stepGenerate()" class="px-3 py-2 bg-cyanAccent text-bgDark font-bold text-xs rounded-lg hover:bg-cyanAccent/80 transition flex items-center gap-1">
+                            <span>生成下一个 Token (+1)</span>
+                        </button>
+                        <button id="btn-auto-gen" onclick="toggleAutoGenerate()" class="px-3 py-2 bg-emeraldAccent text-bgDark font-bold text-xs rounded-lg hover:bg-emeraldAccent/80 transition">
+                            自动连续生成
+                        </button>
+                        <button onclick="resetGenerator()" class="px-3 py-2 bg-elevatedDark text-gray-300 font-bold text-xs rounded-lg hover:bg-borderDark border border-borderDark transition">
+                            重置
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <!-- Left: Text Sequence Display & Tensor State -->
+                    <div class="lg:col-span-6 space-y-4">
+                        <div>
+                            <div class="text-xs text-gray-400 mb-2 font-semibold">当前生成序列 (Prompt + 生成部分):</div>
+                            <div id="sequence-pills-container" class="bg-elevatedDark border border-borderDark rounded-xl p-4 min-h-[100px] flex flex-wrap items-center gap-2">
+                                <!-- Dynamic pills inserted here -->
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 text-xs font-mono">
+                            <div class="bg-bgDark p-3 rounded-lg border border-borderDark">
+                                <div class="text-gray-400 text-3xs">当前 输入 Tensor 形状</div>
+                                <div id="gen-tensor-shape" class="text-cyanAccent font-bold mt-1 text-sm">idx: (1, 3)</div>
+                            </div>
+                            <div class="bg-bgDark p-3 rounded-lg border border-borderDark">
+                                <div class="text-gray-400 text-3xs">生成步骤 (Step Count)</div>
+                                <div id="gen-step-count" class="text-goldAccent font-bold mt-1 text-sm">Step 0 (Prompt)</div>
+                            </div>
+                        </div>
+
+                        <!-- Temperature Slider -->
+                        <div class="bg-elevatedDark p-3.5 rounded-xl border border-borderDark space-y-2">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-semibold text-gray-300">采样温度 Temperature (T): <span id="temp-val-display" class="text-goldAccent font-mono font-bold">0.7</span></span>
+                                <span class="text-3xs text-gray-400">logits / T → Softmax</span>
+                            </div>
+                            <input type="range" id="temp-slider" min="0.1" max="2.0" step="0.1" value="0.7" oninput="updateTemperature(this.value)" class="w-full accent-goldAccent">
+                            <div class="flex justify-between text-3xs text-gray-500 font-mono">
+                                <span>0.1 (确定性高/保守)</span>
+                                <span>1.0 (标准)</span>
+                                <span>2.0 (随机性高/创造力)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Top 5 Probabilities Chart -->
+                    <div class="lg:col-span-6 bg-bgDark border border-borderDark rounded-xl p-4 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-gray-300">Logits[:, -1, :] 概率预测 Top-5 Candidate</span>
+                            <span class="text-3xs text-gray-500 font-mono">Softmax Distribution</span>
+                        </div>
+                        <div id="top5-prob-bars" class="space-y-2 py-2">
+                            <!-- Dynamic Bars inserted via JS -->
+                        </div>
+                        <div class="text-3xs text-gray-400 bg-elevatedDark p-2.5 rounded border border-borderDark leading-relaxed">
+                            🔍 <strong>自回归核心算子：</strong> 在每步推断中，模型通过 <span class="font-mono text-cyanAccent">next_id = torch.multinomial(probs, num_samples=1)</span> 采样新词，并通过 <span class="font-mono text-emeraldAccent">idx = torch.cat([idx, next_id], dim=1)</span> 拼接至序列末尾，作为下一步的输入。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.5B: Pre-LN vs Post-LN 深度稳定性实验室 -->
+        <section id="section-preln" class="space-y-6 scroll-mt-20">
+            <div class="flex items-center gap-3 border-l-4 border-emeraldAccent pl-4 py-1">
+                <h3 class="text-xl md:text-2xl font-bold text-white">5.5B Pre-LN vs Post-LN 深度稳定性实验室</h3>
+                <span class="text-xs bg-emeraldAccent/10 text-emeraldAccent px-2.5 py-0.5 rounded border border-emeraldAccent/30">模块 2</span>
+            </div>
+
+            <p class="text-sm text-gray-300">
+                原始 Transformer (Vaswani et al.) 采用 <strong>Post-LN</strong>，但在深层网络中容易发生梯度爆炸或消失；现代 GPT 架构（包括 MiniGPT、Llama）全面转向 <strong>Pre-LN</strong>。拖动网络层数滑块，观察反向传播梯度如何在 Pre-LN 的“残差高速公路”上顺畅流过。
+            </p>
+
+            <!-- Pre-LN vs Post-LN Visual & Interactive Canvas -->
+            <div class="bg-cardDark border border-borderDark rounded-xl p-5 md:p-6 space-y-6">
+                <!-- Controls and Layer Slider -->
+                <div class="flex flex-col md:flex-row items-center justify-between gap-4 bg-elevatedDark p-4 rounded-xl border border-borderDark">
+                    <div class="flex items-center gap-3 w-full md:w-auto">
+                        <label for="depth-slider" class="text-xs font-bold text-gray-200 whitespace-nowrap">网络总深度 (n_layers):</label>
+                        <input type="range" id="depth-slider" min="2" max="48" step="2" value="12" oninput="updateDepthLab(this.value)" class="w-full md:w-48 accent-emeraldAccent">
+                        <span id="depth-val-display" class="font-mono text-sm font-bold text-emeraldAccent bg-bgDark px-2.5 py-1 rounded border border-borderDark">12 层</span>
+                    </div>
+
+                    <div class="flex items-center gap-4 text-xs font-mono">
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-coralAccent"></span> Post-LN (梯度阻滞)</span>
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emeraldAccent"></span> Pre-LN (梯度高速公路)</span>
+                    </div>
+                </div>
+
+                <!-- Canvas comparison grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Circuit Canvas -->
+                    <div class="space-y-2">
+                        <div class="text-xs font-semibold text-gray-400 flex items-center justify-between">
+                            <span>电路对比与残差高速公路 (Visual Circuit)</span>
+                            <span class="text-3xs text-emeraldAccent">动画粒子表示反向梯度流</span>
+                        </div>
+                        <div class="relative bg-bgDark rounded-xl border border-borderDark overflow-hidden aspect-[4/3]">
+                            <canvas id="canvas-preln-circuit" class="w-full h-full block"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Gradient Norm Stability Chart Canvas -->
+                    <div class="space-y-2">
+                        <div class="text-xs font-semibold text-gray-400 flex items-center justify-between">
+                            <span>梯度范数 (Gradient Norm) 随网络深度变化曲线</span>
+                            <span class="text-3xs text-coralAccent font-mono">Post-LN 衰减/爆炸 vs Pre-LN 恒定</span>
+                        </div>
+                        <div class="relative bg-bgDark rounded-xl border border-borderDark overflow-hidden aspect-[4/3]">
+                            <canvas id="canvas-preln-chart" class="w-full h-full block"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Technical Deep-Dive Callout -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="bg-elevatedDark border border-coralAccent/30 p-4 rounded-xl space-y-2">
+                        <div class="font-bold text-coralAccent flex items-center gap-1.5">
+                            <span>❌ Post-LN: LayerNorm(x + Sublayer(x))</span>
+                        </div>
+                        <p class="text-gray-300 leading-relaxed">
+                            LayerNorm 放在残差加法之外。梯度从输出传回输入时，必须穿过每一个 LayerNorm 层的缩放计算。随着深度增长，梯度范数呈指数级衰减或归一化扰动，导致不使用 Warmup 学习率预热时极易训练崩溃。
+                        </p>
+                    </div>
+
+                    <div class="bg-elevatedDark border border-emeraldAccent/30 p-4 rounded-xl space-y-2">
+                        <div class="font-bold text-emeraldAccent flex items-center gap-1.5">
+                            <span>✅ Pre-LN: x + Sublayer(LayerNorm(x))</span>
+                        </div>
+                        <p class="text-gray-300 leading-relaxed">
+                            LayerNorm 移至子层内部。主干残差直接以纯加法相连接：<span class="font-mono text-emeraldAccent">x<sub>L</sub> = x<sub>0</sub> + ∑ Sublayer(LN(x<sub>i</sub>))</span>。梯度可以沿着加法通道直接穿透至最底层的 Embedding，因此**必须在模型最后加上 `ln_f` 统一归一化**。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.4.3 & 练习: 参数量解剖仪、Weight Tying 与平方缩放实验室 -->
+        <section id="section-params" class="space-y-6 scroll-mt-20">
+            <div class="flex items-center gap-3 border-l-4 border-goldAccent pl-4 py-1">
+                <h3 class="text-xl md:text-2xl font-bold text-white">5.4.3 & 练习：参数量解剖仪、Weight Tying 与平方缩放实验室</h3>
+                <span class="text-xs bg-goldAccent/10 text-goldAccent px-2.5 py-0.5 rounded border border-goldAccent/30">模块 3</span>
+            </div>
+
+            <p class="text-sm text-gray-300">
+                大语言模型的参数主要消耗在何处？为什么 FFN 的参数量是 Attention 的 2 倍？交互调整下方参数，观察 Weight Tying（权重共享）如何大幅降低 Embedding 阶段的显存占用，以及 <span class="font-mono text-goldAccent">O(d_model²)</span> 的二次方缩放法则。
+            </p>
+
+            <div class="bg-cardDark border border-borderDark rounded-xl p-5 md:p-6 space-y-6">
+                <!-- Preset Quick Buttons -->
+                <div class="flex flex-wrap items-center gap-2 pb-2 border-b border-borderDark">
+                    <span class="text-xs font-semibold text-gray-400">快速预设模型:</span>
+                    <button onclick="applyModelPreset(64, 2, 1000, 32)" class="btn-preset text-xs px-3 py-1 bg-elevatedDark hover:bg-goldAccent/20 hover:text-goldAccent border border-borderDark rounded-lg transition font-mono">
+                        MiniGPT 默认 (d=64, L=2, V=1k)
+                    </button>
+                    <button onclick="applyModelPreset(128, 4, 2000, 64)" class="btn-preset text-xs px-3 py-1 bg-elevatedDark hover:bg-goldAccent/20 hover:text-goldAccent border border-borderDark rounded-lg transition font-mono">
+                        小幅扩容 (d=128, L=4, V=2k)
+                    </button>
+                    <button onclick="applyModelPreset(512, 6, 10000, 128)" class="btn-preset text-xs px-3 py-1 bg-elevatedDark hover:bg-goldAccent/20 hover:text-goldAccent border border-borderDark rounded-lg transition font-mono">
+                        中型 (d=512, L=6, V=10k)
+                    </button>
+                    <button onclick="applyModelPreset(768, 12, 50257, 1024)" class="btn-preset text-xs px-3 py-1 bg-elevatedDark hover:bg-goldAccent/20 hover:text-goldAccent border border-borderDark rounded-lg transition font-mono">
+                        GPT-2 Small (d=768, L=12, V=50k)
+                    </button>
+                    <button onclick="applyModelPreset(4096, 32, 32000, 4096)" class="btn-preset text-xs px-3 py-1 bg-elevatedDark hover:bg-goldAccent/20 hover:text-goldAccent border border-borderDark rounded-lg transition font-mono">
+                        Llama 7B 级 (d=4096, L=32, V=32k)
+                    </button>
+                </div>
+
+                <!-- Input Controls Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-gray-300">Vocab Size (V)</label>
+                        <input type="number" id="input-vocab" value="1000" oninput="recalculateParams()" class="w-full bg-elevatedDark border border-borderDark rounded-lg px-3 py-2 text-xs font-mono text-cyanAccent focus:outline-none focus:border-cyanAccent">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-gray-300">Hidden Dim d_model</label>
+                        <input type="number" id="input-dmodel" value="64" oninput="recalculateParams()" class="w-full bg-elevatedDark border border-borderDark rounded-lg px-3 py-2 text-xs font-mono text-goldAccent focus:outline-none focus:border-goldAccent">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-gray-300">Layers (n_layers)</label>
+                        <input type="number" id="input-nlayers" value="2" oninput="recalculateParams()" class="w-full bg-elevatedDark border border-borderDark rounded-lg px-3 py-2 text-xs font-mono text-emeraldAccent focus:outline-none focus:border-emeraldAccent">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-gray-300">Max Seq Length</label>
+                        <input type="number" id="input-maxlen" value="32" oninput="recalculateParams()" class="w-full bg-elevatedDark border border-borderDark rounded-lg px-3 py-2 text-xs font-mono text-violetAccent focus:outline-none focus:border-violetAccent">
+                    </div>
+                    <div class="space-y-1 flex flex-col justify-end">
+                        <label class="inline-flex items-center cursor-pointer bg-elevatedDark border border-borderDark rounded-lg p-2 hover:border-goldAccent transition">
+                            <input type="checkbox" id="toggle-weight-tying" checked onchange="recalculateParams()" class="sr-only peer">
+                            <div class="w-9 h-5 bg-borderDark peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-goldAccent relative"></div>
+                            <span class="ml-2 text-xs font-bold text-goldAccent whitespace-nowrap">Weight Tying 权重共享</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Parameter Calculation Summary Banner -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-elevatedDark p-4 rounded-xl border border-borderDark flex flex-col justify-between space-y-1">
+                        <div class="text-xs text-gray-400 font-semibold">总参数量 (Total Parameters)</div>
+                        <div id="summary-total-params" class="text-2xl font-extrabold text-goldAccent font-mono">165,632</div>
+                        <div id="summary-tying-savings" class="text-3xs text-emeraldAccent font-mono font-semibold">
+                            Weight Tying 节省: 64,000 (-27.9%)
+                        </div>
+                    </div>
+
+                    <div class="bg-elevatedDark p-4 rounded-xl border border-borderDark flex flex-col justify-between space-y-1">
+                        <div class="text-xs text-gray-400 font-semibold">FFN vs Attention 比率</div>
+                        <div id="summary-ffn-attn-ratio" class="text-2xl font-extrabold text-cyanAccent font-mono">2.00 ×</div>
+                        <div class="text-3xs text-gray-400">
+                            单个 Block 中 FFN 参数量严格为 MHA 的 ~2 倍
+                        </div>
+                    </div>
+
+                    <div class="bg-elevatedDark p-4 rounded-xl border border-borderDark flex flex-col justify-between space-y-1">
+                        <div class="text-xs text-gray-400 font-semibold">Embedding 占比</div>
+                        <div id="summary-emb-ratio" class="text-2xl font-extrabold text-violetAccent font-mono">39.8 %</div>
+                        <div class="text-3xs text-gray-400">
+                            词表与输出投影在总模型中的占用
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Breakdown Table & Visual Bar Chart -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <!-- Parameter Stacked Breakdown -->
+                    <div class="lg:col-span-6 space-y-4">
+                        <div class="text-xs font-bold text-gray-300 flex items-center justify-between">
+                            <span>各组件参数占比分布</span>
+                            <span class="text-3xs font-mono text-gray-500">Total Layer Breakdown</span>
+                        </div>
+
+                        <!-- Stacked Bar -->
+                        <div class="w-full h-6 bg-bgDark rounded-full overflow-hidden flex border border-borderDark" id="stacked-param-bar">
+                            <!-- Dynamic segments inserted via JS -->
+                        </div>
+
+                        <!-- Breakdown Table -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs font-mono">
+                                <thead>
+                                    <tr class="border-b border-borderDark text-gray-400">
+                                        <th class="py-2">组件分类</th>
+                                        <th class="py-2">计算公式</th>
+                                        <th class="py-2 text-right">参数量</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="param-table-body" class="divide-y divide-borderDark/50 text-gray-200">
+                                    <!-- Dynamic Rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Canvas: Quadratic Scaling Curve Chart -->
+                    <div class="lg:col-span-6 space-y-2">
+                        <div class="text-xs font-semibold text-gray-400 flex items-center justify-between">
+                            <span>隐藏维度 d_model 二次方缩放爆炸趋势曲线 O(d²)</span>
+                            <span class="text-3xs font-mono text-goldAccent">d_model = 64 → 512</span>
+                        </div>
+                        <div class="relative bg-bgDark rounded-xl border border-borderDark overflow-hidden aspect-[4/3]">
+                            <canvas id="canvas-scaling-curve" class="w-full h-full block"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.6: 现代大模型三大工程升级 —— RMSNorm、KV Cache 加速剧场与 Dropout -->
+        <section id="section-upgrades" class="space-y-6 scroll-mt-20">
+            <div class="flex items-center gap-3 border-l-4 border-violetAccent pl-4 py-1">
+                <h3 class="text-xl md:text-2xl font-bold text-white">5.6 现代大模型三大工程升级 —— RMSNorm、KV Cache 与 Dropout</h3>
+                <span class="text-xs bg-violetAccent/10 text-violetAccent px-2.5 py-0.5 rounded border border-violetAccent/30">模块 4</span>
+            </div>
+
+            <p class="text-sm text-gray-300">
+                从标准 MiniGPT 走向现代工业级大模型（如 Llama 3, Qwen 2.5），三大必修升级包括：**KV Cache 推理加速**（消除冗余计算）、**RMSNorm**（无均值减法的轻量归一化）以及**Dropout 模式切换**。
+            </p>
+
+            <!-- Tabbed Interface for 3 Upgrades -->
+            <div class="bg-cardDark border border-borderDark rounded-xl overflow-hidden">
+                <!-- Navigation Tabs -->
+                <div class="flex border-b border-borderDark bg-elevatedDark overflow-x-auto">
+                    <button onclick="switchUpgradeTab(0)" id="up-tab-0" class="tab-up-btn flex-1 min-w-[140px] px-5 py-3 text-xs md:text-sm font-bold text-cyanAccent border-b-2 border-cyanAccent transition">
+                        ⚡ KV Cache 推理加速剧场
+                    </button>
+                    <button onclick="switchUpgradeTab(1)" id="up-tab-1" class="tab-up-btn flex-1 min-w-[140px] px-5 py-3 text-xs md:text-sm font-bold text-gray-400 border-b-2 border-transparent hover:text-gray-200 transition">
+                        🧮 RMSNorm vs LayerNorm 实验室
+                    </button>
+                    <button onclick="switchUpgradeTab(2)" id="up-tab-2" class="tab-up-btn flex-1 min-w-[140px] px-5 py-3 text-xs md:text-sm font-bold text-gray-400 border-b-2 border-transparent hover:text-gray-200 transition">
+                        🎲 Dropout 训练 / 推理切换
+                    </button>
+                </div>
+
+                <!-- Tab Content 0: KV Cache -->
+                <div id="up-content-0" class="p-5 md:p-6 space-y-5">
+                    <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div>
+                            <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                <span>自回归推理对比：传统重计算 vs KV Cache 缓存复用</span>
+                            </h4>
+                            <p class="text-xs text-gray-400 mt-0.5">
+                                在没有 KV Cache 时，每输出 1 个新词必须对前面所有 Token 重新计算 K 和 V (时间复杂度 O(L²))；开启 Cache 后仅计算当步词 (O(L))。
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="stepKVCache()" class="px-3 py-1.5 bg-cyanAccent text-bgDark text-xs font-bold rounded-lg hover:bg-cyanAccent/80 transition">
+                                推进一步 (t+1)
+                            </button>
+                            <button id="btn-auto-kv" onclick="toggleAutoKVCache()" class="px-3 py-1.5 bg-emeraldAccent text-bgDark text-xs font-bold rounded-lg hover:bg-emeraldAccent/80 transition">
+                                自动播放
+                            </button>
+                            <button onclick="resetKVCache()" class="px-3 py-1.5 bg-elevatedDark text-gray-300 text-xs font-bold rounded-lg border border-borderDark hover:bg-borderDark transition">
+                                重置
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Canvas: KV Cache Visual Comparison -->
+                    <div class="relative bg-bgDark rounded-xl border border-borderDark overflow-hidden aspect-[16/9] max-h-[360px]">
+                        <canvas id="canvas-kv-cache" class="w-full h-full block"></canvas>
+                    </div>
+
+                    <!-- Dashboard Stats & PyTorch snippet -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                        <div class="bg-elevatedDark p-4 rounded-xl border border-borderDark space-y-2">
+                            <div class="text-cyanAccent font-bold">累计 K/V 矩阵投影计算次数</div>
+                            <div class="flex justify-between items-center text-sm">
+                                <span>无 Cache 重建算力: <span id="kv-stat-no" class="text-coralAccent font-bold">--</span></span>
+                                <span>开启 KV Cache 算力: <span id="kv-stat-yes" class="text-emeraldAccent font-bold">--</span></span>
+                            </div>
+                            <div class="text-3xs text-gray-400">
+                                算力节省: <span id="kv-stat-saving" class="text-goldAccent font-bold">0%</span> (随序列长度增长效益指数放大)
+                            </div>
+                        </div>
+
+                        <div class="bg-elevatedDark p-4 rounded-xl border border-borderDark space-y-1">
+                            <div class="text-emeraldAccent font-bold text-3xs">CachedAttention 核心逻辑</div>
+                            <pre class="text-3xs text-gray-300 overflow-x-auto font-mono">
+# 仅对最新 token 进行 Linear 投影
+k_new = self.w_k(x[:, -1:]) # (B, 1, d)
+v_new = self.w_v(x[:, -1:]) 
+# 在 Sequence 维度拼接历史 Cache
+self.cache_k = torch.cat([self.cache_k, k_new], dim=1)</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content 1: RMSNorm vs LayerNorm -->
+                <div id="up-content-1" class="p-5 md:p-6 space-y-6 hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Math Formulas Side-by-Side strictly using clean HTML markup -->
+                        <div class="bg-elevatedDark p-4 rounded-xl border border-borderDark space-y-3">
+                            <h5 class="text-xs font-bold text-coralAccent uppercase tracking-wider">LayerNorm (标准 Transformer)</h5>
+                            <div class="text-xs text-gray-300 leading-relaxed">
+                                需分别计算均值 μ 与方差 σ²，再做平移与缩放：
+                            </div>
+                            <div class="math-block text-xs text-white">
+                                LayerNorm(x) = 
+                                <div class="frac">
+                                    <span class="numerator">x - μ</span>
+                                    <span class="denominator">√( σ² + ε )</span>
+                                </div> 
+                                × γ + β
+                            </div>
+                            <div class="text-3xs text-gray-400">
+                                参数包括可学习的 γ (scale) 与 β (bias)。
+                            </div>
+                        </div>
+
+                        <div class="bg-elevatedDark p-4 rounded-xl border border-violetAccent/40 space-y-3">
+                            <h5 class="text-xs font-bold text-violetAccent uppercase tracking-wider">RMSNorm (Llama / Qwen 标配)</h5>
+                            <div class="text-xs text-gray-300 leading-relaxed">
+                                摒弃均值平移 μ，仅除以均方根 (Root Mean Square)：
+                            </div>
+                            <div class="math-block text-xs text-white">
+                                RMSNorm(x) = 
+                                <div class="frac">
+                                    <span class="numerator">x</span>
+                                    <span class="denominator">RMS(x)</span>
+                                </div> 
+                                × γ,&nbsp; RMS(x) = √( <div class="frac"><span class="numerator">1</span><span class="denominator">d</span></div> ∑ x<sub>i</sub>² + ε )
+                            </div>
+                            <div class="text-3xs text-emeraldAccent">
+                                ⚡ 移除偏移量 β，计算耗时减少 10%~50%，且保持相同归一化效果！
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Slider Vector Input Lab -->
+                    <div class="bg-bgDark p-5 rounded-xl border border-borderDark space-y-4">
+                        <div class="text-xs font-bold text-gray-300 flex items-center justify-between">
+                            <span>🧪 实时 Feature 向量归一化数值实验 (Token 维度 d_model=4)</span>
+                            <span class="text-3xs font-mono text-cyanAccent">输入向量 x = [x₁, x₂, x₃, x₄]</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            <div class="space-y-1">
+                                <label class="text-3xs text-gray-400 font-mono">x₁: <span id="v1-val" class="text-cyanAccent font-bold">2.0</span></label>
+                                <input type="range" id="slider-x1" min="-5" max="5" step="0.1" value="2.0" oninput="updateRMSLab()" class="w-full accent-cyanAccent">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-3xs text-gray-400 font-mono">x₂: <span id="v2-val" class="text-cyanAccent font-bold">-1.5</span></label>
+                                <input type="range" id="slider-x2" min="-5" max="5" step="0.1" value="-1.5" oninput="updateRMSLab()" class="w-full accent-cyanAccent">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-3xs text-gray-400 font-mono">x₃: <span id="v3-val" class="text-cyanAccent font-bold">4.0</span></label>
+                                <input type="range" id="slider-x3" min="-5" max="5" step="0.1" value="4.0" oninput="updateRMSLab()" class="w-full accent-cyanAccent">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-3xs text-gray-400 font-mono">x₄: <span id="v4-val" class="text-cyanAccent font-bold font-mono">0.5</span></label>
+                                <input type="range" id="slider-x4" min="-5" max="5" step="0.1" value="0.5" oninput="updateRMSLab()" class="w-full accent-cyanAccent">
+                            </div>
+                        </div>
+
+                        <!-- Output Comparison Bars -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 font-mono text-xs">
+                            <div class="bg-elevatedDark p-3.5 rounded-lg border border-borderDark space-y-2">
+                                <div class="text-coralAccent font-bold">LayerNorm 输出 (μ=<span id="ln-mean">0.0</span>, σ²=<span id="ln-var">0.0</span>)</div>
+                                <div id="ln-output-bars" class="space-y-1 text-3xs"></div>
+                            </div>
+                            <div class="bg-elevatedDark p-3.5 rounded-lg border border-borderDark space-y-2">
+                                <div class="text-violetAccent font-bold">RMSNorm 输出 (RMS=<span id="rms-val">0.0</span>, 无 μ 减法)</div>
+                                <div id="rms-output-bars" class="space-y-1 text-3xs"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content 2: BlockWithDropout -->
+                <div id="up-content-2" class="p-5 md:p-6 space-y-5 hidden">
+                    <div class="flex flex-col sm:flex-row items-center justify-between gap-3 bg-elevatedDark p-4 rounded-xl border border-borderDark">
+                        <div>
+                            <div class="text-sm font-bold text-white">BlockWithDropout 训练 vs 推理模式</div>
+                            <div class="text-xs text-gray-400">Dropout (p=0.2) 仅在训练阶段随机屏蔽残差分支神经元，推理阶段全激活。</div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button id="btn-mode-train" onclick="setDropoutMode('train')" class="px-4 py-2 bg-coralAccent text-bgDark font-bold text-xs rounded-lg shadow transition">
+                                model.train() 模式
+                            </button>
+                            <button id="btn-mode-eval" onclick="setDropoutMode('eval')" class="px-4 py-2 bg-elevatedDark text-gray-300 font-bold text-xs rounded-lg border border-borderDark hover:bg-borderDark transition">
+                                model.eval() 模式
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Visual Neuron Grid -->
+                    <div class="bg-bgDark border border-borderDark rounded-xl p-6 text-center space-y-4">
+                        <div class="text-xs text-gray-400 font-semibold">
+                            当前模式: <span id="dropout-mode-status" class="font-mono text-coralAccent font-bold">TRAIN MODE (p=0.2, 随机 Inverted Dropout 缩放 1/(1-p))</span>
+                        </div>
+                        <div id="neuron-grid" class="grid grid-cols-6 sm:grid-cols-12 gap-3 max-w-2xl mx-auto py-4">
+                            <!-- Dynamic Neuron Circles -->
+                        </div>
+                        <div id="dropout-notice" class="text-3xs text-gray-400 max-w-lg mx-auto bg-elevatedDark p-3 rounded-lg border border-borderDark">
+                            ⚠️ 注意：PyTorch 采用 **Inverted Dropout** 算法，训练时对未被屏蔽的激活值乘以 <span class="font-mono text-goldAccent">1 / (1 - p)</span>，确保在测试集推断时无需额外缩放。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.7: 完整 PyTorch 实战代码库、互动测验与第 5 章 11 条核心小结 -->
+        <section id="section-code-quiz" class="space-y-8 scroll-mt-20">
+            <div class="flex items-center gap-3 border-l-4 border-coralAccent pl-4 py-1">
+                <h3 class="text-xl md:text-2xl font-bold text-white">5.7 代码库、互动测验与 11 条核心总结</h3>
+                <span class="text-xs bg-coralAccent/10 text-coralAccent px-2.5 py-0.5 rounded border border-coralAccent/30">模块 5</span>
+            </div>
+
+            <!-- Tabbed Code Repository -->
+            <div class="bg-cardDark border border-borderDark rounded-xl overflow-hidden shadow-xl">
+                <div class="flex items-center justify-between px-4 py-3 bg-elevatedDark border-b border-borderDark">
+                    <div class="flex gap-2 overflow-x-auto">
+                        <button onclick="switchCodeTab(0)" id="code-tab-0" class="tab-code-btn px-3 py-1.5 text-xs font-mono font-bold rounded-lg bg-cardDark text-cyanAccent border border-borderDark">
+                            ch5_mini_transformer.py
+                        </button>
+                        <button onclick="switchCodeTab(1)" id="code-tab-1" class="tab-code-btn px-3 py-1.5 text-xs font-mono font-bold rounded-lg text-gray-400 hover:text-white">
+                            ch5_exercise.py
+                        </button>
+                        <button onclick="switchCodeTab(2)" id="code-tab-2" class="tab-code-btn px-3 py-1.5 text-xs font-mono font-bold rounded-lg text-gray-400 hover:text-white">
+                            modern_upgrades.py
+                        </button>
+                    </div>
+                    <button onclick="copyCurrentCode()" class="px-3 py-1 bg-borderDark hover:bg-cyanAccent/20 hover:text-cyanAccent text-xs text-gray-300 font-mono rounded transition flex items-center gap-1">
+                        <span>复制代码</span>
+                    </button>
+                </div>
+
+                <div class="p-4 bg-bgDark overflow-x-auto">
+                    <pre id="code-display" class="text-xs font-mono text-gray-200 leading-relaxed"></pre>
+                </div>
+            </div>
+
+            <!-- Interactive 5-Question Quiz -->
+            <div class="bg-cardDark border border-borderDark rounded-xl p-5 md:p-6 space-y-6">
+                <div class="border-b border-borderDark pb-3">
+                    <h4 class="text-lg font-bold text-white">🧠 第 5 章（下）核心知识概念测验</h4>
+                    <p class="text-xs text-gray-400">测试你对 MiniGPT 组装、Pre-LN、权重共享及 KV Cache 的掌握程度。</p>
+                </div>
+
+                <div id="quiz-container" class="space-y-6">
+                    <!-- Dynamic quiz cards rendered by JS -->
+                </div>
+            </div>
+
+            <!-- 11 Takeaways Summary Checklist Grid -->
+            <div class="bg-gradient-to-br from-cardDark via-elevatedDark to-cardDark border border-borderDark rounded-2xl p-6 md:p-8 space-y-6">
+                <div class="flex items-center justify-between border-b border-borderDark pb-4">
+                    <h4 class="text-xl font-extrabold text-white flex items-center gap-2">
+                        <span>📌 第 5 章 11 条核心要点全景总结</span>
+                    </h4>
+                    <span class="text-xs font-mono bg-emeraldAccent/10 text-emeraldAccent px-3 py-1 rounded-full border border-emeraldAccent/30">Complete Mastered</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-cyanAccent">1. 完整架构流</div>
+                        <p class="text-gray-300">Tokens → Embedding → PosEmbedding → N×Block → ln_f → lm_head → Logits。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-cyanAccent">2. 残差形状不变性</div>
+                        <p class="text-gray-300">除 MHA 内部与 lm_head 扩展词表外，整个主干严格维持 (B, L, d_model) 维度。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-cyanAccent">3. 因果掩码必然性</div>
+                        <p class="text-gray-300">自回归生成必须在 MHA 中应用上三角 -inf 掩码，防止当前位置看到未来 Token。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-emeraldAccent">4. Pre-LN 梯度高速公路</div>
+                        <p class="text-gray-300">Pre-LN 让梯度直通底部，避免深层训练崩溃，但必须在顶层补充 final ln_f。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-emeraldAccent">5. FFN 参数量 2 倍定律</div>
+                        <p class="text-gray-300">在单个 Block 内，FFN 参数量约为 Attention 的 2 倍 (8d² vs 4d²)。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-goldAccent">6. 二次方缩放法则</div>
+                        <p class="text-gray-300">隐藏维度 d_model 翻倍会导致 Block 参数量以 O(d²) 爆发生长（4倍增长）。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-goldAccent">7. Weight Tying 权重共享</div>
+                        <p class="text-gray-300">令 lm_head.weight = tok_emb.weight，在小模型中可显著削减近 30% 参数占用。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-violetAccent">8. KV Cache 推理加速</div>
+                        <p class="text-gray-300">推断时复用历史 K/V，将解码计算复杂度由二次方 O(L²) 降至线性 O(L)。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-violetAccent">9. RMSNorm 极简归一化</div>
+                        <p class="text-gray-300">移除 LayerNorm 中的均值减法与偏置 β，提升 10%~50% 速度且不损失精度。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-coralAccent">10. Inverted Dropout</div>
+                        <p class="text-gray-300">训练时乘以 1/(1-p) 激活补尝，推理时零开销关闭，保证结果确定性。</p>
+                    </div>
+                    <div class="bg-bgDark/80 p-4 rounded-xl border border-borderDark space-y-1">
+                        <div class="font-bold text-coralAccent">11. 权重初始化标准</div>
+                        <p class="text-gray-300">线性层采用 mean=0, std=0.02 初始化，残差投影层采用 0.02/√(2*n_layers) 缩放。</p>
+                    </div>
+                </div>
+
+                <!-- Next Chapter Bridge Card -->
+                <div class="mt-6 bg-gradient-to-r from-cyanAccent/20 via-emeraldAccent/20 to-violetAccent/20 p-5 rounded-xl border border-cyanAccent/40 flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div class="space-y-1">
+                        <div class="text-xs font-mono font-bold text-cyanAccent uppercase">下一章预告</div>
+                        <div class="text-base font-bold text-white">Transformer 第 6 章：模型训练、Loss 优化与预训练全流程实战</div>
+                        <div class="text-xs text-gray-300">我们即将为 MiniGPT 注入真正的灵魂：从 Data Loader 构建、CrossEntropyLoss 算子到 AdamW 优化器训练循环！</div>
+                    </div>
+                    <a href="#section-blueprint" class="px-5 py-2.5 bg-cyanAccent text-bgDark font-bold text-xs rounded-xl hover:bg-cyanAccent/80 transition whitespace-nowrap">
+                        回到顶部复习 ↗
+                    </a>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-cardDark border-t border-borderDark py-6 text-center text-xs text-gray-500 space-y-1">
+        <div>Transformer 深度进阶交互教程系列 · 第 5 章（下）</div>
+        <div class="font-mono text-3xs text-gray-600">Zero Raw LaTeX Edition · High-DPI Canvas Standard · Retain Mathematical Precision</div>
+    </footer>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        // ==========================================
+        // UTILS: RETINA HIGH-DPI CANVAS INITIALIZER
+        // ==========================================
+        function initRetinaCanvas(canvas) {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = Math.floor(rect.width * dpr);
+            canvas.height = Math.floor(rect.height * dpr);
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            return { ctx, width: rect.width, height: rect.height };
+        }
+
+        // Handle Window Resize for Canvases
+        window.addEventListener('resize', () => {
+            renderPreLNCanvas();
+            renderScalingCanvas();
+            renderKVCacheCanvas();
+        });
+
+        // ==========================================
+        // MODULE 5.5A: BLUEPRINT INSPECTOR & GENERATOR
+        // ==========================================
+        const blueprintData = {
+            input: {
+                title: "组件解剖面板: Input Token IDs",
+                shapes: "输入: (B, L) [如 Batch=1, Sequence Length=3]",
+                invariance: "属于离散整数索引 (token ids)。尚未映射至连续向量空间。",
+                params: "0 参数 (纯离散 ID 输入)",
+                code: `# 离散词索引输入 (Batch_size, Seq_len)\nidx = torch.tensor([[45, 231, 887]]) # (B=1, L=3)`
+            },
+            emb: {
+                title: "组件解剖面板: Token + Pos Embedding",
+                shapes: "输入: (B, L) → 输出: (B, L, d_model=64)",
+                invariance: "将离散 ID 映射至 64 维空间，并加上位置编码 vectors。",
+                params: "vocab_size * d_model + max_len * d_model = 1000*64 + 32*64 = 66,048",
+                code: `tok_emb = self.tok_emb(idx) # (B, L, 64)\npos_emb = self.pos_emb(torch.arange(L)) # (1, L, 64)\nx = tok_emb + pos_emb # (B, L, 64)`
+            },
+            block0: {
+                title: "组件解剖面板: Transformer Block 0 (Pre-LN)",
+                shapes: "输入: (B, L, 64) → 输出: (B, L, 64)",
+                invariance: "残差不变性成立！Sublayer(LN(x)) 处理后与原 x 逐元素相加。",
+                params: "MHA (16,640) + FFN (33,600) + LN1,2 (256) = 50,496",
+                code: `# Pre-LN 结构\nx = x + self.attn(self.ln1(x))\nx = x + self.ffn(self.ln2(x))`
+            },
+            block1: {
+                title: "组件解剖面板: Transformer Block 1 (Pre-LN)",
+                shapes: "输入: (B, L, 64) → 输出: (B, L, 64)",
+                invariance: "残差不变性成立！保持维度不变，叠加深层特征表达。",
+                params: "与 Block 0 相同 = 50,496",
+                code: `# 深度叠加\nx = x + self.attn(self.ln1(x))\nx = x + self.ffn(self.ln2(x))`
+            },
+            lnf: {
+                title: "组件解剖面板: Final LayerNorm (ln_f)",
+                shapes: "输入: (B, L, 64) → 输出: (B, L, 64)",
+                invariance: "Pre-LN 必备！将累计的残差高斯分布重新归一化。",
+                params: "2 * d_model = 128 (γ 与 β)",
+                code: `x = self.ln_f(x) # (B, L, 64)`
+            },
+            lmhead: {
+                title: "组件解剖面板: Language Model Head",
+                shapes: "输入: (B, L, 64) → 输出: (B, L, vocab_size=1000)",
+                invariance: "维数扩张！将 64 维特征映射回 1000 维词表 Logits 分布。",
+                params: "d_model * vocab_size = 64,000 (若开启 Weight Tying 则为 0 新参数)",
+                code: `logits = self.lm_head(x) # (B, L, 1000)`
+            }
+        };
+
+        function selectBlueprintNode(nodeKey) {
+            document.querySelectorAll('.blueprint-node').forEach(el => el.classList.remove('glow-cyan', 'border-cyanAccent'));
+            const clickedEl = document.getElementById(`node-${nodeKey}`);
+            if (clickedEl) clickedEl.classList.add('glow-cyan', 'border-cyanAccent');
+
+            const info = blueprintData[nodeKey];
+            if (!info) return;
+
+            document.getElementById('inspector-title').children[0].innerText = info.title;
+            document.getElementById('inspector-shapes').innerText = info.shapes;
+            document.getElementById('inspector-invariance').innerText = info.invariance;
+            document.getElementById('inspector-params').innerText = info.params;
+            document.getElementById('inspector-code').innerText = info.code;
+        }
+
+        // Generator Simulator Logic
+        const sampleVocab = [
+            { id: 45, word: "我" },
+            { id: 231, word: "爱" },
+            { id: 887, word: "学习" },
+            { id: 102, word: "Transformer" },
+            { id: 304, word: "架构" },
+            { id: 512, word: "神经网络" },
+            { id: 99, word: "代码" },
+            { id: 601, word: "模型" },
+            { id: 720, word: "推理" }
+        ];
+
+        let genSequence = [
+            { id: 45, word: "我" },
+            { id: 231, word: "爱" },
+            { id: 887, word: "学习" }
+        ];
+
+        let genStep = 0;
+        let isAutoGenerating = false;
+        let autoGenInterval = null;
+        let currentTemperature = 0.7;
+
+        function renderGeneratorUI() {
+            const container = document.getElementById('sequence-pills-container');
+            container.innerHTML = '';
+            genSequence.forEach((item, index) => {
+                const isPrompt = index < 3;
+                const pill = document.createElement('span');
+                pill.className = `px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 border transition ${
+                    isPrompt 
+                        ? 'bg-cyanAccent/15 text-cyanAccent border-cyanAccent/40' 
+                        : 'bg-emeraldAccent/20 text-emeraldAccent border-emeraldAccent/40 glow-emerald font-bold'
+                }`;
+                pill.innerHTML = `<span>${item.word}</span> <span class="text-3xs opacity-60">#${item.id}</span>`;
+                container.appendChild(pill);
+            });
+
+            document.getElementById('gen-tensor-shape').innerText = `idx: (1, ${genSequence.length})`;
+            document.getElementById('gen-step-count').innerText = genStep === 0 ? "Step 0 (Prompt)" : `Step +${genStep}`;
+
+            // Generate Top-5 Candidate Probabilities
+            renderTop5Probabilities();
+        }
+
+        function renderTop5Probabilities() {
+            const mode = document.getElementById('gen-weights-mode').value;
+            const container = document.getElementById('top5-prob-bars');
+            container.innerHTML = '';
+
+            let candidates = [];
+            if (mode === 'trained') {
+                // Biased semantic probabilities based on context
+                const lastId = genSequence[genSequence.length - 1].id;
+                if (lastId === 887 || lastId === 102) { // 学习 or Transformer
+                    candidates = [
+                        { id: 304, word: "架构", score: 4.5 },
+                        { id: 512, word: "神经网络", score: 3.2 },
+                        { id: 99, word: "代码", score: 2.8 },
+                        { id: 601, word: "模型", score: 1.5 },
+                        { id: 720, word: "推理", score: 0.9 }
+                    ];
+                } else if (lastId === 304 || lastId === 512) { // 架构 or 神经网络
+                    candidates = [
+                        { id: 601, word: "模型", score: 4.8 },
+                        { id: 720, word: "推理", score: 3.5 },
+                        { id: 99, word: "代码", score: 2.1 },
+                        { id: 102, word: "Transformer", score: 1.2 },
+                        { id: 887, word: "学习", score: 0.5 }
+                    ];
+                } else {
+                    candidates = [
+                        { id: 102, word: "Transformer", score: 4.0 },
+                        { id: 304, word: "架构", score: 3.1 },
+                        { id: 887, word: "学习", score: 2.5 },
+                        { id: 512, word: "神经网络", score: 1.8 },
+                        { id: 601, word: "模型", score: 1.0 }
+                    ];
+                }
+            } else {
+                // Random logits
+                candidates = sampleVocab.slice(3).map(item => ({
+                    id: item.id,
+                    word: item.word,
+                    score: Math.random() * 4.0
+                }));
+            }
+
+            // Apply Temperature T
+            const scaledScores = candidates.map(c => Math.exp(c.score / currentTemperature));
+            const sumExp = scaledScores.reduce((a, b) => a + b, 0);
+            const probs = candidates.map((c, i) => ({
+                ...c,
+                prob: scaledScores[i] / sumExp
+            }));
+
+            // Sort descending
+            probs.sort((a, b) => b.prob - a.prob);
+
+            probs.forEach((cand, idx) => {
+                const percent = (cand.prob * 100).toFixed(1);
+                const row = document.createElement('div');
+                row.className = "space-y-1";
+                row.innerHTML = `
+                    <div class="flex justify-between text-xs font-mono">
+                        <span class="${idx === 0 ? 'text-emeraldAccent font-bold' : 'text-gray-300'}">${cand.word} (#${cand.id})</span>
+                        <span class="text-gray-400">${percent}%</span>
+                    </div>
+                    <div class="w-full h-2 bg-elevatedDark rounded-full overflow-hidden">
+                        <div class="h-full ${idx === 0 ? 'bg-emeraldAccent' : 'bg-cyanAccent/50'} transition-all duration-300" style="width: ${percent}%"></div>
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+
+            // Store for step sampling
+            window.lastProbs = probs;
+        }
+
+        function updateTemperature(val) {
+            currentTemperature = parseFloat(val);
+            document.getElementById('temp-val-display').innerText = currentTemperature.toFixed(1);
+            renderTop5Probabilities();
+        }
+
+        function stepGenerate() {
+            if (genSequence.length >= 12) {
+                if (isAutoGenerating) toggleAutoGenerate();
+                alert("已达到演示最大序列长度 (12 Tokens)。点击重置重新开始！");
+                return;
+            }
+
+            const probs = window.lastProbs;
+            if (!probs || probs.length === 0) return;
+
+            // Sample based on probability distribution
+            const r = Math.random();
+            let acc = 0;
+            let sampled = probs[0];
+            for (let p of probs) {
+                acc += p.prob;
+                if (r <= acc) {
+                    sampled = p;
+                    break;
+                }
+            }
+
+            genSequence.push({ id: sampled.id, word: sampled.word });
+            genStep++;
+            renderGeneratorUI();
+        }
+
+        function toggleAutoGenerate() {
+            const btn = document.getElementById('btn-auto-gen');
+            if (isAutoGenerating) {
+                clearInterval(autoGenInterval);
+                isAutoGenerating = false;
+                btn.innerText = "自动连续生成";
+                btn.classList.remove('bg-coralAccent', 'text-white');
+                btn.classList.add('bg-emeraldAccent', 'text-bgDark');
+            } else {
+                isAutoGenerating = true;
+                btn.innerText = "暂停生成";
+                btn.classList.remove('bg-emeraldAccent', 'text-bgDark');
+                btn.classList.add('bg-coralAccent', 'text-white');
+                autoGenInterval = setInterval(() => {
+                    stepGenerate();
+                }, 1000);
+            }
+        }
+
+        function resetGenerator() {
+            if (isAutoGenerating) toggleAutoGenerate();
+            genSequence = [
+                { id: 45, word: "我" },
+                { id: 231, word: "爱" },
+                { id: 887, word: "学习" }
+            ];
+            genStep = 0;
+            renderGeneratorUI();
+        }
+
+        // ==========================================
+        // MODULE 5.5B: PRE-LN VS POST-LN LAB
+        // ==========================================
+        let currentLayers = 12;
+        let animOffset = 0;
+
+        function updateDepthLab(val) {
+            currentLayers = parseInt(val);
+            document.getElementById('depth-val-display').innerText = `${currentLayers} 层`;
+            renderPreLNCanvas();
+        }
+
+        function renderPreLNCanvas() {
+            // Circuit diagram canvas
+            const circuitCanvas = document.getElementById('canvas-preln-circuit');
+            if (!circuitCanvas) return;
+            const { ctx: cCtx, width: cW, height: cH } = initRetinaCanvas(circuitCanvas);
+
+            cCtx.clearRect(0, 0, cW, cH);
+
+            // Left half: Post-LN Circuit
+            const w2 = cW / 2;
+            cCtx.fillStyle = '#141b26';
+            cCtx.font = '12px Inter, sans-serif';
+
+            // Post-LN Circuit Title
+            cCtx.fillStyle = '#ff6b6b';
+            cCtx.fillText('Post-LN 阻塞残差', 20, 25);
+
+            // Post-LN Layer Blocks
+            const layersToShow = Math.min(6, currentLayers);
+            const stepY = (cH - 80) / (layersToShow + 1);
+
+            for (let i = 0; i < layersToShow; i++) {
+                const y = cH - 50 - (i + 1) * stepY;
+                // Layer Block
+                cCtx.strokeStyle = '#233044';
+                cCtx.fillStyle = '#1a2332';
+                cCtx.lineWidth = 1.5;
+                cCtx.beginPath();
+                cCtx.roundRect(40, y, w2 - 80, 28, 6);
+                cCtx.fill();
+                cCtx.stroke();
+
+                cCtx.fillStyle = '#9ca3af';
+                cCtx.font = '10px monospace';
+                cCtx.fillText(`Sublayer ${i+1}`, 50, y + 17);
+
+                // LN Circle blocking main path
+                cCtx.fillStyle = '#ff6b6b';
+                cCtx.beginPath();
+                cCtx.arc(w2 - 60, y + 14, 8, 0, Math.PI * 2);
+                cCtx.fill();
+                cCtx.fillStyle = '#0d1117';
+                cCtx.fillText('LN', w2 - 66, y + 17);
+
+                // Connecting line
+                if (i < layersToShow - 1) {
+                    cCtx.strokeStyle = '#ff6b6b';
+                    cCtx.setLineDash([3, 3]);
+                    cCtx.beginPath();
+                    cCtx.moveTo(w2 - 60, y);
+                    cCtx.lineTo(w2 - 60, y - stepY + 28);
+                    cCtx.stroke();
+                    cCtx.setLineDash([]);
+                }
+            }
+
+            // Right half: Pre-LN Highway Circuit
+            cCtx.fillStyle = '#4ade80';
+            cCtx.font = '12px Inter, sans-serif';
+            cCtx.fillText('Pre-LN 残差高速公路', w2 + 20, 25);
+
+            // Pure Addition Highway line
+            const highwayX = w2 + 40;
+            cCtx.strokeStyle = '#4ade80';
+            cCtx.lineWidth = 3;
+            cCtx.beginPath();
+            cCtx.moveTo(highwayX, cH - 40);
+            cCtx.lineTo(highwayX, 40);
+            cCtx.stroke();
+
+            // Animated Gradient Particles flowing BACKWARD (Downwards)
+            animOffset = (animOffset + 0.5) % 20;
+            cCtx.fillStyle = '#4ade80';
+            for (let py = 40 + animOffset; py < cH - 40; py += 20) {
+                cCtx.beginPath();
+                cCtx.arc(highwayX, py, 3.5, 0, Math.PI * 2);
+                cCtx.fill();
+            }
+
+            // Pre-LN Blocks hanging off the highway
+            for (let i = 0; i < layersToShow; i++) {
+                const y = cH - 50 - (i + 1) * stepY;
+                cCtx.strokeStyle = '#233044';
+                cCtx.fillStyle = '#1a2332';
+                cCtx.lineWidth = 1.5;
+                cCtx.beginPath();
+                cCtx.roundRect(highwayX + 30, y, cW - highwayX - 50, 28, 6);
+                cCtx.fill();
+                cCtx.stroke();
+
+                cCtx.fillStyle = '#58c4dd';
+                cCtx.font = '10px monospace';
+                cCtx.fillText(`LN → Sublayer ${i+1}`, highwayX + 38, y + 17);
+
+                // Connector to highway (+)
+                cCtx.strokeStyle = '#4ade80';
+                cCtx.lineWidth = 1;
+                cCtx.beginPath();
+                cCtx.moveTo(highwayX, y + 14);
+                cCtx.lineTo(highwayX + 30, y + 14);
+                cCtx.stroke();
+
+                cCtx.fillStyle = '#4ade80';
+                cCtx.beginPath();
+                cCtx.arc(highwayX, y + 14, 5, 0, Math.PI * 2);
+                cCtx.fill();
+                cCtx.fillStyle = '#0d1117';
+                cCtx.font = '8px monospace';
+                cCtx.fillText('+', highwayX - 2.5, y + 16.5);
+            }
+
+            // Top Final LN for Pre-LN
+            cCtx.fillStyle = '#c084fc';
+            cCtx.beginPath();
+            cCtx.roundRect(highwayX - 20, 35, 40, 20, 4);
+            cCtx.fill();
+            cCtx.fillStyle = '#0d1117';
+            cCtx.font = '9px monospace';
+            cCtx.fillText('ln_f', highwayX - 10, 48);
+
+            // Chart Canvas
+            const chartCanvas = document.getElementById('canvas-preln-chart');
+            if (!chartCanvas) return;
+            const { ctx: gCtx, width: gW, height: gH } = initRetinaCanvas(chartCanvas);
+
+            gCtx.clearRect(0, 0, gW, gH);
+
+            // Draw Axes
+            gCtx.strokeStyle = '#233044';
+            gCtx.lineWidth = 1;
+            gCtx.beginPath();
+            gCtx.moveTo(40, 20);
+            gCtx.lineTo(40, gH - 30);
+            gCtx.lineTo(gW - 20, gH - 30);
+            gCtx.stroke();
+
+            gCtx.fillStyle = '#9ca3af';
+            gCtx.font = '10px monospace';
+            gCtx.fillText('梯度范数 ||∇L||', 10, 15);
+            gCtx.fillText('网络深度 Layer (1 → N)', gW - 130, gH - 10);
+
+            // Plot Curves
+            const maxL = 48;
+            const stepX = (gW - 60) / maxL;
+
+            // Pre-LN Curve (Stable flat line)
+            gCtx.strokeStyle = '#4ade80';
+            gCtx.lineWidth = 2.5;
+            gCtx.beginPath();
+            for (let l = 1; l <= currentLayers; l++) {
+                const x = 40 + l * stepX;
+                const y = gH - 30 - 80; // Constant stable norm
+                if (l === 1) gCtx.moveTo(x, y);
+                else gCtx.lineTo(x, y);
+            }
+            gCtx.stroke();
+
+            // Post-LN Curve (Exponential Decay/Explosion instability)
+            gCtx.strokeStyle = '#ff6b6b';
+            gCtx.lineWidth = 2.5;
+            gCtx.beginPath();
+            for (let l = 1; l <= currentLayers; l++) {
+                const x = 40 + l * stepX;
+                // Decay simulation
+                const normVal = 80 * Math.exp(-0.08 * l);
+                const y = gH - 30 - normVal;
+                if (l === 1) gCtx.moveTo(x, y);
+                else gCtx.lineTo(x, y);
+            }
+            gCtx.stroke();
+
+            // Indicator line for current selection
+            const currX = 40 + currentLayers * stepX;
+            gCtx.strokeStyle = '#58c4dd';
+            gCtx.setLineDash([2, 4]);
+            gCtx.beginPath();
+            gCtx.moveTo(currX, 20);
+            gCtx.lineTo(currX, gH - 30);
+            gCtx.stroke();
+            gCtx.setLineDash([]);
+        }
+
+        // Loop animation for particles
+        setInterval(() => {
+            renderPreLNCanvas();
+        }, 50);
+
+        // ==========================================
+        // MODULE 5.4.3: PARAMETER & SCALING LAB
+        // ==========================================
+        function applyModelPreset(d, L, V, maxLen) {
+            document.getElementById('input-dmodel').value = d;
+            document.getElementById('input-nlayers').value = L;
+            document.getElementById('input-vocab').value = V;
+            document.getElementById('input-maxlen').value = maxLen;
+            recalculateParams();
+        }
+
+        function recalculateParams() {
+            const V = parseInt(document.getElementById('input-vocab').value) || 1000;
+            const d = parseInt(document.getElementById('input-dmodel').value) || 64;
+            const L = parseInt(document.getElementById('input-nlayers').value) || 2;
+            const maxLen = parseInt(document.getElementById('input-maxlen').value) || 32;
+            const weightTying = document.getElementById('toggle-weight-tying').checked;
+
+            const pTokEmb = V * d;
+            const pPosEmb = maxLen * d;
+            const pMHA = L * (4 * d * d + 4 * d); // q, k, v, out linear
+            const pFFN = L * (d * (4 * d) + 4 * d + (4 * d) * d + d); // 8 d^2 + 5 d
+            const pLN = L * (4 * d) + 2 * d; // 2 LNs per block + final ln_f
+            const pLMHead = weightTying ? 0 : (d * V);
+
+            const totalParams = pTokEmb + pPosEmb + pMHA + pFFN + pLN + pLMHead;
+            const totalNoTying = pTokEmb + pPosEmb + pMHA + pFFN + pLN + (d * V);
+            const savedTying = weightTying ? (d * V) : 0;
+            const savingPercent = ((savedTying / totalNoTying) * 100).toFixed(1);
+
+            document.getElementById('summary-total-params').innerText = totalParams.toLocaleString();
+            document.getElementById('summary-tying-savings').innerText = weightTying 
+                ? `Weight Tying 节省: ${savedTying.toLocaleString()} (-${savingPercent}%)`
+                : `Weight Tying 关闭 (按常规分配)`;
+
+            const ffnPerBlock = (d * (4 * d) + 4 * d + (4 * d) * d + d);
+            const mhaPerBlock = (4 * d * d + 4 * d);
+            const ratio = (ffnPerBlock / mhaPerBlock).toFixed(2);
+            document.getElementById('summary-ffn-attn-ratio').innerText = `${ratio} ×`;
+
+            const embTotal = pTokEmb + pPosEmb + pLMHead;
+            const embShare = ((embTotal / totalParams) * 100).toFixed(1);
+            document.getElementById('summary-emb-ratio').innerText = `${embShare} %`;
+
+            // Render Stacked Bar
+            const bar = document.getElementById('stacked-param-bar');
+            bar.innerHTML = `
+                <div style="width: ${(pTokEmb/totalParams)*100}%" class="bg-cyanAccent h-full" title="Token Embedding"></div>
+                <div style="width: ${(pPosEmb/totalParams)*100}%" class="bg-violetAccent h-full" title="Pos Embedding"></div>
+                <div style="width: ${(pMHA/totalParams)*100}%" class="bg-emeraldAccent h-full" title="Attention"></div>
+                <div style="width: ${(pFFN/totalParams)*100}%" class="bg-goldAccent h-full" title="FFN"></div>
+                <div style="width: ${(pLMHead/totalParams)*100}%" class="bg-coralAccent h-full" title="LM Head"></div>
+            `;
+
+            // Render Breakdown Table
+            const tbody = document.getElementById('param-table-body');
+            tbody.innerHTML = `
+                <tr>
+                    <td class="py-2 text-cyanAccent flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-cyanAccent"></span> Token Embedding</td>
+                    <td class="py-2 font-mono text-gray-400">V × d_model</td>
+                    <td class="py-2 text-right font-bold">${pTokEmb.toLocaleString()}</td>
+                </tr>
+                <tr>
+                    <td class="py-2 text-violetAccent flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-violetAccent"></span> Position Embedding</td>
+                    <td class="py-2 font-mono text-gray-400">max_len × d_model</td>
+                    <td class="py-2 text-right font-bold">${pPosEmb.toLocaleString()}</td>
+                </tr>
+                <tr>
+                    <td class="py-2 text-emeraldAccent flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emeraldAccent"></span> Multi-Head Attention</td>
+                    <td class="py-2 font-mono text-gray-400">N × (4 d²)</td>
+                    <td class="py-2 text-right font-bold">${pMHA.toLocaleString()}</td>
+                </tr>
+                <tr>
+                    <td class="py-2 text-goldAccent flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-goldAccent"></span> FeedForward Network (FFN)</td>
+                    <td class="py-2 font-mono text-gray-400">N × (8 d²)</td>
+                    <td class="py-2 text-right font-bold">${pFFN.toLocaleString()}</td>
+                </tr>
+                <tr>
+                    <td class="py-2 text-coralAccent flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-coralAccent"></span> LM Head (Output Proj)</td>
+                    <td class="py-2 font-mono text-gray-400">${weightTying ? '共享 (0 参数)' : 'd_model × V'}</td>
+                    <td class="py-2 text-right font-bold">${pLMHead.toLocaleString()}</td>
+                </tr>
+            `;
+
+            renderScalingCanvas();
+        }
+
+        function renderScalingCanvas() {
+            const canvas = document.getElementById('canvas-scaling-curve');
+            if (!canvas) return;
+            const { ctx, width: w, height: h } = initRetinaCanvas(canvas);
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Draw Axes
+            ctx.strokeStyle = '#233044';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(50, 20);
+            ctx.lineTo(50, h - 30);
+            ctx.lineTo(w - 20, h - 30);
+            ctx.stroke();
+
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '10px monospace';
+            ctx.fillText('Block 参数量 (K)', 10, 15);
+            ctx.fillText('d_model (64 → 512)', w - 120, h - 10);
+
+            // Curve plotting for d = 64 to 512
+            const dMin = 64, dMax = 512;
+            ctx.strokeStyle = '#f0b429';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+
+            for (let d = dMin; d <= dMax; d += 16) {
+                const normD = (d - dMin) / (dMax - dMin);
+                const x = 50 + normD * (w - 70);
+
+                // Block params approximation: 12 * d^2
+                const blockParams = 12 * d * d;
+                const maxParams = 12 * 512 * 512;
+                const normP = blockParams / maxParams;
+                const y = h - 30 - normP * (h - 60);
+
+                if (d === dMin) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Highlight d_model points: 64, 128, 256, 512
+            const testDs = [64, 128, 256, 512];
+            const baseParams = 12 * 64 * 64;
+
+            testDs.forEach(td => {
+                const normD = (td - dMin) / (dMax - dMin);
+                const x = 50 + normD * (w - 70);
+                const p = 12 * td * td;
+                const normP = p / (12 * 512 * 512);
+                const y = h - 30 - normP * (h - 60);
+
+                const multiplier = (p / baseParams).toFixed(1);
+
+                ctx.fillStyle = '#f0b429';
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '9px monospace';
+                ctx.fillText(`d=${td} (${multiplier}x)`, x - 20, y - 10);
+            });
+        }
+
+        // ==========================================
+        // MODULE 5.6: MODERN UPGRADES LAB
+        // ==========================================
+        let currentUpgradeTab = 0;
+
+        function switchUpgradeTab(idx) {
+            currentUpgradeTab = idx;
+            document.querySelectorAll('.tab-up-btn').forEach((btn, i) => {
+                if (i === idx) {
+                    btn.classList.add('text-cyanAccent', 'border-cyanAccent');
+                    btn.classList.remove('text-gray-400', 'border-transparent');
+                } else {
+                    btn.classList.remove('text-cyanAccent', 'border-cyanAccent');
+                    btn.classList.add('text-gray-400', 'border-transparent');
+                }
+            });
+
+            document.getElementById('up-content-0').classList.toggle('hidden', idx !== 0);
+            document.getElementById('up-content-1').classList.toggle('hidden', idx !== 1);
+            document.getElementById('up-content-2').classList.toggle('hidden', idx !== 2);
+
+            if (idx === 0) renderKVCacheCanvas();
+            if (idx === 1) updateRMSLab();
+            if (idx === 2) renderDropoutGrid();
+        }
+
+        // KV Cache Visualizer State
+        let kvStep = 1;
+        let isKVAuto = false;
+        let kvInterval = null;
+
+        function renderKVCacheCanvas() {
+            const canvas = document.getElementById('canvas-kv-cache');
+            if (!canvas) return;
+            const { ctx, width: w, height: h } = initRetinaCanvas(canvas);
+
+            ctx.clearRect(0, 0, w, h);
+
+            const rowH = (h - 40) / 2;
+
+            // Lane 1: No KV Cache (Coral Red quadratic recomputation)
+            ctx.fillStyle = '#ff6b6b';
+            ctx.font = '11px Inter, font-bold';
+            ctx.fillText('❌ 无 KV Cache: 每次处理 1..t 历史全序列', 15, 22);
+
+            const boxW = 28, boxH = 24, gapX = 6;
+            for (let t = 1; t <= kvStep; t++) {
+                const x = 20 + (t - 1) * (boxW + gapX);
+                const y = 35;
+                ctx.fillStyle = '#ff6b6b';
+                ctx.beginPath();
+                ctx.roundRect(x, y, boxW, boxH, 4);
+                ctx.fill();
+
+                ctx.fillStyle = '#0d1117';
+                ctx.font = '10px monospace';
+                ctx.fillText(`t_${t}`, x + 6, y + 16);
+            }
+
+            // Lane 2: With KV Cache (Emerald Cached vs Cyan New)
+            ctx.fillStyle = '#4ade80';
+            ctx.font = '11px Inter, font-bold';
+            ctx.fillText('✅ 开启 KV Cache: 历史直接拼接，仅计算当步 t', 15, rowH + 35);
+
+            for (let t = 1; t <= kvStep; t++) {
+                const x = 20 + (t - 1) * (boxW + gapX);
+                const y = rowH + 50;
+
+                const isNew = (t === kvStep);
+                ctx.fillStyle = isNew ? '#58c4dd' : '#4ade80';
+                ctx.beginPath();
+                ctx.roundRect(x, y, boxW, boxH, 4);
+                ctx.fill();
+
+                ctx.fillStyle = '#0d1117';
+                ctx.font = '10px monospace';
+                ctx.fillText(`t_${t}`, x + 6, y + 16);
+
+                if (!isNew) {
+                    ctx.fillStyle = '#0d1117';
+                    ctx.font = '7px monospace';
+                    ctx.fillText('Cache', x + 3, y + 8);
+                }
+            }
+
+            // Update Statistics
+            let noKVOps = 0;
+            for (let i = 1; i <= kvStep; i++) noKVOps += i;
+            const yesKVOps = kvStep;
+
+            document.getElementById('kv-stat-no').innerText = `${noKVOps} 次 K/V 投影`;
+            document.getElementById('kv-stat-yes').innerText = `${yesKVOps} 次 K/V 投影`;
+
+            const saving = Math.round((1 - yesKVOps / noKVOps) * 100);
+            document.getElementById('kv-stat-saving').innerText = `${saving}%`;
+        }
+
+        function stepKVCache() {
+            kvStep = (kvStep % 8) + 1;
+            renderKVCacheCanvas();
+        }
+
+        function toggleAutoKVCache() {
+            const btn = document.getElementById('btn-auto-kv');
+            if (isKVAuto) {
+                clearInterval(kvInterval);
+                isKVAuto = false;
+                btn.innerText = "自动播放";
+            } else {
+                isKVAuto = true;
+                btn.innerText = "暂停";
+                kvInterval = setInterval(() => {
+                    stepKVCache();
+                }, 800);
+            }
+        }
+
+        function resetKVCache() {
+            if (isKVAuto) toggleAutoKVCache();
+            kvStep = 1;
+            renderKVCacheCanvas();
+        }
+
+        // RMSNorm Numerical Lab
+        function updateRMSLab() {
+            const x1 = parseFloat(document.getElementById('slider-x1').value);
+            const x2 = parseFloat(document.getElementById('slider-x2').value);
+            const x3 = parseFloat(document.getElementById('slider-x3').value);
+            const x4 = parseFloat(document.getElementById('slider-x4').value);
+
+            document.getElementById('v1-val').innerText = x1.toFixed(1);
+            document.getElementById('v2-val').innerText = x2.toFixed(1);
+            document.getElementById('v3-val').innerText = x3.toFixed(1);
+            document.getElementById('v4-val').innerText = x4.toFixed(1);
+
+            const vec = [x1, x2, x3, x4];
+            const d = 4;
+            const eps = 1e-5;
+
+            // LayerNorm: mean & var
+            const mean = vec.reduce((a, b) => a + b, 0) / d;
+            const variance = vec.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / d;
+            const lnOut = vec.map(v => (v - mean) / Math.sqrt(variance + eps));
+
+            // RMSNorm: RMS
+            const rms = Math.sqrt(vec.reduce((a, b) => a + b * b, 0) / d + eps);
+            const rmsOut = vec.map(v => v / rms);
+
+            document.getElementById('ln-mean').innerText = mean.toFixed(2);
+            document.getElementById('ln-var').innerText = variance.toFixed(2);
+            document.getElementById('rms-val').innerText = rms.toFixed(2);
+
+            // Render Output Bars
+            const lnContainer = document.getElementById('ln-output-bars');
+            const rmsContainer = document.getElementById('rms-output-bars');
+
+            lnContainer.innerHTML = lnOut.map((v, i) => `<div>y_${i+1}: <span class="text-coralAccent font-bold">${v.toFixed(3)}</span></div>`).join('');
+            rmsContainer.innerHTML = rmsOut.map((v, i) => `<div>y_${i+1}: <span class="text-violetAccent font-bold">${v.toFixed(3)}</span></div>`).join('');
+        }
+
+        // Dropout Mode Switcher
+        let dropoutMode = 'train';
+
+        function setDropoutMode(mode) {
+            dropoutMode = mode;
+            const btnTrain = document.getElementById('btn-mode-train');
+            const btnEval = document.getElementById('btn-mode-eval');
+            const status = document.getElementById('dropout-mode-status');
+
+            if (mode === 'train') {
+                btnTrain.className = "px-4 py-2 bg-coralAccent text-bgDark font-bold text-xs rounded-lg shadow transition";
+                btnEval.className = "px-4 py-2 bg-elevatedDark text-gray-300 font-bold text-xs rounded-lg border border-borderDark hover:bg-borderDark transition";
+                status.innerHTML = `<span class="text-coralAccent">TRAIN MODE (p=0.2, 随机 Inverted Dropout 缩放 1/(1-p))</span>`;
+            } else {
+                btnEval.className = "px-4 py-2 bg-emeraldAccent text-bgDark font-bold text-xs rounded-lg shadow transition";
+                btnTrain.className = "px-4 py-2 bg-elevatedDark text-gray-300 font-bold text-xs rounded-lg border border-borderDark hover:bg-borderDark transition";
+                status.innerHTML = `<span class="text-emeraldAccent">EVAL MODE (全神经元恒定激活，确定性输出)</span>`;
+            }
+            renderDropoutGrid();
+        }
+
+        function renderDropoutGrid() {
+            const grid = document.getElementById('neuron-grid');
+            grid.innerHTML = '';
+            for (let i = 0; i < 24; i++) {
+                const isDropped = (dropoutMode === 'train') && (Math.random() < 0.2);
+                const circle = document.createElement('div');
+                circle.className = `w-8 h-8 rounded-full flex items-center justify-center font-mono text-3xs font-bold border transition ${
+                    isDropped 
+                        ? 'bg-coralAccent/10 border-coralAccent text-coralAccent line-through' 
+                        : 'bg-emeraldAccent/20 border-emeraldAccent text-emeraldAccent glow-emerald'
+                }`;
+                circle.innerText = isDropped ? 'X' : '1.25x';
+                grid.appendChild(circle);
+            }
+        }
+
+        // ==========================================
+        // MODULE 5.7: CODE REPOSITORY & QUIZ LAB
+        // ==========================================
+        const codeFiles = [
+            {
+                name: "ch5_mini_transformer.py",
+                code: `import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class CausalSelfAttention(nn.Module):
+    def __init__(self, d_model=64, n_heads=4, max_len=32):
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        
+        self.qkv = nn.Linear(d_model, 3 * d_model, bias=False)
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+        
+        # 上三角因果掩码
+        self.register_buffer("mask", torch.tril(torch.ones(max_len, max_len)).view(1, 1, max_len, max_len))
+
+    def forward(self, x):
+        B, L, D = x.shape
+        q, k, v = self.qkv(x).chunk(3, dim=-1)
+        
+        # 重塑维度为 Multi-Head
+        q = q.view(B, L, self.n_heads, self.head_dim).transpose(1, 2)
+        k = k.view(B, L, self.n_heads, self.head_dim).transpose(1, 2)
+        v = v.view(B, L, self.n_heads, self.head_dim).transpose(1, 2)
+        
+        scores = (q @ k.transpose(-2, -1)) / (self.head_dim ** 0.5)
+        scores = scores.masked_fill(self.mask[:, :, :L, :L] == 0, float('-inf'))
+        attn = F.softmax(scores, dim=-1)
+        
+        out = (attn @ v).transpose(1, 2).contiguous().view(B, L, D)
+        return self.out_proj(out)
+
+class FeedForward(nn.Module):
+    def __init__(self, d_model=64, d_ff=256):
+        super().__init__()
+        self.fc1 = nn.Linear(d_model, d_ff)
+        self.gelu = nn.GELU()
+        self.fc2 = nn.Linear(d_ff, d_model)
+
+    def forward(self, x):
+        return self.fc2(self.gelu(self.fc1(x)))
+
+class Block(nn.Module):
+    def __init__(self, d_model=64, n_heads=4):
+        super().__init__()
+        self.ln1 = nn.LayerNorm(d_model)
+        self.attn = CausalSelfAttention(d_model, n_heads)
+        self.ln2 = nn.LayerNorm(d_model)
+        self.ffn = FeedForward(d_model, 4 * d_model)
+
+    def forward(self, x):
+        # Pre-LN 结构
+        x = x + self.attn(self.ln1(x))
+        x = x + self.ffn(self.ln2(x))
+        return x
+
+class MiniGPT(nn.Module):
+    def __init__(self, vocab_size=1000, d_model=64, n_heads=4, n_layers=2, max_len=32, weight_tying=True):
+        super().__init__()
+        self.tok_emb = nn.Embedding(vocab_size, d_model)
+        self.pos_emb = nn.Embedding(max_len, d_model)
+        self.blocks = nn.ModuleList([Block(d_model, n_heads) for _ in range(n_layers)])
+        self.ln_f = nn.LayerNorm(d_model)
+        self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
+        
+        if weight_tying:
+            self.lm_head.weight = self.tok_emb.weight
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+    def forward(self, idx):
+        B, L = idx.shape
+        pos = torch.arange(0, L, device=idx.device).unsqueeze(0)
+        x = self.tok_emb(idx) + self.pos_emb(pos)
+        for block in self.blocks:
+            x = block(x)
+        x = self.ln_f(x)
+        return self.lm_head(x)`
+            },
+            {
+                name: "ch5_exercise.py",
+                code: `import torch
+from ch5_mini_transformer import MiniGPT
+
+def trace_forward():
+    model = MiniGPT(vocab_size=1000, d_model=64, n_layers=2)
+    dummy_input = torch.tensor([[45, 231, 887]]) # (B=1, L=3)
+    
+    logits = model(dummy_input)
+    print("输入 Tensor Shape:", dummy_input.shape)
+    print("输出 Logits Shape:", logits.shape)
+    
+    # 形状不变性断言测试
+    assert logits.shape == (1, 3, 1000), "LM Head 维度异常！"
+    print("✅ 残差形状不变性断言通过！")
+
+if __name__ == "__main__":
+    trace_forward()`
+            },
+            {
+                name: "modern_upgrades.py",
+                code: `import torch
+import torch.nn as nn
+
+class RMSNorm(nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        return self._norm(x.float()).type_as(x) * self.weight
+
+class BlockWithDropout(nn.Module):
+    def __init__(self, d_model=64, dropout_p=0.1):
+        super().__init__()
+        self.drop = nn.Dropout(dropout_p)
+
+    def forward(self, x, sublayer):
+        # 仅在训练阶段应用 Dropout 屏蔽
+        return x + self.drop(sublayer(x))`
+            }
+        ];
+
+        let currentCodeTab = 0;
+
+        function switchCodeTab(idx) {
+            currentCodeTab = idx;
+            document.querySelectorAll('.tab-code-btn').forEach((btn, i) => {
+                if (i === idx) {
+                    btn.classList.add('bg-cardDark', 'text-cyanAccent', 'border', 'border-borderDark');
+                    btn.classList.remove('text-gray-400');
+                } else {
+                    btn.classList.remove('bg-cardDark', 'text-cyanAccent', 'border', 'border-borderDark');
+                    btn.classList.add('text-gray-400');
+                }
+            });
+
+            const codeDisplay = document.getElementById('code-display');
+            codeDisplay.textContent = codeFiles[idx].code;
+        }
+
+        function copyCurrentCode() {
+            const text = codeFiles[currentCodeTab].code;
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alert("代码已成功复制到剪贴板！");
+        }
+
+        // Quiz Questions Data
+        const quizQuestions = [
+            {
+                q: "1. 在 MiniGPT 主干网络中，关于残差形状不变性 (Residual Shape Invariance) 的描述哪个是正确的？",
+                options: [
+                    "A. 每一个 Linear 层后 Tensor 形状都会翻倍",
+                    "B. 除 MHA 内部和 lm_head 外，整个 Block 严格维持 (B, L, d_model) 维度",
+                    "C. 必须在每个 Block 结束时将维度压缩回 1 维",
+                    "D. 序列长度 L 会随着 Transformer Block 深入而减少"
+                ],
+                answer: 1,
+                explain: "正确！Transformer 主干设计的绝妙之处在于全程保持 Tensor 维度为 (B, L, d_model)，这使得加法残差连接 x + Sublayer(x) 可以无缝对接。"
+            },
+            {
+                q: "2. 为什么 Pre-LN 架构比原始 Post-LN 更容易训练深层 Transformer？",
+                options: [
+                    "A. Pre-LN 完全不需要使用 LayerNorm",
+                    "B. Pre-LN 让主干残差形成无障碍的加法梯度高速公路",
+                    "C. Pre-LN 可以自动缩减模型参数量",
+                    "D. Post-LN 会导致激活值在正向传播时变为 0"
+                ],
+                answer: 1,
+                explain: "正确！Pre-LN 将 LayerNorm 放在子层内部，使主干梯度的反向传播路线只经过纯加法，避免了深层网络中梯度衰减崩溃问题。"
+            },
+            {
+                q: "3. 开启 Weight Tying (权重共享) 会产生什么直接工程收益？",
+                options: [
+                    "A. 将生成推理速度提升 10 倍",
+                    "B. 将 lm_head.weight 与 tok_emb.weight 共享，显著节省词表参数量",
+                    "C. 完全消除注意力机制的二次方计算复杂度",
+                    "D. 允许输入任意长度的序列"
+                ],
+                answer: 1,
+                explain: "正确！输入 Embedding 矩阵 (V, d) 与输出 LM Head 矩阵 (d, V) 语义对称，复用同一份权重矩阵可直接降低约 28% 参数占用。"
+            },
+            {
+                q: "4. 在单个 Transformer Block 中，FeedForward Network (FFN) 的参数量与 Attention 的关系是什么？",
+                options: [
+                    "A. FFN 参数量是 Attention 的约 2 倍",
+                    "B. 两者参数量完全相同",
+                    "C. Attention 参数量是 FFN 的 4 倍",
+                    "D. FFN 不包含任何可学习参数"
+                ],
+                answer: 0,
+                explain: "正确！Attention 参数约为 4*d²，而 FFN 中间维度为 4*d，其参数量约为 2*d*(4d) = 8*d²，正好是 Attention 的 2 倍！"
+            },
+            {
+                q: "5. KV Cache 推理加速的的核心逻辑是？",
+                options: [
+                    "A. 提前预测未来 100 个 Token 的结果",
+                    "B. 在推断步中只计算新 Token 的 Q/K/V，并拼接复用历史 K/V 矩阵",
+                    "C. 将 Attention 转换为 Linear 矩阵乘法",
+                    "D. 降低 Token 的特征维度 d_model"
+                ],
+                answer: 1,
+                explain: "正确！自回归生成中历史 Token 的 K 和 V 保持不变，通过缓存复用可将单步推理复杂度从 O(L²) 降低至线性 O(L)。"
+            }
+        ];
+
+        function renderQuiz() {
+            const container = document.getElementById('quiz-container');
+            container.innerHTML = '';
+
+            quizQuestions.forEach((item, qIdx) => {
+                const card = document.createElement('div');
+                card.className = "bg-bgDark p-5 rounded-xl border border-borderDark space-y-3";
+                card.innerHTML = `
+                    <div class="text-sm font-bold text-white">${item.q}</div>
+                    <div class="space-y-2 text-xs font-mono">
+                        ${item.options.map((opt, oIdx) => `
+                            <button onclick="checkQuizAnswer(${qIdx}, ${oIdx})" id="quiz-btn-${qIdx}-${oIdx}" class="w-full text-left p-3 rounded-lg bg-elevatedDark hover:border-cyanAccent border border-borderDark transition text-gray-300">
+                                ${opt}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div id="quiz-explain-${qIdx}" class="hidden text-xs p-3 rounded-lg border font-mono"></div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function checkQuizAnswer(qIdx, oIdx) {
+            const q = quizQuestions[qIdx];
+            const explainBox = document.getElementById(`quiz-explain-${qIdx}`);
+
+            // Disable buttons for this question
+            q.options.forEach((_, i) => {
+                const btn = document.getElementById(`quiz-btn-${qIdx}-${i}`);
+                btn.onclick = null;
+                if (i === q.answer) {
+                    btn.classList.add('bg-emeraldAccent/20', 'border-emeraldAccent', 'text-emeraldAccent', 'font-bold');
+                } else if (i === oIdx) {
+                    btn.classList.add('bg-coralAccent/20', 'border-coralAccent', 'text-coralAccent');
+                }
+            });
+
+            explainBox.classList.remove('hidden');
+            if (oIdx === q.answer) {
+                explainBox.className = "text-xs p-3 rounded-lg border font-mono bg-emeraldAccent/10 border-emeraldAccent/40 text-emeraldAccent";
+                explainBox.innerHTML = `🎉 <strong>回答正确！</strong> ${q.explain}`;
+            } else {
+                explainBox.className = "text-xs p-3 rounded-lg border font-mono bg-coralAccent/10 border-coralAccent/40 text-coralAccent";
+                explainBox.innerHTML = `❌ <strong>回答错误。</strong> ${q.explain}`;
+            }
+        }
+
+        // ==========================================
+        // INITIALIZATION ON WINDOW LOAD
+        // ==========================================
+        window.onload = function () {
+            // Select default blueprint node
+            selectBlueprintNode('input');
+
+            // Initialize Generator
+            resetGenerator();
+
+            // Render Canvases
+            renderPreLNCanvas();
+            recalculateParams();
+            renderKVCacheCanvas();
+
+            // Initialize Code Viewer
+            switchCodeTab(0);
+
+            // Render Quiz
+            renderQuiz();
+
+            // Initial RMS Norm lab values
+            updateRMSLab();
+            setDropoutMode('train');
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer 第 5 章（上）：宏观架构与核心组件拆解</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0d1117',
+                        cardBg: '#141b26',
+                        cardBorder: '#233044',
+                        brandCyan: '#58c4dd',
+                        brandGold: '#f0b429',
+                        brandEmerald: '#4ade80',
+                        brandCoral: '#ff6b6b',
+                        brandViolet: '#a78bfa',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar and 3Blue1Brown visual aesthetic */
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* Custom Math Typography without raw LaTeX */
+        .math {
+            font-family: 'JetBrains Mono', 'Cambria Math', 'Times New Roman', serif;
+            font-style: italic;
+            color: #58c4dd;
+        }
+        .math-block {
+            font-family: 'JetBrains Mono', 'Cambria Math', 'Times New Roman', serif;
+            background: rgba(20, 27, 38, 0.85);
+            border: 1px solid #233044;
+            border-left: 4px solid #58c4dd;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            margin: 0.75rem 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            color: #f0f6fc;
+        }
+        .frac {
+            display: inline-flex;
+            flex-direction: column;
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 4px;
+        }
+        .frac .top {
+            border-bottom: 1px solid #58c4dd;
+            padding-bottom: 1px;
+        }
+        .frac .bottom {
+            padding-top: 1px;
+        }
+        .sub {
+            font-size: 0.75em;
+            vertical-align: sub;
+            font-style: normal;
+        }
+        .sup {
+            font-size: 0.75em;
+            vertical-align: super;
+            font-style: normal;
+        }
+
+        /* Glow & Card effects */
+        .glow-cyan { text-shadow: 0 0 10px rgba(88, 196, 221, 0.4); }
+        .glow-gold { text-shadow: 0 0 10px rgba(240, 180, 41, 0.4); }
+        .glow-emerald { text-shadow: 0 0 10px rgba(74, 222, 128, 0.4); }
+        
+        .box-glow {
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 0 15px 0 rgba(88, 196, 221, 0.08);
+        }
+
+        /* Smooth tab transition */
+        .tab-btn {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .tab-btn.active {
+            background-color: #233044;
+            color: #58c4dd;
+            border-bottom: 2px solid #58c4dd;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #233044;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #30425e;
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+
+    <!-- Sticky Navigation Bar -->
+    <nav class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur-md border-b border-[#233044] px-4 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="w-3 h-3 rounded-full bg-brandCyan inline-block animate-pulse"></span>
+                <span class="font-bold text-white tracking-wide text-sm md:text-base">Transformer 深度剖析</span>
+                <span class="text-xs px-2 py-0.5 rounded bg-brandCyan/10 text-brandCyan border border-brandCyan/30">第 5 章（上）</span>
+            </div>
+            <div class="hidden md:flex items-center gap-6 text-sm font-medium text-gray-400">
+                <a href="#hero" class="hover:text-brandCyan transition-colors">概览 Roadmap</a>
+                <a href="#sec-macro" class="hover:text-brandCyan transition-colors">5.1&5.2 三大流派</a>
+                <a href="#sec-embedding" class="hover:text-brandCyan transition-colors">5.3.1 Embedding&位置</a>
+                <a href="#sec-residual-norm" class="hover:text-brandCyan transition-colors">5.3.3 残差&LN</a>
+                <a href="#sec-ffn-head" class="hover:text-brandCyan transition-colors">5.3.4 FFN & LM Head</a>
+                <a href="#sec-quiz" class="hover:text-brandCyan transition-colors">5.4 互动诊所</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-8 space-y-16">
+
+        <!-- HERO SECTION -->
+        <section id="hero" class="text-center pt-6 pb-10 space-y-6">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brandGold/10 border border-brandGold/30 text-brandGold text-xs font-mono mb-2">
+                <span>CHAPTER 5.1 - 5.3 ARCHITECTURE & COMPONENTS</span>
+            </div>
+            <h1 class="text-3xl md:text-5xl font-extrabold text-white tracking-tight">
+                Transformer 第 5 章（上）：<br class="hidden sm:inline"/>
+                <span class="bg-clip-text text-transparent bg-gradient-to-r from-brandCyan via-brandEmerald to-brandGold">
+                    宏观架构与核心组件拆解
+                </span>
+            </h1>
+            <p class="max-w-3xl mx-auto text-gray-400 text-sm md:text-base leading-relaxed">
+                从三大范式（Encoder-only、Decoder-only、Encoder-Decoder）的演进切入，手把手拆解 Embedding 矩阵 lookup、位置编码广播、残差连接梯度高速公路、LayerNorm 独立归一化、FFN 膨胀加工厂与 LM Head 概率投影。
+            </p>
+
+            <!-- Interactive Visual Roadmap Badge -->
+            <div class="mt-8 p-6 rounded-2xl bg-cardBg border border-cardBorder box-glow text-left">
+                <h3 class="text-xs font-mono uppercase tracking-wider text-gray-400 mb-4 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-brandCyan" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    Transformer 完整张量流动图谱 (Tensor Flow Pipeline)
+                </h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-center">
+                    <!-- Step 1 -->
+                    <div class="p-3 rounded-xl bg-[#1c2638] border border-cardBorder hover:border-brandCyan/50 transition-all">
+                        <div class="text-xs text-brandCyan font-mono font-bold mb-1">STEP 1</div>
+                        <div class="text-sm font-semibold text-white">Token & Pos Embedding</div>
+                        <div class="text-xs text-gray-400 mt-1 font-mono">(B, L) &rarr; (B, L, d_model)</div>
+                    </div>
+                    <!-- Step 2 -->
+                    <div class="p-3 rounded-xl bg-[#1c2638] border border-cardBorder hover:border-brandEmerald/50 transition-all">
+                        <div class="text-xs text-brandEmerald font-mono font-bold mb-1">STEP 2</div>
+                        <div class="text-sm font-semibold text-white">Pre-LN & Multi-Head Attn</div>
+                        <div class="text-xs text-gray-400 mt-1 font-mono">Q, K, V & Scaled Dot</div>
+                    </div>
+                    <!-- Step 3 -->
+                    <div class="p-3 rounded-xl bg-[#1c2638] border border-cardBorder hover:border-brandGold/50 transition-all">
+                        <div class="text-xs text-brandGold font-mono font-bold mb-1">STEP 3</div>
+                        <div class="text-sm font-semibold text-white">Residual Add & LN</div>
+                        <div class="text-xs text-gray-400 mt-1 font-mono">x + SubLayer(x)</div>
+                    </div>
+                    <!-- Step 4 -->
+                    <div class="p-3 rounded-xl bg-[#1c2638] border border-cardBorder hover:border-brandViolet/50 transition-all">
+                        <div class="text-xs text-brandViolet font-mono font-bold mb-1">STEP 4</div>
+                        <div class="text-sm font-semibold text-white">FFN 4&times; Expansion</div>
+                        <div class="text-xs text-gray-400 mt-1 font-mono">d_model &rarr; 4d &rarr; d_model</div>
+                    </div>
+                    <!-- Step 5 -->
+                    <div class="p-3 rounded-xl bg-[#1c2638] border border-cardBorder hover:border-brandCoral/50 transition-all">
+                        <div class="text-xs text-brandCoral font-mono font-bold mb-1">STEP 5</div>
+                        <div class="text-sm font-semibold text-white">LM Head & Softmax</div>
+                        <div class="text-xs text-gray-400 mt-1 font-mono">(B, L, d_model) &rarr; (B, L, V)</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.1 & 5.2 -->
+        <section id="sec-macro" class="space-y-6 scroll-mt-20">
+            <div class="flex flex-col md:flex-row md:items-end justify-between border-b border-cardBorder pb-4 gap-4">
+                <div>
+                    <div class="text-xs font-mono text-brandCyan uppercase tracking-widest">MODULE 5.1 & 5.2</div>
+                    <h2 class="text-2xl font-bold text-white mt-1">三大架构流派 & 动态数据流与 Attention Mask</h2>
+                </div>
+                <!-- Architecture Selector Tabs -->
+                <div class="flex p-1 bg-[#161f2e] rounded-xl border border-cardBorder font-medium text-xs sm:text-sm">
+                    <button id="tab-bert" onclick="switchArch('bert')" class="tab-btn active px-4 py-2 rounded-lg text-gray-300">
+                        Encoder-only (BERT)
+                    </button>
+                    <button id="tab-gpt" onclick="switchArch('gpt')" class="tab-btn px-4 py-2 rounded-lg text-gray-300">
+                        Decoder-only (GPT/Llama)
+                    </button>
+                    <button id="tab-t5" onclick="switchArch('t5')" class="tab-btn px-4 py-2 rounded-lg text-gray-300">
+                        Enc-Dec (T5/BART)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Visualizer Card with Canvas -->
+            <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder box-glow space-y-4">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm">
+                    <div class="flex items-center gap-2">
+                        <span id="arch-badge" class="px-2.5 py-1 rounded bg-brandCyan/20 text-brandCyan border border-brandCyan/40 font-mono text-xs font-bold">
+                            BERT (Bi-directional)
+                        </span>
+                        <span class="text-gray-400 text-xs">点击下方 Token 节点查看 Attention 连线与 Mask 矩阵高亮</span>
+                    </div>
+                    <div class="flex items-center gap-4 text-xs font-mono text-gray-400">
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-brandCyan"></span>可视 Token</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>Masked/Causal</span>
+                    </div>
+                </div>
+
+                <!-- Canvas Visualizer with Strict Layout Separation -->
+                <div class="relative w-full bg-[#090d14] rounded-xl border border-[#1e2a3b] overflow-hidden" style="height: 380px;">
+                    <canvas id="archCanvas" class="w-full h-full block cursor-pointer"></canvas>
+                </div>
+                <div class="text-xs text-gray-400 font-mono text-center">
+                    <span id="arch-desc">BERT：双向注意力（Full Attention），所有 Token 均可双向感知全上下文。矩阵所有位置值为 0。</span>
+                </div>
+            </div>
+
+            <!-- Architecture Comparison Table & Winner Cards -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Comparison Table (2 Cols Wide) -->
+                <div class="lg:col-span-2 p-6 rounded-2xl bg-cardBg border border-cardBorder overflow-x-auto">
+                    <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-brandGold" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h55.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        三大流派核心特征对比
+                    </h3>
+                    <table class="w-full text-xs sm:text-sm text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-cardBorder text-gray-400 font-mono">
+                                <th class="p-2.5">维度</th>
+                                <th class="p-2.5 text-brandCyan">Encoder-only (BERT)</th>
+                                <th class="p-2.5 text-brandGold">Decoder-only (GPT)</th>
+                                <th class="p-2.5 text-brandEmerald">Enc-Dec (T5)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[#1b2636] text-gray-300">
+                            <tr>
+                                <td class="p-2.5 font-semibold text-white">看得到未来吗？</td>
+                                <td class="p-2.5 text-brandCyan">✅ 是（双向可见）</td>
+                                <td class="p-2.5 text-brandGold">❌ 否（仅看过去）</td>
+                                <td class="p-2.5 text-brandEmerald">Enc是 / Dec否</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2.5 font-semibold text-white">能直接生成吗？</td>
+                                <td class="p-2.5 text-gray-400">较难（需完形填空）</td>
+                                <td class="p-2.5 text-brandGold">✅ 天然自回归生成</td>
+                                <td class="p-2.5 text-brandEmerald">✅ 序列到序列生成</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2.5 font-semibold text-white">预训练目标</td>
+                                <td class="p-2.5">MLM (掩码语言模型)</td>
+                                <td class="p-2.5">Next Token Prediction</td>
+                                <td class="p-2.5">Span Corruption</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2.5 font-semibold text-white">典型代表</td>
+                                <td class="p-2.5 font-mono text-xs">BERT, RoBERTa</td>
+                                <td class="p-2.5 font-mono text-xs">GPT-4, Llama, Qwen</td>
+                                <td class="p-2.5 font-mono text-xs">T5, BART</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 4 Reasons Why Decoder-only Won -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder flex flex-col justify-between space-y-4">
+                    <div>
+                        <h3 class="text-base font-bold text-white mb-2 text-brandGold flex items-center gap-2">
+                            <span>🏆</span> 为什么 Decoder-only 大获全胜？
+                        </h3>
+                        <p class="text-xs text-gray-400 leading-relaxed mb-4">
+                            大语言模型 (LLM) 统一统治 NLP 的 4 大决定性优势：
+                        </p>
+                        <div class="space-y-2 text-xs">
+                            <div class="p-2.5 rounded-lg bg-[#1a2332] border border-cardBorder">
+                                <span class="font-bold text-white">1. 结构最简单：</span>
+                                <span class="text-gray-300">无需 Cross-Attention 层，硬件算力利用率极大化。</span>
+                            </div>
+                            <div class="p-2.5 rounded-lg bg-[#1a2332] border border-cardBorder">
+                                <span class="font-bold text-white">2. 训练目标高度统一：</span>
+                                <span class="text-gray-300">无损失地将任意文本转化为 Next Token 预测。</span>
+                            </div>
+                            <div class="p-2.5 rounded-lg bg-[#1a2332] border border-cardBorder">
+                                <span class="font-bold text-white">3. 天然支持 KV Cache：</span>
+                                <span class="text-gray-300">流式推理生成时无需重复计算历史上下文 key/value。</span>
+                            </div>
+                            <div class="p-2.5 rounded-lg bg-[#1a2332] border border-cardBorder">
+                                <span class="font-bold text-white">4. 规模涌现效应：</span>
+                                <span class="text-gray-300"> Scaling Law 在 Causal LM 上的外推表现最稳定预测。</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.3.1 & 5.3.2 -->
+        <section id="sec-embedding" class="space-y-6 scroll-mt-20">
+            <div class="border-b border-cardBorder pb-4">
+                <div class="text-xs font-mono text-brandCyan uppercase tracking-widest">MODULE 5.3.1 & 5.3.2</div>
+                <h2 class="text-2xl font-bold text-white mt-1">Embedding 查表与位置编码广播 (Broadcasting)</h2>
+            </div>
+
+            <!-- Token ID Lookup Simulator & Broadcast Matrix Visualizer -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Part A: Interactive Lookup -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-4">
+                    <h3 class="text-base font-bold text-white flex items-center justify-between">
+                        <span>1. Token ID 查表 (Lookup Table)</span>
+                        <span class="text-xs font-mono text-brandCyan">nn.Embedding(vocab_size, d_model)</span>
+                    </h3>
+                    <p class="text-xs text-gray-400">
+                        Embedding 并不是真正的矩阵乘法，本质是利用 Token ID 作为索引进行 <span class="text-brandCyan font-mono">O(1)</span> 高效查表取行。
+                    </p>
+
+                    <!-- Token Selectors -->
+                    <div class="flex gap-2">
+                        <button onclick="selectToken(0)" id="tok-btn-0" class="tok-select-btn px-3 py-2 rounded-lg bg-[#1c2738] border border-brandCyan text-brandCyan text-xs font-mono font-bold">
+                            "我" (ID: 0)
+                        </button>
+                        <button onclick="selectToken(1)" id="tok-btn-1" class="tok-select-btn px-3 py-2 rounded-lg bg-[#141b26] border border-cardBorder text-gray-300 text-xs font-mono">
+                            "爱" (ID: 1)
+                        </button>
+                        <button onclick="selectToken(2)" id="tok-btn-2" class="tok-select-btn px-3 py-2 rounded-lg bg-[#141b26] border border-cardBorder text-gray-300 text-xs font-mono">
+                            "学习" (ID: 2)
+                        </button>
+                    </div>
+
+                    <!-- Matrix Visualizer -->
+                    <div class="p-4 rounded-xl bg-[#0a0e17] border border-[#1e2a3b] space-y-3 font-mono text-xs">
+                        <div class="flex justify-between text-gray-400 text-[11px]">
+                            <span>Token Embedding Weight Matrix</span>
+                            <span>shape: (Vocab=5, d_model=4)</span>
+                        </div>
+                        <div id="emb-matrix-display" class="space-y-1.5">
+                            <!-- JS dynamic render matrix rows -->
+                        </div>
+                    </div>
+
+                    <div id="emb-result-banner" class="p-3 rounded-lg bg-brandCyan/10 border border-brandCyan/30 text-xs font-mono text-brandCyan">
+                        选中行 Embedding 向量 (d_model=4): [0.42, -0.85, 0.19, 0.61]
+                    </div>
+                </div>
+
+                <!-- Part B: Broadcasting Addition & Weight Tying -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-4">
+                    <h3 class="text-base font-bold text-white flex items-center justify-between">
+                        <span>2. 位置编码广播相加 & Weight Tying 计算器</span>
+                        <span class="text-xs font-mono text-brandGold">X = TokEmb + PosEmb</span>
+                    </h3>
+
+                    <!-- Mathematical Formula Container without raw LaTeX -->
+                    <div class="math-block text-xs sm:text-sm">
+                        <span>X<sub class="sub">final</sub> &isin; &mathbb;R<sup>B &times; L &times; d<sub class="sub">model</sub></sup> = </span>
+                        <span class="text-brandCyan font-bold">TokEmb(B, L, d<sub class="sub">model</sub>)</span>
+                        <span> + </span>
+                        <span class="text-brandGold font-bold">PosEmb(1, L, d<sub class="sub">model</sub>)</span>
+                    </div>
+
+                    <p class="text-xs text-gray-400">
+                        PyTorch 在执行 <span class="font-mono text-white">TokEmb + PosEmb</span> 时，沿着 Batch 维度（B）自动广播复制，实现全向量按元素无缝并行叠加。
+                    </p>
+
+                    <!-- Weight Tying Calculator Slider -->
+                    <div class="pt-4 border-t border-cardBorder space-y-3">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="font-bold text-white">Weight Tying 权重共享省能计算器</span>
+                            <span class="text-brandEmerald font-mono" id="wt-params-saved">已节省 153.6 M 参数</span>
+                        </div>
+                        <div class="space-y-2 text-xs">
+                            <div class="flex justify-between text-gray-400">
+                                <span>词表大小 (vocab_size): <span id="val-vocab" class="text-white font-mono">32,000</span></span>
+                                <span>隐藏维度 (d_model): <span id="val-dmodel" class="text-white font-mono">4,096</span></span>
+                            </div>
+                            <input type="range" id="slider-vocab" min="10000" max="150000" step="5000" value="32000" class="w-full accent-brandEmerald cursor-pointer" oninput="calcWeightTying()">
+                            <input type="range" id="slider-dmodel" min="512" max="8192" step="512" value="4096" class="w-full accent-brandCyan cursor-pointer" oninput="calcWeightTying()">
+                        </div>
+                        <div class="p-3 rounded-lg bg-[#142019] border border-brandEmerald/30 text-xs text-gray-300">
+                            💡 <span class="text-white font-semibold">Weight Tying 机制：</span>共享 <span class="font-mono text-brandEmerald">tok_emb.weight</span> 与最后的 <span class="font-mono text-brandEmerald">lm_head.weight</span>。在嵌入层与输出层之间共享参数，在不牺牲效果的前提下大幅节约显存！
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.3.3 -->
+        <section id="sec-residual-norm" class="space-y-6 scroll-mt-20">
+            <div class="border-b border-cardBorder pb-4">
+                <div class="text-xs font-mono text-brandCyan uppercase tracking-widest">MODULE 5.3.3</div>
+                <h2 class="text-2xl font-bold text-white mt-1">残差连接梯度高速公路 & LayerNorm vs BatchNorm</h2>
+            </div>
+
+            <!-- Part A: Residual Connection Highway Plot -->
+            <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-4">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                    <div>
+                        <h3 class="text-base font-bold text-white">Part A: 残差连接 (Residual Connection) 梯度高速公路</h3>
+                        <div class="math font-normal text-xs text-brandCyan mt-0.5">
+                            ∂(x + F(x)) / ∂x = 1 + ∂F(x)/∂x &ge; 1
+                        </div>
+                    </div>
+                    <!-- Sliders -->
+                    <div class="flex flex-wrap items-center gap-4 text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-400">网络层数 (Layers L):</span>
+                            <span id="lbl-layers" class="font-mono text-brandGold font-bold w-6">32</span>
+                            <input type="range" id="slider-layers" min="1" max="100" value="32" class="w-24 accent-brandGold cursor-pointer" oninput="updateResidualPlot()">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-400">子层导数 (∂F/∂x):</span>
+                            <span id="lbl-df" class="font-mono text-brandCoral font-bold w-8">0.8</span>
+                            <input type="range" id="slider-df" min="0.1" max="0.99" step="0.05" value="0.8" class="w-24 accent-brandCoral cursor-pointer" oninput="updateResidualPlot()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Canvas Chart -->
+                    <div class="lg:col-span-2 relative h-64 bg-[#090d14] rounded-xl border border-[#1e2a3b] p-2">
+                        <canvas id="residualCanvas" class="w-full h-full block"></canvas>
+                    </div>
+                    <!-- Text explanation -->
+                    <div class="space-y-3 text-xs text-gray-300 flex flex-col justify-center">
+                        <div class="p-3 rounded-lg bg-[#27171a] border border-brandCoral/30">
+                            <span class="text-brandCoral font-bold block mb-1">🔴 无残差 (Without Residual):</span>
+                            梯度在反向传播时连续乘算 <span class="math text-brandCoral">(∂F/∂x)<sup>L</sup></span>。若导数小于 1，深度达到 30+ 层时梯度便快速衰减归零（Gradient Vanishing），深层无法更新！
+                        </div>
+                        <div class="p-3 rounded-lg bg-[#142322] border border-brandEmerald/30">
+                            <span class="text-brandEmerald font-bold block mb-1">🟢 有残差 (With Residual Highway):</span>
+                            反向传播恒有一个无衰减的项 <span class="math text-brandEmerald">+1</span>！梯度直通最底层，保证了百层甚至千层 Transformer 的稳定训练。
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Part B: LayerNorm vs BatchNorm Interactive Visualizer -->
+            <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-4">
+                <h3 class="text-base font-bold text-white flex items-center justify-between">
+                    <span>Part B: 为什么 Transformer 必须用 LayerNorm 而弃用 BatchNorm？</span>
+                    <span class="text-xs font-mono text-brandViolet">LayerNorm vs BatchNorm</span>
+                </h3>
+
+                <!-- Formula display without raw LaTeX -->
+                <div class="math-block text-xs sm:text-sm">
+                    <span>y = </span>
+                    <span class="frac">
+                        <span class="top">x - &mu;</span>
+                        <span class="bottom">&radic;( &sigma;<sup>2</sup> + &epsilon; )</span>
+                    </span>
+                    <span> &middot; &gamma; + &beta;</span>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- LN Dimension Interactive -->
+                    <div class="p-4 rounded-xl bg-[#090d14] border border-[#1e2a3b] space-y-3">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="font-bold text-brandCyan">LayerNorm 统计维度 (跨 Feature 维度 d_model)</span>
+                            <span class="text-gray-400 font-mono text-[11px]">独立处理每个 Token</span>
+                        </div>
+                        <p class="text-xs text-gray-400">
+                            无论句子长度 L 是 3 还是 500，LayerNorm 均沿着 <span class="text-white font-mono">d_model</span> 维度单独求 μ 和 σ，完全不受 Padding 补零的影响！
+                        </p>
+                        <!-- Token Live Sliders -->
+                        <div class="p-3 rounded-lg bg-[#121926] border border-cardBorder space-y-2">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-gray-300">Token 1 原始特征 (d_model=4):</span>
+                                <span id="ln-raw-vals" class="font-mono text-brandCyan">[2.0, 4.0, 6.0, 8.0]</span>
+                            </div>
+                            <input type="range" id="slider-ln-val" min="0" max="20" value="5" class="w-full accent-brandCyan cursor-pointer" oninput="updateLNCalculation()">
+                            <div class="grid grid-cols-3 gap-2 text-center text-xs pt-1">
+                                <div class="p-1.5 rounded bg-[#1c2738] font-mono"><span class="text-gray-400 block text-[10px]">均值 &mu;</span><span id="calc-mu" class="text-brandCyan font-bold">5.00</span></div>
+                                <div class="p-1.5 rounded bg-[#1c2738] font-mono"><span class="text-gray-400 block text-[10px]">标准差 &sigma;</span><span id="calc-sigma" class="text-brandGold font-bold">2.23</span></div>
+                                <div class="p-1.5 rounded bg-[#1c2738] font-mono"><span class="text-gray-400 block text-[10px]">LN 输出(γ=1,β=0)</span><span id="calc-norm" class="text-brandEmerald font-bold">[-1.34, ...]</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BN Dimension Failure Case -->
+                    <div class="p-4 rounded-xl bg-[#090d14] border border-[#1e2a3b] space-y-3 flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="font-bold text-brandCoral">BatchNorm 致命缺点 (跨 Batch & 序列长度 L)</span>
+                                <span class="text-red-400 font-mono text-[11px]">文本变长/Padding 时崩溃</span>
+                            </div>
+                            <div class="mt-2 space-y-2 text-xs text-gray-300">
+                                <div class="p-2.5 rounded bg-[#251518] border border-brandCoral/30">
+                                    <span class="text-brandCoral font-bold">❌ 问题 1：变长序列 Padding 干扰</span>
+                                    <p class="text-gray-400 mt-0.5">BatchNorm 跨 Sequence 长度计算 μ 和 σ。补零的 `<pad>` Token 会极大地拉低总体均值和方差，破坏真实 Token 特征。</p>
+                                </div>
+                                <div class="p-2.5 rounded bg-[#251518] border border-brandCoral/30">
+                                    <span class="text-brandCoral font-bold">❌ 问题 2：推理 (Inference) 依赖训练集统计</span>
+                                    <p class="text-gray-400 mt-0.5">文本生成是一步步流式进行的，单 Token 推理时 Batch size=1，无法提供准确的 Batch 统计量。</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.3.4 & 5.3.5 -->
+        <section id="sec-ffn-head" class="space-y-6 scroll-mt-20">
+            <div class="border-b border-cardBorder pb-4">
+                <div class="text-xs font-mono text-brandCyan uppercase tracking-widest">MODULE 5.3.4 & 5.3.5</div>
+                <h2 class="text-2xl font-bold text-white mt-1">FFN 膨胀加工厂 & LM Head 词表投影</h2>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Part A: FFN Expansion Factory & 2/3 Parameter Calculator -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-4">
+                    <h3 class="text-base font-bold text-white flex items-center justify-between">
+                        <span>Part A: FFN 4&times; 膨胀加工厂</span>
+                        <span class="text-xs font-mono text-brandViolet">d_model &rarr; 4d &rarr; d_model</span>
+                    </h3>
+                    
+                    <p class="text-xs text-gray-400">
+                        Attention 负责 Token 间的“信息交换”，而 FFN 负责对每个 Token 的通道特征进行“升维加工与知识存储”。
+                    </p>
+
+                    <!-- Dynamic FFN Parameter Breakdown Calculator -->
+                    <div class="p-4 rounded-xl bg-[#090d14] border border-[#1e2a3b] space-y-3">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-gray-300">隐藏层维度 (d_model): <span id="lbl-ffn-d" class="font-mono text-brandCyan font-bold">4,096</span></span>
+                            <span class="text-brandViolet font-mono text-xs">FFN 占 Block 参数 66.7%</span>
+                        </div>
+                        <input type="range" id="slider-ffn-d" min="768" max="8192" step="256" value="4096" class="w-full accent-brandViolet cursor-pointer" oninput="calcFFNParams()">
+                        
+                        <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+                            <div class="p-3 rounded-lg bg-[#141b26] border border-cardBorder">
+                                <span class="text-gray-400 block text-[11px]">Attention 参数量 (4&middot;d<sup>2</sup>)</span>
+                                <span id="val-attn-params" class="text-brandCyan text-sm font-bold">67.11 M</span>
+                            </div>
+                            <div class="p-3 rounded-lg bg-[#141b26] border border-cardBorder">
+                                <span class="text-gray-400 block text-[11px]">FFN 参数量 (8&middot;d<sup>2</sup>)</span>
+                                <span id="val-ffn-params" class="text-brandViolet text-sm font-bold">134.22 M</span>
+                            </div>
+                        </div>
+
+                        <!-- Param Share Bar Visual -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-[11px] font-mono text-gray-400">
+                                <span>Attention (33.3%)</span>
+                                <span>FFN 膨胀层 (66.7%)</span>
+                            </div>
+                            <div class="w-full h-3 rounded-full bg-[#1b2636] overflow-hidden flex">
+                                <div class="h-full bg-brandCyan" style="width: 33.33%;"></div>
+                                <div class="h-full bg-brandViolet" style="width: 66.67%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Part B: LM Head & Softmax Temperature Visualizer -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-4">
+                    <h3 class="text-base font-bold text-white flex items-center justify-between">
+                        <span>Part B: LM Head 词表投影 & 采样 Temperature</span>
+                        <span class="text-xs font-mono text-brandGold">(B, L, d_model) &rarr; (B, L, V)</span>
+                    </h3>
+
+                    <p class="text-xs text-gray-400">
+                        LM Head 通过线性层将最后的隐藏状态投影至词表大小，再以 Temperature 调节 Softmax 概率平滑度。
+                    </p>
+
+                    <!-- Temperature Slider & Bar Chart -->
+                    <div class="p-4 rounded-xl bg-[#090d14] border border-[#1e2a3b] space-y-3">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-gray-300">采样温度 (Temperature T): <span id="lbl-temp" class="font-mono text-brandGold font-bold">0.70</span></span>
+                            <span id="temp-tag" class="text-xs px-2 py-0.5 rounded bg-brandGold/20 text-brandGold font-mono">适中创造力</span>
+                        </div>
+                        <input type="range" id="slider-temp" min="0.1" max="2.0" step="0.05" value="0.70" class="w-full accent-brandGold cursor-pointer" oninput="updateSoftmaxChart()">
+
+                        <!-- Top-5 Next Token Bar Chart -->
+                        <div class="space-y-2 pt-1 font-mono text-xs" id="softmax-bars">
+                            <!-- JS Dynamic Bars -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5.4 QUIZ CLINIC -->
+        <section id="sec-quiz" class="space-y-6 scroll-mt-20 pt-4">
+            <div class="border-b border-cardBorder pb-4">
+                <div class="text-xs font-mono text-brandCyan uppercase tracking-widest">MODULE 5.4</div>
+                <h2 class="text-2xl font-bold text-white mt-1">核心概念互动诊所 (Interactive Self-Quiz)</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="quiz-container">
+                <!-- Question 1 -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-3 flex flex-col justify-between" id="q1-card">
+                    <div>
+                        <div class="flex justify-between items-center text-xs font-mono mb-2">
+                            <span class="text-brandCyan font-bold">QUESTION 01</span>
+                            <span class="text-gray-500">单选题</span>
+                        </div>
+                        <h4 class="text-sm font-bold text-white mb-3">为什么现代主流大语言模型 (LLM) 几乎全部采用 Decoder-only 架构？</h4>
+                        <div class="space-y-2 text-xs">
+                            <button onclick="checkAnswer(1, 'A')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandCyan/50 transition-all text-gray-300">A. 因为 Decoder-only 的双向上下文感知能力最强</button>
+                            <button onclick="checkAnswer(1, 'B')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandCyan/50 transition-all text-gray-300">B. 统一的自回归生成目标、无需 Cross-Attn 简化结构以及天然高效支持 KV Cache</button>
+                            <button onclick="checkAnswer(1, 'C')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandCyan/50 transition-all text-gray-300">C. 因为 Encoder-only 参数量无法放大</button>
+                        </div>
+                    </div>
+                    <div id="q1-feedback" class="hidden p-3 rounded-lg text-xs"></div>
+                </div>
+
+                <!-- Question 2 -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-3 flex flex-col justify-between" id="q2-card">
+                    <div>
+                        <div class="flex justify-between items-center text-xs font-mono mb-2">
+                            <span class="text-brandGold font-bold">QUESTION 02</span>
+                            <span class="text-gray-500">单选题</span>
+                        </div>
+                        <h4 class="text-sm font-bold text-white mb-3">在残差连接 x + F(x) 中，为什么深层网络能够有效解决梯度消失？</h4>
+                        <div class="space-y-2 text-xs">
+                            <button onclick="checkAnswer(2, 'A')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandGold/50 transition-all text-gray-300">A. 反向传播求导时存在恒等于 1 的无衰减加项（1 + ∂F/∂x）</button>
+                            <button onclick="checkAnswer(2, 'B')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandGold/50 transition-all text-gray-300">B. 因为残差项把特征维度自动放大到了 4 倍</button>
+                            <button onclick="checkAnswer(2, 'C')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandGold/50 transition-all text-gray-300">C. 残差连接直接去掉了 Softmax 归一化</button>
+                        </div>
+                    </div>
+                    <div id="q2-feedback" class="hidden p-3 rounded-lg text-xs"></div>
+                </div>
+
+                <!-- Question 3 -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-3 flex flex-col justify-between" id="q3-card">
+                    <div>
+                        <div class="flex justify-between items-center text-xs font-mono mb-2">
+                            <span class="text-brandEmerald font-bold">QUESTION 03</span>
+                            <span class="text-gray-500">单选题</span>
+                        </div>
+                        <h4 class="text-sm font-bold text-white mb-3">Transformer 为何放弃图像中常用的 BatchNorm 而使用 LayerNorm？</h4>
+                        <div class="space-y-2 text-xs">
+                            <button onclick="checkAnswer(3, 'A')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandEmerald/50 transition-all text-gray-300">A. LayerNorm 计算速度比 BatchNorm 快 10 倍</button>
+                            <button onclick="checkAnswer(3, 'B')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandEmerald/50 transition-all text-gray-300">B. BN 沿 Sequence 维度统计会被 Padding 补零破坏，且单 Token 推理时缺乏 Batch 统计</button>
+                            <button onclick="checkAnswer(3, 'C')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandEmerald/50 transition-all text-gray-300">C. LayerNorm 可以省略可学习参数 &gamma; 和 &beta;</button>
+                        </div>
+                    </div>
+                    <div id="q3-feedback" class="hidden p-3 rounded-lg text-xs"></div>
+                </div>
+
+                <!-- Question 4 -->
+                <div class="p-6 rounded-2xl bg-cardBg border border-cardBorder space-y-3 flex flex-col justify-between" id="q4-card">
+                    <div>
+                        <div class="flex justify-between items-center text-xs font-mono mb-2">
+                            <span class="text-brandViolet font-bold">QUESTION 04</span>
+                            <span class="text-gray-500">单选题</span>
+                        </div>
+                        <h4 class="text-sm font-bold text-white mb-3">在一个标准 Transformer Block (d_model维度) 中，FFN 占总参数量的比例约为多少？</h4>
+                        <div class="space-y-2 text-xs">
+                            <button onclick="checkAnswer(4, 'A')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandViolet/50 transition-all text-gray-300">A. 约 25% (1/4)</button>
+                            <button onclick="checkAnswer(4, 'B')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandViolet/50 transition-all text-gray-300">B. 约 50% (1/2)</button>
+                            <button onclick="checkAnswer(4, 'C')" class="w-full text-left p-3 rounded-lg bg-[#182232] border border-cardBorder hover:border-brandViolet/50 transition-all text-gray-300">C. 约 66.7% (2/3)</button>
+                        </div>
+                    </div>
+                    <div id="q4-feedback" class="hidden p-3 rounded-lg text-xs"></div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-cardBorder mt-16 py-8 text-center text-xs text-gray-500 font-mono">
+        <p>Transformer 深度解析教程 &copy; 2026 | Visual Interactive Deep Learning</p>
+    </footer>
+
+    <!-- INTERACTIVE JAVASCRIPT LOGIC -->
+    <script>
+        // High-DPI Retina Helper
+        function setupCanvas(canvas) {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            return { ctx, width: rect.width, height: rect.height };
+        }
+
+        // ==========================================
+        // MODULE 5.1 & 5.2 CANVAS VISUALIZER (STRICT ZONE SEPARATION)
+        // ==========================================
+        let currentArch = 'bert'; // 'bert', 'gpt', 't5'
+        let hoveredTokenIndex = -1;
+        let pulseTime = 0;
+
+        const archTokens = ['t0: 我', 't1: 爱', 't2: 深度', 't3: 学习'];
+
+        function switchArch(arch) {
+            currentArch = arch;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tab-${arch}`).classList.add('active');
+
+            const badge = document.getElementById('arch-badge');
+            const desc = document.getElementById('arch-desc');
+
+            if (arch === 'bert') {
+                badge.className = "px-2.5 py-1 rounded bg-brandCyan/20 text-brandCyan border border-brandCyan/40 font-mono text-xs font-bold";
+                badge.innerText = "BERT (Bi-directional)";
+                desc.innerText = "BERT (Encoder-only)：全双向注意力（Full Attention），所有 Token 均可相互感知上下文。Attention Mask 全部为 0。";
+            } else if (arch === 'gpt') {
+                badge.className = "px-2.5 py-1 rounded bg-brandGold/20 text-brandGold border border-brandGold/40 font-mono text-xs font-bold";
+                badge.innerText = "GPT (Causal / Autoregressive)";
+                desc.innerText = "GPT (Decoder-only)：因果掩码（Causal Mask），Token 仅能关注自身及左侧历史 Token。右上三角 Mask 值为 -inf。";
+            } else if (arch === 't5') {
+                badge.className = "px-2.5 py-1 rounded bg-brandEmerald/20 text-brandEmerald border border-brandEmerald/40 font-mono text-xs font-bold";
+                badge.innerText = "T5 (Encoder-Decoder)";
+                desc.innerText = "T5 (Enc-Dec)：Encoder 内部为双向 Attention；Decoder 内部为 Causal Attention 并通过 Cross-Attn 注入 Encoder 记忆。";
+            }
+            renderArchCanvas();
+        }
+
+        function renderArchCanvas() {
+            const canvas = document.getElementById('archCanvas');
+            if (!canvas) return;
+            const { ctx, width, height } = setupCanvas(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            // ==================================================================
+            // STRICT ZONE COORDINATES (STRICT NON-OVERLAPPING GUARANTEE)
+            // LEFT ZONE: x from 4% to 55%
+            // BUFFER GAP: x from 55% to 65%
+            // RIGHT ZONE: x from 66% to 96%
+            // ==================================================================
+            
+            // --- LEFT ZONE: Transformer Block & Tokens & Pulses ---
+            const leftZoneWidth = width * 0.52;
+            const blockCenterX = width * 0.28;
+            const blockWidth = Math.min(leftZoneWidth * 0.78, 260);
+            const blockLeft = blockCenterX - blockWidth / 2;
+            const blockTop = 75;
+            const blockHeight = height - 150;
+
+            // Draw Transformer Block Container (Shifted LEFT)
+            ctx.fillStyle = "#111824";
+            ctx.strokeStyle = currentArch === 'bert' ? "#58c4dd" : (currentArch === 'gpt' ? "#f0b429" : "#4ade80");
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(blockLeft, blockTop, blockWidth, blockHeight, 12);
+            ctx.fill();
+            ctx.stroke();
+
+            // Block Label
+            ctx.fillStyle = currentArch === 'bert' ? "#58c4dd" : (currentArch === 'gpt' ? "#f0b429" : "#4ade80");
+            ctx.font = "bold 13px 'JetBrains Mono', monospace";
+            ctx.textAlign = "center";
+            const blockTitle = currentArch === 'bert' ? "BERT Transformer Block" : (currentArch === 'gpt' ? "GPT Decoder Block" : "T5 Enc-Dec Blocks");
+            ctx.fillText(blockTitle, blockCenterX, blockTop + 24);
+
+            // Inner Sublayers inside Block
+            const innerLeft = blockLeft + 14;
+            const innerWidth = blockWidth - 28;
+            ctx.fillStyle = "#182333";
+            ctx.strokeStyle = "#2b3b54";
+            ctx.lineWidth = 1;
+
+            // Sublayer 1: Multi-Head Attention
+            ctx.beginPath();
+            ctx.roundRect(innerLeft, blockTop + 38, innerWidth, 42, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "#e2e8f0";
+            ctx.font = "11px Inter, sans-serif";
+            ctx.fillText(currentArch === 't5' ? "Cross & Self Attention" : "Multi-Head Self-Attn", blockCenterX, blockTop + 63);
+
+            // Sublayer 2: Feed Forward Network
+            ctx.fillStyle = "#182333";
+            ctx.beginPath();
+            ctx.roundRect(innerLeft, blockTop + 92, innerWidth, 42, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "#e2e8f0";
+            ctx.fillText("Feed Forward (FFN 4×)", blockCenterX, blockTop + 117);
+
+            // Draw Token Nodes (Bottom: Input Tokens; Top: Output Vectors)
+            const tokenYInput = height - 35;
+            const tokenYOutput = 35;
+            const tokenSpacing = blockWidth / 4;
+            const tokenStartX = blockLeft + tokenSpacing / 2;
+
+            archTokens.forEach((tok, i) => {
+                const tx = tokenStartX + i * tokenSpacing;
+
+                // Connection Lines passing through block
+                ctx.strokeStyle = (hoveredTokenIndex === i) ? "#58c4dd" : "rgba(255, 255, 255, 0.15)";
+                ctx.lineWidth = (hoveredTokenIndex === i) ? 2 : 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(tx, tokenYInput - 14);
+                ctx.lineTo(tx, tokenYOutput + 14);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Dynamic Pulse Particle inside Left Zone
+                const pY = (tokenYInput - 14) - ((pulseTime * 60 + i * 40) % (tokenYInput - tokenYOutput - 28));
+                ctx.fillStyle = currentArch === 'bert' ? "#58c4dd" : (currentArch === 'gpt' ? "#f0b429" : "#4ade80");
+                ctx.beginPath();
+                ctx.arc(tx, pY, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Input Token Node (Bottom)
+                const isHovered = (hoveredTokenIndex === i);
+                ctx.fillStyle = isHovered ? "#58c4dd" : "#1e2a3b";
+                ctx.strokeStyle = isHovered ? "#ffffff" : "#3b4d68";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.roundRect(tx - 28, tokenYInput - 12, 56, 24, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = isHovered ? "#0d1117" : "#cbd5e1";
+                ctx.font = "bold 11px Inter, sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(tok, tx, tokenYInput + 3);
+            });
+
+            // Attention Connection Arcs (when a token is hovered)
+            if (hoveredTokenIndex !== -1) {
+                const srcX = tokenStartX + hoveredTokenIndex * tokenSpacing;
+                archTokens.forEach((_, tgtI) => {
+                    const canAttend = (currentArch === 'bert') || (currentArch === 'gpt' && tgtI <= hoveredTokenIndex) || (currentArch === 't5');
+                    if (canAttend) {
+                        const tgtX = tokenStartX + tgtI * tokenSpacing;
+                        ctx.strokeStyle = tgtI === hoveredTokenIndex ? "#f0b429" : "rgba(88, 196, 221, 0.6)";
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(srcX, tokenYInput - 14);
+                        ctx.quadraticCurveTo((srcX + tgtX) / 2, tokenYInput - 55, tgtX, tokenYInput - 14);
+                        ctx.stroke();
+                    }
+                });
+            }
+
+            // --- BUFFER GAP (x from 55% to 65%): Empty space ---
+
+            // --- RIGHT ZONE: 4x4 Attention Mask Grid (STRICT SHIFT UPWARD & CLEAN SEPARATION) ---
+            const rightZoneStartX = width * 0.66;
+            const rightZoneWidth = width * 0.30;
+            const gridCenterX = rightZoneStartX + rightZoneWidth / 2;
+
+            // Title: Moved noticeably UPWARD (y = 26px)
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 13px 'JetBrains Mono', monospace";
+            ctx.textAlign = "center";
+            ctx.fillText("Attention Mask Grid (4×4)", gridCenterX, 26);
+
+            // Subtitle / Label
+            ctx.fillStyle = "#94a3b8";
+            ctx.font = "10px Inter, sans-serif";
+            ctx.fillText(currentArch === 'gpt' ? "右上角 1 为掩码 (-inf)" : "全 0 表示完全可见", gridCenterX, 42);
+
+            // Grid Parameters (Starting at y = 58px)
+            const gridTopY = 72;
+            const cellSize = Math.min(34, Math.max(24, Math.floor((rightZoneWidth - 40) / 4)));
+            const gridStartX = gridCenterX - (cellSize * 4) / 2;
+
+            // Column Header Tokens (t0..t3)
+            ctx.font = "10px font-mono";
+            ctx.fillStyle = "#64748b";
+            for (let j = 0; j < 4; j++) {
+                ctx.fillText(`t${j}`, gridStartX + j * cellSize + cellSize / 2, gridTopY - 6);
+            }
+
+            // Row Header Tokens (t0..t3) and Grid Cells
+            for (let i = 0; i < 4; i++) {
+                // Row Label
+                ctx.textAlign = "right";
+                ctx.fillText(`t${i}`, gridStartX - 8, gridTopY + i * cellSize + cellSize / 2 + 3);
+                ctx.textAlign = "center";
+
+                for (let j = 0; j < 4; j++) {
+                    const cx = gridStartX + j * cellSize;
+                    const cy = gridTopY + i * cellSize;
+
+                    // Determine Masked Value: GPT is Causal (j > i => masked)
+                    let isMasked = false;
+                    if (currentArch === 'gpt' && j > i) {
+                        isMasked = true;
+                    }
+
+                    // Highlight state if hovered
+                    const isFocus = (hoveredTokenIndex === i && (currentArch === 'bert' || j <= i));
+
+                    if (isMasked) {
+                        ctx.fillStyle = "#2a1518";
+                        ctx.strokeStyle = "#451a1d";
+                    } else if (isFocus) {
+                        ctx.fillStyle = "#1e3a4a";
+                        ctx.strokeStyle = "#58c4dd";
+                    } else {
+                        ctx.fillStyle = "#141c28";
+                        ctx.strokeStyle = "#233044";
+                    }
+
+                    ctx.lineWidth = isFocus ? 2 : 1;
+                    ctx.beginPath();
+                    ctx.rect(cx, cy, cellSize - 2, cellSize - 2);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Cell text: 0 or -inf / 1
+                    ctx.fillStyle = isMasked ? "#ff6b6b" : (isFocus ? "#58c4dd" : "#94a3b8");
+                    ctx.font = isMasked ? "bold 9px font-mono" : "10px font-mono";
+                    ctx.fillText(isMasked ? "1 (-&infin;)" : "0", cx + cellSize / 2 - 1, cy + cellSize / 2 + 3);
+                }
+            }
+
+            // Compact Legend below Grid
+            const legendY = gridTopY + cellSize * 4 + 22;
+            ctx.fillStyle = "#64748b";
+            ctx.font = "10px Inter, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("0: 可计算 Attention   1: 屏蔽未来信息", gridCenterX, legendY);
+        }
+
+        // Animation Loop for particles
+        function animateCanvas() {
+            pulseTime += 0.02;
+            renderArchCanvas();
+            requestAnimationFrame(animateCanvas);
+        }
+
+        // Mouse hover listener on Canvas for Token interaction
+        document.addEventListener("DOMContentLoaded", () => {
+            const canvas = document.getElementById('archCanvas');
+            if (canvas) {
+                canvas.addEventListener('mousemove', (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const mx = e.clientX - rect.left;
+                    const my = e.clientY - rect.top;
+
+                    // Detect left zone token bounds
+                    const blockWidth = Math.min(rect.width * 0.52 * 0.78, 260);
+                    const blockLeft = (rect.width * 0.28) - blockWidth / 2;
+                    const tokenSpacing = blockWidth / 4;
+                    const tokenStartX = blockLeft + tokenSpacing / 2;
+                    const tokenYInput = rect.height - 35;
+
+                    let found = -1;
+                    for (let i = 0; i < 4; i++) {
+                        const tx = tokenStartX + i * tokenSpacing;
+                        if (Math.abs(mx - tx) < 30 && Math.abs(my - tokenYInput) < 20) {
+                            found = i;
+                            break;
+                        }
+                    }
+                    if (found !== hoveredTokenIndex) {
+                        hoveredTokenIndex = found;
+                    }
+                });
+
+                canvas.addEventListener('mouseleave', () => {
+                    hoveredTokenIndex = -1;
+                });
+            }
+            animateCanvas();
+            renderEmbeddingTable();
+            updateResidualPlot();
+            updateLNCalculation();
+            calcFFNParams();
+            updateSoftmaxChart();
+        });
+
+        window.addEventListener('resize', () => {
+            renderArchCanvas();
+            updateResidualPlot();
+        });
+
+        // ==========================================
+        // MODULE 5.3.1 EMBEDDING LOOKUP SIMULATOR
+        // ==========================================
+        let selectedTokenId = 0;
+        const mockEmbeddingWeights = [
+            [0.42, -0.85, 0.19, 0.61], // ID 0 "我"
+            [-0.12, 0.94, -0.45, 0.33], // ID 1 "爱"
+            [0.78, 0.15, 0.88, -0.29],  // ID 2 "学习"
+            [0.05, -0.31, 0.62, 0.71],  // ID 3 "Transformer"
+            [-0.64, 0.22, -0.18, 0.90]  // ID 4 "AI"
+        ];
+        const tokenNames = ['"我" (ID: 0)', '"爱" (ID: 1)', '"学习" (ID: 2)', '"Transformer" (ID: 3)', '"AI" (ID: 4)'];
+
+        function selectToken(id) {
+            selectedTokenId = id;
+            for (let i = 0; i < 3; i++) {
+                const btn = document.getElementById(`tok-btn-${i}`);
+                if (i === id) {
+                    btn.className = "tok-select-btn px-3 py-2 rounded-lg bg-[#1c2738] border border-brandCyan text-brandCyan text-xs font-mono font-bold";
+                } else {
+                    btn.className = "tok-select-btn px-3 py-2 rounded-lg bg-[#141b26] border border-cardBorder text-gray-300 text-xs font-mono";
+                }
+            }
+            renderEmbeddingTable();
+        }
+
+        function renderEmbeddingTable() {
+            const container = document.getElementById('emb-matrix-display');
+            if (!container) return;
+            container.innerHTML = '';
+
+            mockEmbeddingWeights.forEach((row, idx) => {
+                const isSelected = (idx === selectedTokenId);
+                const rowDiv = document.createElement('div');
+                rowDiv.className = `flex items-center justify-between p-2 rounded transition-all ${
+                    isSelected ? 'bg-brandCyan/20 border border-brandCyan text-white font-bold' : 'bg-[#121824] text-gray-400 border border-transparent'
+                }`;
+                rowDiv.innerHTML = `
+                    <span class="w-24 text-[11px]">${idx === selectedTokenId ? '👉 ' : ''}Row ${idx}: ${tokenNames[idx] || 'Token'}</span>
+                    <span class="font-mono text-xs text-brandCyan">[ ${row.map(v => v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2)).join(', ')} ]</span>
+                `;
+                container.appendChild(rowDiv);
+            });
+
+            const selRow = mockEmbeddingWeights[selectedTokenId];
+            document.getElementById('emb-result-banner').innerText = 
+                `已检索向量 Row ${selectedTokenId} (${tokenNames[selectedTokenId]}): [${selRow.join(', ')}]`;
+        }
+
+        function calcWeightTying() {
+            const v = parseInt(document.getElementById('slider-vocab').value);
+            const d = parseInt(document.getElementById('slider-dmodel').value);
+            document.getElementById('val-vocab').innerText = v.toLocaleString();
+            document.getElementById('val-dmodel').innerText = d.toLocaleString();
+
+            const savedParams = (v * d) / 1e6;
+            document.getElementById('wt-params-saved').innerText = `已节省 ${savedParams.toFixed(1)} M 参数`;
+        }
+
+        // ==========================================
+        // MODULE 5.3.3 RESIDUAL GRADIENT HIGHWAY PLOT
+        // ==========================================
+        function updateResidualPlot() {
+            const L = parseInt(document.getElementById('slider-layers').value);
+            const df = parseFloat(document.getElementById('slider-df').value);
+            document.getElementById('lbl-layers').innerText = L;
+            document.getElementById('lbl-df').innerText = df.toFixed(2);
+
+            const canvas = document.getElementById('residualCanvas');
+            if (!canvas) return;
+            const { ctx, width, height } = setupCanvas(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            const paddingLeft = 45;
+            const paddingBottom = 30;
+            const plotW = width - paddingLeft - 20;
+            const plotH = height - paddingBottom - 20;
+
+            // Draw Axes
+            ctx.strokeStyle = "#233044";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(paddingLeft, 20);
+            ctx.lineTo(paddingLeft, height - paddingBottom);
+            ctx.lineTo(width - 20, height - paddingBottom);
+            ctx.stroke();
+
+            // Axis labels
+            ctx.fillStyle = "#64748b";
+            ctx.font = "10px font-mono";
+            ctx.textAlign = "right";
+            ctx.fillText("1.0", paddingLeft - 6, 25);
+            ctx.fillText("0.0", paddingLeft - 6, height - paddingBottom);
+            ctx.textAlign = "center";
+            ctx.fillText("网络深度 (Layer L)", paddingLeft + plotW / 2, height - 8);
+
+            // Curve 1: Without Residual (Exponential decay: df^l)
+            ctx.strokeStyle = "#ff6b6b";
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            for (let l = 0; l <= L; l++) {
+                const val = Math.pow(df, l);
+                const x = paddingLeft + (l / L) * plotW;
+                const y = (height - paddingBottom) - val * plotH;
+                if (l === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Curve 2: With Residual Highway (1 + df^l >= 1, normalized to scale)
+            ctx.strokeStyle = "#4ade80";
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            for (let l = 0; l <= L; l++) {
+                const val = 1.0; // Highway retains gradient >= 1
+                const x = paddingLeft + (l / L) * plotW;
+                const y = (height - paddingBottom) - val * plotH;
+                if (l === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Legend
+            ctx.font = "11px Inter, sans-serif";
+            ctx.textAlign = "left";
+            ctx.fillStyle = "#ff6b6b";
+            ctx.fillText("🔴 无残差: (∂F/∂x)^L 幂次衰减", paddingLeft + 15, 35);
+            ctx.fillStyle = "#4ade80";
+            ctx.fillText("🟢 有残差: 1 + ∂F/∂x 恒定高速公路", paddingLeft + 15, 52);
+        }
+
+        // ==========================================
+        // LAYERNORM INTERACTIVE CALCULATION
+        // ==========================================
+        function updateLNCalculation() {
+            const baseVal = parseFloat(document.getElementById('slider-ln-val').value);
+            const x = [baseVal, baseVal + 2, baseVal + 4, baseVal + 6];
+
+            document.getElementById('ln-raw-vals').innerText = `[${x.map(v => v.toFixed(1)).join(', ')}]`;
+
+            // Mean
+            const mu = x.reduce((a, b) => a + b, 0) / x.length;
+            // Variance & Std
+            const variance = x.reduce((a, b) => a + Math.pow(b - mu, 2), 0) / x.length;
+            const sigma = Math.sqrt(variance + 1e-5);
+
+            // Normalized (γ=1, β=0)
+            const norm = x.map(v => (v - mu) / sigma);
+
+            document.getElementById('calc-mu').innerText = mu.toFixed(2);
+            document.getElementById('calc-sigma').innerText = sigma.toFixed(2);
+            document.getElementById('calc-norm').innerText = `[${norm.map(v => v.toFixed(2)).join(', ')}]`;
+        }
+
+        // ==========================================
+        // FFN PARAMETER SHARE CALCULATOR
+        // ==========================================
+        function calcFFNParams() {
+            const d = parseInt(document.getElementById('slider-ffn-d').value);
+            document.getElementById('lbl-ffn-d').innerText = d.toLocaleString();
+
+            const attnParams = (4 * d * d) / 1e6;
+            const ffnParams = (8 * d * d) / 1e6;
+
+            document.getElementById('val-attn-params').innerText = `${attnParams.toFixed(2)} M`;
+            document.getElementById('val-ffn-params').innerText = `${ffnParams.toFixed(2)} M`;
+        }
+
+        // ==========================================
+        // LM HEAD & SOFTMAX TEMPERATURE VISUALIZER
+        // ==========================================
+        const candidateTokens = [
+            { word: "模型", rawLogit: 6.5 },
+            { word: "智能", rawLogit: 5.2 },
+            { word: "算法", rawLogit: 4.8 },
+            { word: "数据", rawLogit: 3.1 },
+            { word: "苹果", rawLogit: 0.5 }
+        ];
+
+        function updateSoftmaxChart() {
+            const T = parseFloat(document.getElementById('slider-temp').value);
+            document.getElementById('lbl-temp').innerText = T.toFixed(2);
+
+            const tag = document.getElementById('temp-tag');
+            if (T < 0.4) {
+                tag.innerText = "严谨/保守 (Low Temp)";
+                tag.className = "text-xs px-2 py-0.5 rounded bg-brandCyan/20 text-brandCyan font-mono";
+            } else if (T > 1.2) {
+                tag.innerText = "极高随机/创造力 (High Temp)";
+                tag.className = "text-xs px-2 py-0.5 rounded bg-brandCoral/20 text-brandCoral font-mono";
+            } else {
+                tag.innerText = "适中平衡 (Balanced)";
+                tag.className = "text-xs px-2 py-0.5 rounded bg-brandGold/20 text-brandGold font-mono";
+            }
+
+            // Compute Softmax logits / T
+            const scaledLogits = candidateTokens.map(t => t.rawLogit / T);
+            const maxL = Math.max(...scaledLogits);
+            const exps = scaledLogits.map(l => Math.exp(l - maxL));
+            const sumExp = exps.reduce((a, b) => a + b, 0);
+            const probs = exps.map(e => e / sumExp);
+
+            const container = document.getElementById('softmax-bars');
+            if (!container) return;
+            container.innerHTML = '';
+
+            candidateTokens.forEach((tok, i) => {
+                const probPercent = (probs[i] * 100).toFixed(1);
+                const row = document.createElement('div');
+                row.className = "space-y-1";
+                row.innerHTML = `
+                    <div class="flex justify-between text-xs">
+                        <span class="text-gray-200 font-bold">${tok.word}</span>
+                        <span class="text-brandGold font-mono">${probPercent}%</span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-[#1b2636] overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-brandGold to-brandCyan transition-all duration-300" style="width: ${probPercent}%;"></div>
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        // ==========================================
+        // QUIZ CLINIC LOGIC
+        // ==========================================
+        const quizAnswers = {
+            1: {
+                correct: 'B',
+                explain: '✅ 正确！Decoder-only 架构训练目标高度统一，移除了 Cross-Attention 极大地提高了并行推理效率，且 KV Cache 支持极佳。'
+            },
+            2: {
+                correct: 'A',
+                explain: '✅ 正确！对 x + F(x) 关于 x 求导得到 1 + ∂F/∂x。这项 +1 构成了不衰减的高速公路，确保梯度能直达底层。'
+            },
+            3: {
+                correct: 'B',
+                explain: '✅ 正确！BatchNorm 依赖沿 Sequence 维度的全局统计，会被变长 Padding 严重污染，且流式生成单 Token 时无法计算 Batch 统计。'
+            },
+            4: {
+                correct: 'C',
+                explain: '✅ 正确！Standard Block 中 Attention 包含 4·d² 参数，而 FFN 包含 8·d² 参数（升维 4d 与降维 d），故 FFN 占 8/(4+8) = 66.7% (2/3)。'
+            }
+        };
+
+        function checkAnswer(qId, choice) {
+            const ans = quizAnswers[qId];
+            const feedbackEl = document.getElementById(`q${qId}-feedback`);
+            feedbackEl.classList.remove('hidden');
+
+            if (choice === ans.correct) {
+                feedbackEl.className = "p-3 rounded-lg text-xs bg-brandEmerald/10 border border-brandEmerald/40 text-brandEmerald";
+                feedbackEl.innerHTML = ans.explain;
+            } else {
+                feedbackEl.className = "p-3 rounded-lg text-xs bg-brandCoral/10 border border-brandCoral/40 text-brandCoral";
+                feedbackEl.innerHTML = `❌ 回答错误。请再仔细思考一下参数特征与维度关系！`;
+            }
+        }
+    </script>
+</body>
+</html>
