@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>非线性如何折叠空间解开 XOR — 3Blue1Brown 风格互动图解</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0d1117',
+                        cardBg: '#141b26',
+                        elevatedBg: '#1c2536',
+                        cyanClass: '#58c4dd',
+                        goldClass: '#f0b429',
+                        coralError: '#ff6b6b',
+                        emeraldSuccess: '#4ade80',
+                        purpleFold: '#a78bfa',
+                        borderSubtle: 'rgba(255,255,255,0.08)'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'Menlo', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for dark theme */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1c2536;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #58c4dd;
+        }
+        
+        /* Math inline styling helpers */
+        .math-var { font-family: 'Times New Roman', Times, serif; font-style: italic; }
+        .math-matrix {
+            display: inline-flex;
+            align-items: center;
+            border-left: 2px solid rgba(255,255,255,0.4);
+            border-right: 2px solid rgba(255,255,255,0.4);
+            border-radius: 4px;
+            padding: 0 4px;
+            margin: 0 2px;
+            vertical-align: middle;
+        }
+        .math-matrix-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 3px;
+            font-size: 0.85em;
+        }
+
+        /* Pulse glowing effect for interactive elements */
+        .glow-cyan { filter: drop-shadow(0 0 8px rgba(88, 196, 221, 0.6)); }
+        .glow-gold { filter: drop-shadow(0 0 8px rgba(240, 180, 41, 0.6)); }
+    </style>
+</head>
+<body class="bg-darkBg text-gray-200 min-h-screen font-sans selection:bg-cyanClass selection:text-darkBg pb-12">
+
+    <!-- 1. HEADER & GLOBAL CONTROLS BAR (Sticky) -->
+    <header class="sticky top-0 z-50 bg-darkBg/90 backdrop-blur-md border-b border-borderSubtle px-4 py-3 shadow-lg">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-purpleFold/20 text-purpleFold border border-purpleFold/30">3Blue1Brown Aesthetic</span>
+                    <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white">
+                        非线性激活如何「折叠」空间，让 XOR 变得线性可分
+                    </h1>
+                </div>
+                <p class="text-xs md:text-sm text-gray-400 mt-0.5">
+                    从几何直觉视角探索 MLP 隐藏层如何通过 <span class="math-var">z = W</span><sub>1</sub><span class="math-var">x + b</span><sub>1</sub> 压缩与 <span class="math-var">h = σ(z)</span> 弯折，打破 XOR 的共线死局。
+                </p>
+            </div>
+
+            <!-- Activation Switcher Pills -->
+            <div class="flex items-center bg-elevatedBg p-1 rounded-xl border border-borderSubtle shrink-0">
+                <button onclick="setActivation('relu')" id="btn-act-relu" class="act-btn active px-3 py-1.5 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 bg-cyanClass text-darkBg font-bold shadow">
+                    ReLU <span class="text-[10px] opacity-80">(硬折叠)</span>
+                </button>
+                <button onclick="setActivation('gelu')" id="btn-act-gelu" class="act-btn px-3 py-1.5 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 text-gray-400 hover:text-white">
+                    GELU <span class="text-[10px] opacity-80">(平滑弯折)</span>
+                </button>
+                <button onclick="setActivation('tanh')" id="btn-act-tanh" class="act-btn px-3 py-1.5 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 text-gray-400 hover:text-white">
+                    Tanh <span class="text-[10px] opacity-80">(S形弯曲)</span>
+                </button>
+                <button onclick="setActivation('linear')" id="btn-act-linear" class="act-btn px-3 py-1.5 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 text-gray-400 hover:text-white">
+                    无激活 Linear <span class="text-[10px] opacity-80">(对照组)</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 mt-6 space-y-8">
+
+        <!-- SECTION 1: MAIN MORPHING STAGE -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            <!-- Left Canvas Area (8 cols) -->
+            <div class="lg:col-span-8 bg-cardBg rounded-2xl border border-borderSubtle p-4 shadow-xl flex flex-col gap-4">
+                
+                <!-- Stage Header & Controls -->
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-borderSubtle/60 pb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-cyanClass animate-pulse"></span>
+                        <h2 class="text-base font-semibold text-white">
+                            空间连续形变舞台 (Space Morphing Stage)
+                        </h2>
+                    </div>
+
+                    <!-- Step Buttons -->
+                    <div class="flex items-center gap-1 bg-darkBg/60 p-1 rounded-lg border border-borderSubtle text-xs">
+                        <button onclick="jumpToStep(0)" id="step-btn-0" class="step-pill px-2.5 py-1 rounded-md text-gray-400 hover:text-white font-mono">Step 0: 原始输入</button>
+                        <button onclick="jumpToStep(1)" id="step-btn-1" class="step-pill px-2.5 py-1 rounded-md text-gray-400 hover:text-white font-mono">Step 1: 线性投影</button>
+                        <button onclick="jumpToStep(2)" id="step-btn-2" class="step-pill px-2.5 py-1 rounded-md text-gray-400 hover:text-white font-mono">Step 2: 非线性折叠</button>
+                        <button onclick="jumpToStep(3)" id="step-btn-3" class="step-pill px-2.5 py-1 rounded-md text-gray-400 hover:text-white font-mono">Step 3: 直线切割</button>
+                    </div>
+                </div>
+
+                <!-- Main Canvas Container -->
+                <div class="relative w-full aspect-[4/3] bg-darkBg rounded-xl overflow-hidden border border-borderSubtle">
+                    <canvas id="morphCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+                    
+                    <!-- Overlay Badge for collinearity / separability warning -->
+                    <div id="canvasOverlayBadge" class="absolute top-3 left-3 pointer-events-none transition-all duration-300">
+                        <span class="px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md border bg-emeraldSuccess/20 text-emeraldSuccess border-emeraldSuccess/40 flex items-center gap-1.5 shadow-lg">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span id="badgeText">共线已被非线性打破！</span>
+                        </span>
+                    </div>
+
+                    <!-- Toggle vertical line test button for Step 2/3 -->
+                    <div id="verticalTestContainer" class="absolute bottom-3 left-3 transition-all duration-300">
+                        <button onclick="toggleVerticalTest()" id="btnVerticalTest" class="px-3 py-1.5 rounded-lg text-xs font-mono bg-elevatedBg/90 hover:bg-elevatedBg border border-gray-600 text-gray-300 flex items-center gap-2 shadow">
+                            <input type="checkbox" id="chkVerticalTest" class="rounded pointer-events-none">
+                            <span>测试: 竖线 <span class="math-var">h</span><sub>1</sub>=0.5 为什么不行？</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Timeline Scrubber & Animation Controls -->
+                <div class="flex items-center gap-4 bg-elevatedBg/50 p-3 rounded-xl border border-borderSubtle">
+                    <button onclick="togglePlayPause()" id="btnPlayPause" class="p-2 rounded-lg bg-cyanClass text-darkBg font-bold hover:bg-cyanClass/90 transition flex items-center justify-center shrink-0 w-10 h-10">
+                        <svg id="iconPlay" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                        <svg id="iconPause" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    </button>
+
+                    <div class="flex-1 space-y-1">
+                        <div class="flex justify-between text-xs text-gray-400 font-mono">
+                            <span>动画进度 (<span class="math-var">α</span>): <strong id="alphaVal" class="text-cyanClass">0.00</strong></span>
+                            <span id="stepTitleHint" class="text-gray-300 font-sans">Step 0: 原始 2D 输入空间</span>
+                        </div>
+                        <input type="range" id="alphaScrubber" min="0" max="3" step="0.01" value="0" class="w-full accent-cyanClass cursor-pointer h-2 bg-darkBg rounded-lg">
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Explanatory Panel (4 cols) -->
+            <div class="lg:col-span-4 space-y-4">
+                
+                <!-- Math & Intuition Card -->
+                <div class="bg-cardBg rounded-2xl border border-borderSubtle p-5 shadow-xl space-y-4">
+                    <div class="border-b border-borderSubtle/60 pb-2 flex items-center justify-between">
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-purpleFold"></span>
+                            数学方程与几何直觉
+                        </h3>
+                        <span id="activeActLabel" class="text-xs font-mono px-2 py-0.5 rounded bg-cyanClass/20 text-cyanClass font-bold">ReLU</span>
+                    </div>
+
+                    <!-- Dynamic Math Equation Display -->
+                    <div class="bg-darkBg/80 p-3 rounded-xl border border-borderSubtle text-xs font-mono space-y-2">
+                        <div class="text-gray-400 text-[11px]">当前步骤计算公式:</div>
+                        <div id="equationDisplay" class="text-gray-200 overflow-x-auto py-1">
+                            <!-- Injected via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Geometric Intuition Text -->
+                    <div class="space-y-2">
+                        <h4 class="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-goldClass" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            发生了什么？
+                        </h4>
+                        <p id="intuitionText" class="text-xs text-gray-300 leading-relaxed bg-elevatedBg/40 p-3 rounded-xl border border-borderSubtle/50">
+                            <!-- Injected via JS -->
+                        </p>
+                    </div>
+
+                    <!-- Bias Slider & Quick Presets -->
+                    <div class="space-y-3 pt-2 border-t border-borderSubtle/60">
+                        <div class="flex items-center justify-between text-xs">
+                            <label class="font-semibold text-gray-300">输出偏置 <span class="math-var">b</span><sub>2</sub> 微调:</label>
+                            <span id="b2Val" class="font-mono text-goldClass font-bold">0.00</span>
+                        </div>
+                        <input type="range" id="b2Slider" min="-2.5" max="0.5" step="0.05" value="0" class="w-full accent-goldClass cursor-pointer h-1.5 bg-darkBg rounded-lg">
+                        
+                        <!-- Quick Presets -->
+                        <div class="flex flex-wrap gap-1.5" id="presetContainer">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Model Weight Parameters -->
+                    <div class="bg-darkBg/60 p-3 rounded-xl border border-borderSubtle/60 text-xs font-mono space-y-1.5">
+                        <div class="text-gray-400 text-[11px] font-sans font-semibold">网络参数 (Network Weights):</div>
+                        <div class="grid grid-cols-2 gap-2 text-gray-300">
+                            <div><span class="text-purpleFold">W₁</span> = [[1, 1], [1, 1]]</div>
+                            <div><span class="text-purpleFold">b₁</span> = [0, -1]</div>
+                            <div><span class="text-goldClass">W₂</span> = <span id="w2Display">[1.0, -2.0]</span></div>
+                            <div><span class="text-goldClass">b₂</span> = <span id="b2Display">0.0</span></div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- SECTION 2: DUAL SPACE SIDE-BY-SIDE & DRAGGABLE PROBE -->
+        <section class="bg-cardBg rounded-2xl border border-borderSubtle p-6 shadow-xl space-y-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-borderSubtle/60 pb-3">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <span class="text-cyanClass font-mono">02.</span>
+                        双空间同步映射对照与实时探针
+                    </h2>
+                    <p class="text-xs text-gray-400">
+                        左侧为输入空间 <span class="math-var">(x</span><sub>1</sub>, <span class="math-var">x</span><sub>2</sub>) 的拉回决策边界；右侧为隐藏层特征空间 <span class="math-var">(h</span><sub>1</sub>, <span class="math-var">h</span><sub>2</sub>) 的直线切割。在左图拖拽探针 <span class="math-var">P</span> 查看映射过程！
+                    </p>
+                </div>
+
+                <!-- Probe Live Readout Bar -->
+                <div class="bg-elevatedBg border border-cyanClass/30 px-3 py-2 rounded-xl text-xs font-mono text-gray-200 flex flex-wrap items-center gap-2">
+                    <span class="text-cyanClass font-bold">探针 P:</span>
+                    <span>(<span id="probeX1">0.50</span>, <span id="probeX2">0.50</span>)</span>
+                    <span class="text-gray-500">➔</span>
+                    <span><span class="math-var">z</span>=(<span id="probeZ1">1.00</span>, <span id="probeZ2">0.00</span>)</span>
+                    <span class="text-gray-500">➔</span>
+                    <span><span class="math-var">h</span>=(<span id="probeH1">1.00</span>, <span id="probeH2">0.00</span>)</span>
+                    <span class="text-gray-500">➔</span>
+                    <span><span class="math-var">s</span>=<span id="probeS" class="text-goldClass font-bold">0.50</span></span>
+                    <span class="text-gray-500">➔</span>
+                    <span id="probeProbBadge" class="px-1.5 py-0.5 rounded bg-goldClass/20 text-goldClass font-bold">p=0.62</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Left: Input Space (x1, x2) Canvas -->
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between text-xs font-mono text-gray-300 px-1">
+                        <span class="font-bold text-cyanClass">原始输入空间 (x₁, x₂)</span>
+                        <span class="text-gray-400">拉回的非线性决策带</span>
+                    </div>
+                    <div class="relative aspect-square bg-darkBg rounded-xl overflow-hidden border border-borderSubtle">
+                        <canvas id="canvasInputSpace" class="w-full h-full block cursor-crosshair"></canvas>
+                    </div>
+                </div>
+
+                <!-- Right: Hidden Space (h1, h2) Canvas -->
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between text-xs font-mono text-gray-300 px-1">
+                        <span class="font-bold text-purpleFold">隐藏层特征空间 (h₁, h₂)</span>
+                        <span class="text-goldClass">超平面/直线分割 s = 0</span>
+                    </div>
+                    <div class="relative aspect-square bg-darkBg rounded-xl overflow-hidden border border-borderSubtle">
+                        <canvas id="canvasHiddenSpace" class="w-full h-full block cursor-crosshair"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: POINT CALCULATION TABLE & CROSS-ENTROPY LOSS -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            
+            <!-- Point Table (8 cols) -->
+            <div class="lg:col-span-8 bg-cardBg rounded-2xl border border-borderSubtle p-5 shadow-xl flex flex-col justify-between space-y-4">
+                <div>
+                    <div class="flex items-center justify-between border-b border-borderSubtle/60 pb-3 mb-3">
+                        <h2 class="text-base font-bold text-white flex items-center gap-2">
+                            <span class="text-cyanClass font-mono">03.</span>
+                            4个 XOR 顶点逐点前向传播计算表
+                        </h2>
+                        <span class="text-xs text-gray-400">悬停/点击数据行可高亮对应坐标点</span>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs font-mono">
+                            <thead class="bg-elevatedBg text-gray-400 border-b border-borderSubtle uppercase text-[10px]">
+                                <tr>
+                                    <th class="p-2.5">顶点</th>
+                                    <th class="p-2.5">原坐标 (x₁, x₂)</th>
+                                    <th class="p-2.5">t = x₁+x₂</th>
+                                    <th class="p-2.5">z = (t, t−1)</th>
+                                    <th class="p-2.5">隐藏层 h = σ(z)</th>
+                                    <th class="p-2.5">得分 s</th>
+                                    <th class="p-2.5">概率 p</th>
+                                    <th class="p-2.5">Target y</th>
+                                    <th class="p-2.5">Loss −ln p<sub>y</sub></th>
+                                    <th class="p-2.5">判定</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pointTableBody" class="divide-y divide-borderSubtle/40 text-gray-200">
+                                <!-- Injected via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loss Gauge & Ceiling Comparison (4 cols) -->
+            <div class="lg:col-span-4 bg-cardBg rounded-2xl border border-borderSubtle p-5 shadow-xl flex flex-col justify-between space-y-4">
+                <div>
+                    <h3 class="text-sm font-bold text-white border-b border-borderSubtle/60 pb-2 flex items-center justify-between">
+                        <span>实时交叉熵 Loss 验证</span>
+                        <span id="lossVerdictBadge" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-emeraldSuccess/20 text-emeraldSuccess border border-emeraldSuccess/30">突破天花板</span>
+                    </h3>
+
+                    <div class="mt-4 space-y-4">
+                        <!-- Big Loss Metric -->
+                        <div class="bg-darkBg/80 p-4 rounded-xl border border-borderSubtle text-center space-y-1">
+                            <div class="text-xs text-gray-400">当前平均交叉熵 Loss</div>
+                            <div id="avgLossValue" class="text-3xl font-mono font-bold text-cyanClass">0.474</div>
+                            <div class="text-[11px] text-gray-400">
+                                Target: 0.00 | 线性模型上限: <span class="math-var">ln(2)</span> ≈ 0.693
+                            </div>
+                        </div>
+
+                        <!-- Progress / Gauge Visual -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs font-mono text-gray-400">
+                                <span>0.0 (完美)</span>
+                                <span class="text-coralError font-bold">0.693 (线性死局)</span>
+                                <span>1.0</span>
+                            </div>
+                            <div class="relative w-full h-3 bg-darkBg rounded-full overflow-hidden border border-borderSubtle">
+                                <div id="lossBar" class="h-full bg-gradient-to-r from-emeraldSuccess via-goldClass to-coralError transition-all duration-300" style="width: 68%;"></div>
+                                <!-- Dashed marker for ln(2) -->
+                                <div class="absolute top-0 bottom-0 left-[69.3%] w-0.5 bg-coralError border-r border-dashed border-white"></div>
+                            </div>
+                        </div>
+
+                        <!-- Verdict Card -->
+                        <div id="lossVerdictDetail" class="text-xs text-gray-300 leading-relaxed bg-elevatedBg/40 p-3 rounded-xl border border-borderSubtle/50 space-y-1">
+                            <div class="font-semibold text-emeraldSuccess flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                                成功打破线性不可分天花板！
+                            </div>
+                            <p class="text-[11px] text-gray-400">
+                                经过非线性激活折叠后，隐藏层空间的点 B、C 凸出，使得超平面能无误地切开两类顶点。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- SECTION 4: 4-ACTIVATION PANORAMA COMPARISON GRID -->
+        <section class="bg-cardBg rounded-2xl border border-borderSubtle p-6 shadow-xl space-y-4">
+            <div class="border-b border-borderSubtle/60 pb-3">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <span class="text-cyanClass font-mono">04.</span>
+                    四种激活函数「空间弯折」全景对比
+                </h2>
+                <p class="text-xs text-gray-400">
+                    点击任意卡片即可在上方主舞台切换对应激活函数，直观观察不同弯折机制对空间几何结构的改变。
+                </p>
+            </div>
+
+            <!-- 4 Mini Canvas Cards Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                
+                <!-- ReLU Card -->
+                <div onclick="setActivation('relu')" class="pano-card group bg-darkBg hover:bg-elevatedBg border border-borderSubtle hover:border-cyanClass/50 p-3 rounded-xl transition cursor-pointer space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-white font-mono group-hover:text-cyanClass">1. ReLU</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-emeraldSuccess/20 text-emeraldSuccess font-bold">可分 ✓</span>
+                    </div>
+                    <div class="aspect-square bg-darkBg rounded-lg overflow-hidden border border-borderSubtle/60">
+                        <canvas id="miniCanvasRelu" class="w-full h-full block"></canvas>
+                    </div>
+                    <p class="text-[11px] text-gray-400 line-clamp-2">
+                        负半轴硬折叠归零，在 (1,0) 处形成锐利折角（折纸效应）。
+                    </p>
+                </div>
+
+                <!-- GELU Card -->
+                <div onclick="setActivation('gelu')" class="pano-card group bg-darkBg hover:bg-elevatedBg border border-borderSubtle hover:border-cyanClass/50 p-3 rounded-xl transition cursor-pointer space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-white font-mono group-hover:text-cyanClass">2. GELU</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-emeraldSuccess/20 text-emeraldSuccess font-bold">可分 ✓</span>
+                    </div>
+                    <div class="aspect-square bg-darkBg rounded-lg overflow-hidden border border-borderSubtle/60">
+                        <canvas id="miniCanvasGelu" class="w-full h-full block"></canvas>
+                    </div>
+                    <p class="text-[11px] text-gray-400 line-clamp-2">
+                        Transformer 默认激活，平滑凹陷微弯，破坏共线并保持连续导数。
+                    </p>
+                </div>
+
+                <!-- Tanh Card -->
+                <div onclick="setActivation('tanh')" class="pano-card group bg-darkBg hover:bg-elevatedBg border border-borderSubtle hover:border-cyanClass/50 p-3 rounded-xl transition cursor-pointer space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-white font-mono group-hover:text-cyanClass">3. Tanh</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-emeraldSuccess/20 text-emeraldSuccess font-bold">可分 ✓</span>
+                    </div>
+                    <div class="aspect-square bg-darkBg rounded-lg overflow-hidden border border-borderSubtle/60">
+                        <canvas id="miniCanvasTanh" class="w-full h-full block"></canvas>
+                    </div>
+                    <p class="text-[11px] text-gray-400 line-clamp-2">
+                        双曲正切 S 型双向挤压，将共线直线拉弯成弓形弧线。
+                    </p>
+                </div>
+
+                <!-- Linear Card -->
+                <div onclick="setActivation('linear')" class="pano-card group bg-darkBg hover:bg-elevatedBg border border-borderSubtle hover:border-coralError/50 p-3 rounded-xl transition cursor-pointer space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-white font-mono group-hover:text-coralError">4. 无激活 Linear</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-coralError/20 text-coralError font-bold">不可分 ✗</span>
+                    </div>
+                    <div class="aspect-square bg-darkBg rounded-lg overflow-hidden border border-borderSubtle/60">
+                        <canvas id="miniCanvasLinear" class="w-full h-full block"></canvas>
+                    </div>
+                    <p class="text-[11px] text-gray-400 line-clamp-2">
+                        纯线性组合，点 A、(B,C)、D 始终卡在同一条直线上无法切开。
+                    </p>
+                </div>
+
+            </div>
+
+            <!-- Crisp Takeaway Box -->
+            <div class="bg-elevatedBg/60 border border-purpleFold/30 p-4 rounded-xl flex items-start gap-3">
+                <div class="p-2 rounded-lg bg-purpleFold/20 text-purpleFold shrink-0 mt-0.5">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <div class="space-y-1 text-xs">
+                    <h4 class="font-bold text-white text-sm">几何核心结论 (Geometric Takeaway)</h4>
+                    <p class="text-gray-300 leading-relaxed">
+                        无论是硬折（ReLU）还是软弯（GELU / Tanh），非线性激活函数的本质使命都是<strong class="text-purpleFold">打破低维空间的线性共线约束</strong>。只要把卡在中间的点（B 与 C）从 A-D 的连线弦上“拉”或者“折”出来，高维/隐藏层空间中就必然存在一条超平面（直线）将两类完美分割！
+                    </p>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- JAVASCRIPT SIMULATION LOGIC -->
+    <script>
+        // -------------------------------------------------------------
+        // GLOBAL STATE & CONSTANTS
+        // -------------------------------------------------------------
+        const COLOR = {
+            bg: '#0d1117',
+            card: '#141b26',
+            grid: 'rgba(255, 255, 255, 0.08)',
+            gridAxis: 'rgba(255, 255, 255, 0.25)',
+            class0: '#58c4dd', // Cyan (A, D)
+            class1: '#f0b429', // Gold (B, C)
+            error: '#ff6b6b',
+            success: '#4ade80',
+            purple: '#a78bfa',
+            line: '#ffffff'
+        };
+
+        // Standard XOR Dataset
+        const XOR_POINTS = [
+            { id: 'A', x1: 0, x2: 0, y: 0, label: 'A(0,0)' },
+            { id: 'B', x1: 1, x2: 0, y: 1, label: 'B(1,0)' },
+            { id: 'C', x1: 0, x2: 1, y: 1, label: 'C(0,1)' },
+            { id: 'D', x1: 1, x2: 1, y: 0, label: 'D(1,1)' }
+        ];
+
+        // Activation Presets & Configuration
+        const ACTIVATIONS = {
+            relu: {
+                name: 'ReLU',
+                func: (z) => Math.max(0, z),
+                deriv: (z) => z > 0 ? 1 : 0,
+                W1: [[1, 1], [1, 1]],
+                b1: [0, -1],
+                W2: [1.0, -2.0],
+                defaultB2: 0.0,
+                presets: [
+                    { label: '教材手算 b₂=0.0', b2: 0.0 },
+                    { label: '最佳分隔 b₂=-0.50', b2: -0.50 }
+                ],
+                eqHtml: `
+                    <span class="math-var">z</span><sub>1</sub> = <span class="math-var">x</span><sub>1</sub> + <span class="math-var">x</span><sub>2</sub>, &nbsp;
+                    <span class="math-var">z</span><sub>2</sub> = <span class="math-var">x</span><sub>1</sub> + <span class="math-var">x</span><sub>2</sub> − 1<br>
+                    <span class="math-var">h</span><sub>1</sub> = max(0, <span class="math-var">z</span><sub>1</sub>), &nbsp;
+                    <span class="math-var">h</span><sub>2</sub> = max(0, <span class="math-var">z</span><sub>2</sub>)<br>
+                    <span class="math-var">s</span> = 1.0 · <span class="math-var">h</span><sub>1</sub> − 2.0 · <span class="math-var">h</span><sub>2</sub> + <span class="math-var">b</span><sub>2</sub>
+                `,
+                intuition: `Step 1 投影后，A(0,-1)、(B,C)(1,0)、D(2,1) 共线。ReLU 的负半轴截断将 A 点的 z₂=-1 硬生生“折叠”抬高到 0，使得 (B,C) 处形成 V 型尖角！直线 h₁ − 2h₂ + b₂ = 0 即可轻松把 (B,C) 与 A,D 隔离。`
+            },
+            gelu: {
+                name: 'GELU',
+                func: (z) => 0.5 * z * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (z + 0.044715 * Math.pow(z, 3)))),
+                W1: [[1, 1], [1, 1]],
+                b1: [0, -1],
+                W2: [2.05, -4.0],
+                defaultB2: -1.10,
+                presets: [
+                    { label: '切边 Preset b₂=-0.63', b2: -0.63 },
+                    { label: '最佳分隔 b₂=-1.10', b2: -1.10 }
+                ],
+                eqHtml: `
+                    <span class="math-var">z</span><sub>1</sub> = <span class="math-var">x</span><sub>1</sub> + <span class="math-var">x</span><sub>2</sub>, &nbsp;
+                    <span class="math-var">z</span><sub>2</sub> = <span class="math-var">x</span><sub>1</sub> + <span class="math-var">x</span><sub>2</sub> − 1<br>
+                    <span class="math-var">h</span><sub>i</sub> = GELU(<span class="math-var">z</span><sub>i</sub>) ≈ 0.5<span class="math-var">z</span><sub>i</sub>(1 + tanh(√(2/π)(<span class="math-var">z</span><sub>i</sub> + 0.0447<span class="math-var">z</span><sub>i</sub><sup>3</sup>)))<br>
+                    <span class="math-var">s</span> = 2.05 · <span class="math-var">h</span><sub>1</sub> − 4.0 · <span class="math-var">h</span><sub>2</sub> + <span class="math-var">b</span><sub>2</sub>
+                `,
+                intuition: `GELU 产生平滑连续的非线性弯曲。z₂ = -1 处 A 点被轻微负向拉伸，而 z₁ = 1 处 (B,C) 点向上凸起，使得三点连线弯曲成一条光滑曲线，直线能顺畅通过弓形间隙。`
+            },
+            tanh: {
+                name: 'Tanh',
+                func: (z) => Math.tanh(z),
+                W1: [[1, 1], [1, 1]],
+                b1: [0, -1],
+                W2: [3.16, -2.0],
+                defaultB2: -1.96,
+                presets: [
+                    { label: '切边 Preset b₂=-1.52', b2: -1.52 },
+                    { label: '最佳分隔 b₂=-1.96', b2: -1.96 }
+                ],
+                eqHtml: `
+                    <span class="math-var">z</span><sub>1</sub> = <span class="math-var">x</span><sub>1</sub> + <span class="math-var">x</span><sub>2</sub>, &nbsp;
+                    <span class="math-var">z</span><sub>2</sub> = <span class="math-var">x</span><sub>1</sub> + <span class="math-var">x</span><sub>2</sub> − 1<br>
+                    <span class="math-var">h</span><sub>1</sub> = tanh(<span class="math-var">z</span><sub>1</sub>), &nbsp;
+                    <span class="math-var">h</span><sub>2</sub> = tanh(<span class="math-var">z</span><sub>2</sub>)<br>
+                    <span class="math-var">s</span> = 3.16 · <span class="math-var">h</span><sub>1</sub> − 2.0 · <span class="math-var">h</span><sub>2</sub> + <span class="math-var">b</span><sub>2</sub>
+                `,
+                intuition: `Tanh 的双曲正切把 (-∞, +∞) 压缩在 (-1, 1) 之间。在 z 轴上的等距点经过 S 型挤压后，原有的线性插值比例被破坏，形成弧形凸起，解开 XOR。`
+            },
+            linear: {
+                name: 'Linear',
+                func: (z) => z,
+                W1: [[1, 1], [1, 1]],
+                b1: [0, -1],
+                W2: [1.0, -2.0],
+                defaultB2: 0.0,
+                presets: [
+                    { label: '无激活默认 b₂=0.0', b2: 0.0 }
+                ],
+                eqHtml: `
+                    <span class="math-var">z</span><sub>1</sub> = <span class="math-var">x</span><sub>1</sub> + <span class="math-var">x</span><sub>2</sub>, &nbsp;
+                    <span class="math-var">z</span><sub>2</sub> = <span class="math-var">x</span><sub>1</sub> + <span class="math-var">x</span><sub>2</sub> − 1<br>
+                    <span class="math-var">h</span><sub>1</sub> = <span class="math-var">z</span><sub>1</sub>, &nbsp;
+                    <span class="math-var">h</span><sub>2</sub> = <span class="math-var">z</span><sub>2</sub> (无弯折！)<br>
+                    <span class="math-var">s</span> = 1.0 · <span class="math-var">h</span><sub>1</sub> − 2.0 · <span class="math-var">h</span><sub>2</sub> + <span class="math-var">b</span><sub>2</sub>
+                `,
+                intuition: `无激活函数时，隐藏层变换仅仅是仿射变换 (缩放/旋转/平移)。A(0,-1)、(B,C)(1,0)、D(2,1) 仍然牢牢卡在同一直线上！无论怎么调整偏置与权重，直线都无法将夹在中间的 (B,C) 单独切割出来。`
+            }
+        };
+
+        // Sigmoid helper
+        function sigmoid(s) {
+            return 1 / (1 + Math.exp(-s));
+        }
+
+        // State
+        let currentActKey = 'relu';
+        let currentB2 = 0.0;
+        let alphaProgress = 0.0; // 0.00 -> 3.00
+        let isPlaying = false;
+        let animFrameReq = null;
+        let showVerticalTest = false;
+        let hoveredPointId = null;
+
+        // Interactive Probe Point in input space (x1, x2)
+        let probePoint = { x1: 0.5, x2: 0.5 };
+
+        // -------------------------------------------------------------
+        // INITIALIZATION
+        // -------------------------------------------------------------
+        window.addEventListener('DOMContentLoaded', () => {
+            initUI();
+            setActivation('relu');
+            setupProbeDragging();
+            requestAnimationFrame(renderLoop);
+            renderMiniCanvases();
+        });
+
+        function initUI() {
+            // Scrubber event
+            const scrubber = document.getElementById('alphaScrubber');
+            scrubber.addEventListener('input', (e) => {
+                alphaProgress = parseFloat(e.target.value);
+                isPlaying = false;
+                updatePlayPauseIcon();
+                updateUIForAlpha();
+            });
+
+            // Bias slider event
+            const b2Slider = document.getElementById('b2Slider');
+            b2Slider.addEventListener('input', (e) => {
+                currentB2 = parseFloat(e.target.value);
+                document.getElementById('b2Val').innerText = currentB2.toFixed(2);
+                document.getElementById('b2Display').innerText = currentB2.toFixed(2);
+                updateCalculations();
+            });
+
+            // Window resize handler for canvases
+            window.addEventListener('resize', () => {
+                renderMiniCanvases();
+            });
+        }
+
+        function setActivation(key) {
+            currentActKey = key;
+            const config = ACTIVATIONS[key];
+            currentB2 = config.defaultB2;
+
+            // Update Switcher Pills
+            document.querySelectorAll('.act-btn').forEach(btn => {
+                btn.className = 'act-btn px-3 py-1.5 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 text-gray-400 hover:text-white';
+            });
+            const activeBtn = document.getElementById(`btn-act-${key}`);
+            if (activeBtn) {
+                activeBtn.className = 'act-btn active px-3 py-1.5 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 bg-cyanClass text-darkBg font-bold shadow';
+            }
+
+            // Update Panel
+            document.getElementById('activeActLabel').innerText = config.name;
+            document.getElementById('equationDisplay').innerHTML = config.eqHtml;
+            document.getElementById('intuitionText').innerText = config.intuition;
+            document.getElementById('w2Display').innerText = `[${config.W2[0].toFixed(1)}, ${config.W2[1].toFixed(1)}]`;
+            document.getElementById('b2Display').innerText = currentB2.toFixed(2);
+            document.getElementById('b2Val').innerText = currentB2.toFixed(2);
+
+            const b2Slider = document.getElementById('b2Slider');
+            b2Slider.value = currentB2;
+
+            // Render Presets Buttons
+            const presetBox = document.getElementById('presetContainer');
+            presetBox.innerHTML = '';
+            config.presets.forEach(p => {
+                const btn = document.createElement('button');
+                btn.className = 'px-2 py-1 rounded bg-darkBg hover:bg-elevatedBg border border-borderSubtle text-[11px] font-mono text-cyanClass transition';
+                btn.innerText = p.label;
+                btn.onclick = () => {
+                    currentB2 = p.b2;
+                    b2Slider.value = currentB2;
+                    document.getElementById('b2Val').innerText = currentB2.toFixed(2);
+                    document.getElementById('b2Display').innerText = currentB2.toFixed(2);
+                    updateCalculations();
+                };
+                presetBox.appendChild(btn);
+            });
+
+            updateCalculations();
+        }
+
+        function togglePlayPause() {
+            isPlaying = !isPlaying;
+            updatePlayPauseIcon();
+        }
+
+        function updatePlayPauseIcon() {
+            if (isPlaying) {
+                document.getElementById('iconPlay').classList.add('hidden');
+                document.getElementById('iconPause').classList.remove('hidden');
+            } else {
+                document.getElementById('iconPlay').classList.remove('hidden');
+                document.getElementById('iconPause').classList.add('hidden');
+            }
+        }
+
+        function jumpToStep(stepIndex) {
+            alphaProgress = stepIndex;
+            document.getElementById('alphaScrubber').value = alphaProgress;
+            isPlaying = false;
+            updatePlayPauseIcon();
+            updateUIForAlpha();
+        }
+
+        function toggleVerticalTest() {
+            showVerticalTest = !showVerticalTest;
+            document.getElementById('chkVerticalTest').checked = showVerticalTest;
+        }
+
+        function updateUIForAlpha() {
+            document.getElementById('alphaVal').innerText = alphaProgress.toFixed(2);
+
+            // Highlight active step pill
+            document.querySelectorAll('.step-pill').forEach((pill, idx) => {
+                if (Math.floor(alphaProgress) === idx || (alphaProgress === 3 && idx === 3)) {
+                    pill.className = 'step-pill px-2.5 py-1 rounded-md bg-purpleFold/20 text-purpleFold font-bold font-mono border border-purpleFold/40';
+                } else {
+                    pill.className = 'step-pill px-2.5 py-1 rounded-md text-gray-400 hover:text-white font-mono';
+                }
+            });
+
+            // Step title hint
+            const titles = [
+                'Step 0: 原始 2D 输入空间 (x₁, x₂)',
+                'Step 1: 线性投影 z = W₁x + b₁ (坍缩至一维直线)',
+                'Step 2: 非线性激活折叠 h = σ(z) (打破共线死局)',
+                'Step 3: 直线/超平面切割 s = W₂h + b₂ = 0'
+            ];
+            const currentStepIdx = Math.min(3, Math.floor(alphaProgress));
+            document.getElementById('stepTitleHint').innerText = titles[currentStepIdx];
+
+            // Canvas badge update
+            const badge = document.getElementById('canvasOverlayBadge');
+            const badgeText = document.getElementById('badgeText');
+
+            if (currentActKey === 'linear') {
+                badge.querySelector('span').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md border bg-coralError/20 text-coralError border-coralError/40 flex items-center gap-1.5 shadow-lg';
+                badgeText.innerText = '线性死局：A、(B,C)、D 始终卡在同一条直线上！';
+            } else if (alphaProgress < 1.5) {
+                badge.querySelector('span').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md border bg-goldClass/20 text-goldClass border-goldClass/40 flex items-center gap-1.5 shadow-lg';
+                badgeText.innerText = 'B 与 C 虽已重合，但三点共线，直线切不开';
+            } else {
+                badge.querySelector('span').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md border bg-emeraldSuccess/20 text-emeraldSuccess border-emeraldSuccess/40 flex items-center gap-1.5 shadow-lg';
+                badgeText.innerText = `非线性 (${ACTIVATIONS[currentActKey].name}) 成功将空间弯折，线性可分！`;
+            }
+
+            // Vertical test container visibility
+            const vertTest = document.getElementById('verticalTestContainer');
+            if (alphaProgress >= 1.8 && currentActKey === 'relu') {
+                vertTest.classList.remove('opacity-0', 'pointer-events-none');
+            } else {
+                vertTest.classList.add('opacity-0', 'pointer-events-none');
+            }
+        }
+
+        // -------------------------------------------------------------
+        // FORWARD PASS CALCULATIONS & SPACE MAPPING
+        // -------------------------------------------------------------
+        function mapPoint(x1, x2, alpha, actKey) {
+            // Step 0: (x1, x2)
+            // Step 1: z = (x1+x2, x1+x2-1)
+            // Step 2: h = (sigma(z1), sigma(z2))
+            const act = ACTIVATIONS[actKey];
+            const z1 = x1 + x2;
+            const z2 = x1 + x2 - 1;
+
+            const h1 = act.func(z1);
+            const h2 = act.func(z2);
+
+            let px = x1, py = x2;
+
+            if (alpha <= 1.0) {
+                // Interpolate (x1, x2) -> (z1, z2)
+                const t = alpha;
+                px = (1 - t) * x1 + t * z1;
+                py = (1 - t) * x2 + t * z2;
+            } else if (alpha <= 2.0) {
+                // Interpolate (z1, z2) -> (h1, h2)
+                const t = alpha - 1.0;
+                px = (1 - t) * z1 + t * h1;
+                py = (1 - t) * z2 + t * h2;
+            } else {
+                // Stay at (h1, h2)
+                px = h1;
+                py = h2;
+            }
+
+            return { px, py, z1, z2, h1, h2 };
+        }
+
+        function computePointScore(h1, h2, actKey, b2) {
+            const config = ACTIVATIONS[actKey];
+            const s = config.W2[0] * h1 + config.W2[1] * h2 + b2;
+            const p = sigmoid(s);
+            return { s, p };
+        }
+
+        // -------------------------------------------------------------
+        // RENDER LOOP & CANVAS DRAWING
+        // -------------------------------------------------------------
+        function renderLoop() {
+            if (isPlaying) {
+                alphaProgress += 0.008;
+                if (alphaProgress > 3.0) {
+                    alphaProgress = 3.0;
+                    isPlaying = false;
+                    updatePlayPauseIcon();
+                }
+                document.getElementById('alphaScrubber').value = alphaProgress;
+                updateUIForAlpha();
+            }
+
+            drawMorphCanvas();
+            drawInputSpaceCanvas();
+            drawHiddenSpaceCanvas();
+
+            animFrameReq = requestAnimationFrame(renderLoop);
+        }
+
+        function setupCanvasDPI(canvas) {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            if (canvas.width !== Math.floor(rect.width * dpr) || canvas.height !== Math.floor(rect.height * dpr)) {
+                canvas.width = Math.floor(rect.width * dpr);
+                canvas.height = Math.floor(rect.height * dpr);
+            }
+            const ctx = canvas.getContext('2d');
+            ctx.resetTransform();
+            ctx.scale(dpr, dpr);
+            return { ctx, width: rect.width, height: rect.height };
+        }
+
+        // MAIN MORPH CANVAS
+        function drawMorphCanvas() {
+            const canvas = document.getElementById('morphCanvas');
+            const { ctx, width, height } = setupCanvasDPI(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            // Viewport coordinate transformation setup
+            // Domain: X: [-0.6, 2.4], Y: [-1.4, 1.8]
+            const minX = -0.6, maxX = 2.4;
+            const minY = -1.4, maxY = 1.8;
+
+            function toScreen(x, y) {
+                const sx = ((x - minX) / (maxX - minX)) * width;
+                const sy = height - ((y - minY) / (maxY - minY)) * height;
+                return { x: sx, y: sy };
+            }
+
+            // Draw Background Axes Grid
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = COLOR.grid;
+
+            // Axis lines
+            const originScreen = toScreen(0, 0);
+            ctx.beginPath();
+            ctx.strokeStyle = COLOR.gridAxis;
+            ctx.moveTo(0, originScreen.y); ctx.lineTo(width, originScreen.y);
+            ctx.moveTo(originScreen.x, 0); ctx.lineTo(originScreen.x, height);
+            ctx.stroke();
+
+            // Draw Grid Lines morphing continuously
+            const gridDensity = 12;
+            ctx.lineWidth = 1;
+
+            // Draw transformed grid lines for x1 fixed, x2 fixed
+            for (let i = 0; i <= gridDensity; i++) {
+                const v = -0.2 + (i / gridDensity) * 1.4;
+
+                // Horizontal line (x2 = v)
+                ctx.beginPath();
+                ctx.strokeStyle = (i === 0 || i === gridDensity) ? 'rgba(255,255,255,0.15)' : 'rgba(88, 196, 221, 0.12)';
+                for (let j = 0; j <= 40; j++) {
+                    const u = -0.2 + (j / 40) * 1.4;
+                    const pt = mapPoint(u, v, alphaProgress, currentActKey);
+                    const sp = toScreen(pt.px, pt.py);
+                    if (j === 0) ctx.moveTo(sp.x, sp.y);
+                    else ctx.lineTo(sp.x, sp.y);
+                }
+                ctx.stroke();
+
+                // Vertical line (x1 = v)
+                ctx.beginPath();
+                ctx.strokeStyle = (i === 0 || i === gridDensity) ? 'rgba(255,255,255,0.15)' : 'rgba(88, 196, 221, 0.12)';
+                for (let j = 0; j <= 40; j++) {
+                    const u = -0.2 + (j / 40) * 1.4;
+                    const pt = mapPoint(v, u, alphaProgress, currentActKey);
+                    const sp = toScreen(pt.px, pt.py);
+                    if (j === 0) ctx.moveTo(sp.x, sp.y);
+                    else ctx.lineTo(sp.x, sp.y);
+                }
+                ctx.stroke();
+            }
+
+            // Draw connecting fold spine A -> B,C -> D
+            const mappedA = mapPoint(0, 0, alphaProgress, currentActKey);
+            const mappedB = mapPoint(1, 0, alphaProgress, currentActKey);
+            const mappedC = mapPoint(0, 1, alphaProgress, currentActKey);
+            const mappedD = mapPoint(1, 1, alphaProgress, currentActKey);
+
+            const spA = toScreen(mappedA.px, mappedA.py);
+            const spB = toScreen(mappedB.px, mappedB.py);
+            const spC = toScreen(mappedC.px, mappedC.py);
+            const spD = toScreen(mappedD.px, mappedD.py);
+
+            // Draw connecting skeleton lines A -> (B,C) -> D
+            ctx.beginPath();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = COLOR.purple;
+            ctx.moveTo(spA.x, spA.y);
+            ctx.lineTo(spB.x, spB.y);
+            ctx.lineTo(spD.x, spD.y);
+            ctx.stroke();
+
+            // STEP 3: DECISION BOUNDARY & REGION SHADING (Alpha > 2.0)
+            if (alphaProgress > 2.0) {
+                const step3Fade = Math.min(1.0, (alphaProgress - 2.0));
+                const config = ACTIVATIONS[currentActKey];
+                const w1 = config.W2[0], w2 = config.W2[1], b2 = currentB2;
+
+                // Decision line equation: w1 * h1 + w2 * h2 + b2 = 0 => h2 = (-w1 * h1 - b2) / w2
+                ctx.save();
+                ctx.globalAlpha = step3Fade;
+
+                // Shaded Half Planes in h-space
+                // Fill polygon for s > 0 vs s <= 0
+                const numSamples = 50;
+                ctx.beginPath();
+                for (let i = 0; i <= numSamples; i++) {
+                    const h1 = -0.5 + (i / numSamples) * 2.8;
+                    const h2 = (-w1 * h1 - b2) / w2;
+                    const sp = toScreen(h1, h2);
+                    if (i === 0) ctx.moveTo(sp.x, sp.y);
+                    else ctx.lineTo(sp.x, sp.y);
+                }
+                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = COLOR.class1;
+                ctx.setLineDash([6, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Annotation label for s = 0 line
+                const midH1 = 0.8;
+                const midH2 = (-w1 * midH1 - b2) / w2;
+                const midSp = toScreen(midH1, midH2);
+                ctx.font = '11px JetBrains Mono, monospace';
+                ctx.fillStyle = COLOR.class1;
+                ctx.fillText(`s = ${w1.toFixed(1)}h₁ + ${w2.toFixed(1)}h₂ + ${b2.toFixed(2)} = 0`, midSp.x + 10, midSp.y - 10);
+
+                ctx.restore();
+            }
+
+            // Optional Vertical Test line (h1 = 0.5)
+            if (showVerticalTest && alphaProgress >= 1.8 && currentActKey === 'relu') {
+                const testSp1 = toScreen(0.5, -1.0);
+                const testSp2 = toScreen(0.5, 1.8);
+                ctx.beginPath();
+                ctx.strokeStyle = COLOR.coralError;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.moveTo(testSp1.x, testSp1.y);
+                ctx.lineTo(testSp2.x, testSp2.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.fillStyle = COLOR.coralError;
+                ctx.font = '11px sans-serif';
+                ctx.fillText('竖线 h₁=0.5 误将 D(2,1) 划为 Class 1 ✗', testSp1.x + 8, testSp1.y + 40);
+            }
+
+            // DRAW XOR POINTS & LABELS
+            const pointsToDraw = [
+                { sp: spA, ...XOR_POINTS[0], mapped: mappedA },
+                { sp: spB, ...XOR_POINTS[1], mapped: mappedB },
+                { sp: spC, ...XOR_POINTS[2], mapped: mappedC },
+                { sp: spD, ...XOR_POINTS[3], mapped: mappedD }
+            ];
+
+            // Check if B and C are merged (distance < 5px)
+            const distBC = Math.hypot(spB.x - spC.x, spB.y - spC.y);
+            const isMerged = distBC < 8;
+
+            pointsToDraw.forEach(pt => {
+                if (isMerged && pt.id === 'C') return; // Skip separate C when merged with B
+
+                const isClass1 = pt.y === 1;
+                const radius = (hoveredPointId === pt.id || (isMerged && hoveredPointId === 'C')) ? 10 : 7;
+
+                ctx.save();
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = isClass1 ? COLOR.class1 : COLOR.class0;
+
+                ctx.beginPath();
+                ctx.arc(pt.sp.x, pt.sp.y, radius, 0, Math.PI * 2);
+
+                if (isClass1) {
+                    ctx.fillStyle = COLOR.class1;
+                    ctx.fill();
+                } else {
+                    ctx.fillStyle = COLOR.bg;
+                    ctx.fill();
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = COLOR.class0;
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                // Draw Label
+                ctx.font = 'bold 11px JetBrains Mono, monospace';
+                ctx.fillStyle = isClass1 ? COLOR.class1 : COLOR.class0;
+
+                let labelText = pt.label;
+                if (isMerged && pt.id === 'B') {
+                    labelText = 'B, C (1,0)';
+                }
+
+                ctx.fillText(labelText, pt.sp.x + 12, pt.sp.y + 4);
+            });
+        }
+
+        // LEFT CANVAS: INPUT SPACE HEATMAP & DECISION BAND
+        function drawInputSpaceCanvas() {
+            const canvas = document.getElementById('canvasInputSpace');
+            const { ctx, width, height } = setupCanvasDPI(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            const minXY = -0.3, maxXY = 1.3;
+            function toScreen(x1, x2) {
+                const sx = ((x1 - minXY) / (maxXY - minXY)) * width;
+                const sy = height - ((x2 - minXY) / (maxXY - minXY)) * height;
+                return { x: sx, y: sy };
+            }
+
+            // Draw Decision Heatmap Background (Rasterized)
+            const tileSize = 6;
+            const cols = Math.ceil(width / tileSize);
+            const rows = Math.ceil(height / tileSize);
+            const config = ACTIVATIONS[currentActKey];
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const sx = c * tileSize + tileSize / 2;
+                    const sy = r * tileSize + tileSize / 2;
+
+                    const x1 = minXY + (sx / width) * (maxXY - minXY);
+                    const x2 = minXY + ((height - sy) / height) * (maxXY - minXY);
+
+                    // Forward pass: (x1, x2) -> z -> h -> s -> p
+                    const mapped = mapPoint(x1, x2, 2.0, currentActKey);
+                    const { s, p } = computePointScore(mapped.h1, mapped.h2, currentActKey, currentB2);
+
+                    // Color interpolation
+                    if (p > 0.5) {
+                        ctx.fillStyle = `rgba(240, 180, 41, ${0.15 + (p - 0.5) * 0.4})`;
+                    } else {
+                        ctx.fillStyle = `rgba(88, 196, 221, ${0.15 + (0.5 - p) * 0.4})`;
+                    }
+                    ctx.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
+                }
+            }
+
+            // Gridlines
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = COLOR.grid;
+            for (let v = 0; v <= 1.0; v += 0.5) {
+                const sp1 = toScreen(v, minXY);
+                const sp2 = toScreen(v, maxXY);
+                ctx.beginPath(); ctx.moveTo(sp1.x, sp1.y); ctx.lineTo(sp2.x, sp2.y); ctx.stroke();
+
+                const hp1 = toScreen(minXY, v);
+                const hp2 = toScreen(maxXY, v);
+                ctx.beginPath(); ctx.moveTo(hp1.x, hp1.y); ctx.lineTo(hp2.x, hp2.y); ctx.stroke();
+            }
+
+            // Draw Pulled-Back Decision Contour (p = 0.5, s = 0)
+            const gridRes = 40;
+            ctx.strokeStyle = COLOR.class1;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            let started = false;
+
+            for (let i = 0; i <= gridRes; i++) {
+                for (let j = 0; j <= gridRes; j++) {
+                    const x1 = minXY + (i / gridRes) * (maxXY - minXY);
+                    const x2 = minXY + (j / gridRes) * (maxXY - minXY);
+
+                    const mapped = mapPoint(x1, x2, 2.0, currentActKey);
+                    const { s } = computePointScore(mapped.h1, mapped.h2, currentActKey, currentB2);
+
+                    if (Math.abs(s) < 0.08) {
+                        const sp = toScreen(x1, x2);
+                        if (!started) { ctx.moveTo(sp.x, sp.y); started = true; }
+                        else { ctx.lineTo(sp.x, sp.y); }
+                    }
+                }
+            }
+            ctx.stroke();
+
+            // Plot 4 XOR Points
+            XOR_POINTS.forEach(pt => {
+                const sp = toScreen(pt.x1, pt.x2);
+                const isClass1 = pt.y === 1;
+                const isHovered = hoveredPointId === pt.id;
+
+                ctx.save();
+                ctx.shadowBlur = isHovered ? 15 : 8;
+                ctx.shadowColor = isClass1 ? COLOR.class1 : COLOR.class0;
+
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, isHovered ? 9 : 6, 0, Math.PI * 2);
+                if (isClass1) {
+                    ctx.fillStyle = COLOR.class1; ctx.fill();
+                } else {
+                    ctx.fillStyle = COLOR.bg; ctx.fill();
+                    ctx.lineWidth = 2.5; ctx.strokeStyle = COLOR.class0; ctx.stroke();
+                }
+                ctx.restore();
+
+                ctx.font = '10px JetBrains Mono, monospace';
+                ctx.fillStyle = isClass1 ? COLOR.class1 : COLOR.class0;
+                ctx.fillText(pt.label, sp.x + 8, sp.y - 8);
+            });
+
+            // Draw Interactive Probe Point P
+            const spP = toScreen(probePoint.x1, probePoint.x2);
+            ctx.save();
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = COLOR.purple;
+            ctx.beginPath();
+            ctx.arc(spP.x, spP.y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR.purple;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.font = 'bold 11px JetBrains Mono, monospace';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('探针 P', spP.x + 12, spP.y + 4);
+        }
+
+        // RIGHT CANVAS: HIDDEN SPACE & STRAIGHT DECISION CUT
+        function drawHiddenSpaceCanvas() {
+            const canvas = document.getElementById('canvasHiddenSpace');
+            const { ctx, width, height } = setupCanvasDPI(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            const minH = -0.4, maxH = 2.2;
+            function toScreen(h1, h2) {
+                const sx = ((h1 - minH) / (maxH - minH)) * width;
+                const sy = height - ((h2 - minH) / (maxH - minH)) * height;
+                return { x: sx, y: sy };
+            }
+
+            // Gridlines in h-space
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = COLOR.grid;
+            for (let v = 0; v <= 2.0; v += 0.5) {
+                const sp1 = toScreen(v, minH); const sp2 = toScreen(v, maxH);
+                ctx.beginPath(); ctx.moveTo(sp1.x, sp1.y); ctx.lineTo(sp2.x, sp2.y); ctx.stroke();
+                const hp1 = toScreen(minH, v); const hp2 = toScreen(maxH, v);
+                ctx.beginPath(); ctx.moveTo(hp1.x, hp1.y); ctx.lineTo(hp2.x, hp2.y); ctx.stroke();
+            }
+
+            // Straight Decision Boundary Line s = 0
+            const config = ACTIVATIONS[currentActKey];
+            const w1 = config.W2[0], w2 = config.W2[1], b2 = currentB2;
+
+            ctx.beginPath();
+            const p1 = toScreen(-0.4, (-w1 * (-0.4) - b2) / w2);
+            const p2 = toScreen(2.2, (-w1 * (2.2) - b2) / w2);
+            ctx.strokeStyle = COLOR.class1;
+            ctx.lineWidth = 2.5;
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+
+            // Plot 4 Mapped XOR Points in h-space
+            const mappedPoints = XOR_POINTS.map(pt => {
+                const m = mapPoint(pt.x1, pt.x2, 2.0, currentActKey);
+                return { ...pt, h1: m.h1, h2: m.h2 };
+            });
+
+            mappedPoints.forEach(pt => {
+                const sp = toScreen(pt.h1, pt.h2);
+                const isClass1 = pt.y === 1;
+                const isHovered = hoveredPointId === pt.id;
+
+                ctx.save();
+                ctx.shadowBlur = isHovered ? 15 : 8;
+                ctx.shadowColor = isClass1 ? COLOR.class1 : COLOR.class0;
+
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, isHovered ? 9 : 6, 0, Math.PI * 2);
+                if (isClass1) {
+                    ctx.fillStyle = COLOR.class1; ctx.fill();
+                } else {
+                    ctx.fillStyle = COLOR.bg; ctx.fill();
+                    ctx.lineWidth = 2.5; ctx.strokeStyle = COLOR.class0; ctx.stroke();
+                }
+                ctx.restore();
+
+                ctx.font = '10px JetBrains Mono, monospace';
+                ctx.fillStyle = isClass1 ? COLOR.class1 : COLOR.class0;
+                ctx.fillText(`${pt.id}(${pt.h1.toFixed(2)}, ${pt.h2.toFixed(2)})`, sp.x + 8, sp.y - 8);
+            });
+
+            // Map Probe P to P' in h-space
+            const probeMapped = mapPoint(probePoint.x1, probePoint.x2, 2.0, currentActKey);
+            const spP = toScreen(probeMapped.h1, probeMapped.h2);
+
+            ctx.save();
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = COLOR.purple;
+            ctx.beginPath();
+            ctx.arc(spP.x, spP.y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = COLOR.purple;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.font = 'bold 11px JetBrains Mono, monospace';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText("P' (映射后)", spP.x + 12, spP.y + 4);
+        }
+
+        // -------------------------------------------------------------
+        // PROBE DRAGGING INTERACTION
+        // -------------------------------------------------------------
+        function setupProbeDragging() {
+            const canvas = document.getElementById('canvasInputSpace');
+            let isDragging = false;
+
+            function updateProbeFromMouse(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+
+                const mx = clientX - rect.left;
+                const my = clientY - rect.top;
+
+                const minXY = -0.3, maxXY = 1.3;
+                let x1 = minXY + (mx / rect.width) * (maxXY - minXY);
+                let x2 = minXY + ((rect.height - my) / rect.height) * (maxXY - minXY);
+
+                // Clamp
+                x1 = Math.max(-0.2, Math.min(1.2, x1));
+                x2 = Math.max(-0.2, Math.min(1.2, x2));
+
+                probePoint.x1 = x1;
+                probePoint.x2 = x2;
+
+                updateProbeReadout();
+            }
+
+            canvas.addEventListener('mousedown', (e) => { isDragging = true; updateProbeFromMouse(e); });
+            canvas.addEventListener('mousemove', (e) => { if (isDragging) updateProbeFromMouse(e); });
+            window.addEventListener('mouseup', () => { isDragging = false; });
+
+            canvas.addEventListener('touchstart', (e) => { isDragging = true; updateProbeFromMouse(e); }, { passive: true });
+            canvas.addEventListener('touchmove', (e) => { if (isDragging) updateProbeFromMouse(e); }, { passive: true });
+            window.addEventListener('touchend', () => { isDragging = false; });
+        }
+
+        function updateProbeReadout() {
+            const mapped = mapPoint(probePoint.x1, probePoint.x2, 2.0, currentActKey);
+            const { s, p } = computePointScore(mapped.h1, mapped.h2, currentActKey, currentB2);
+
+            document.getElementById('probeX1').innerText = probePoint.x1.toFixed(2);
+            document.getElementById('probeX2').innerText = probePoint.x2.toFixed(2);
+            document.getElementById('probeZ1').innerText = mapped.z1.toFixed(2);
+            document.getElementById('probeZ2').innerText = mapped.z2.toFixed(2);
+            document.getElementById('probeH1').innerText = mapped.h1.toFixed(2);
+            document.getElementById('probeH2').innerText = mapped.h2.toFixed(2);
+            document.getElementById('probeS').innerText = s.toFixed(2);
+
+            const badge = document.getElementById('probeProbBadge');
+            badge.innerText = `p=${p.toFixed(2)}`;
+            if (p > 0.5) {
+                badge.className = 'px-1.5 py-0.5 rounded bg-goldClass/20 text-goldClass font-bold';
+            } else {
+                badge.className = 'px-1.5 py-0.5 rounded bg-cyanClass/20 text-cyanClass font-bold';
+            }
+        }
+
+        // -------------------------------------------------------------
+        // CALCULATIONS TABLE & CROSS-ENTROPY LOSS
+        // -------------------------------------------------------------
+        function updateCalculations() {
+            const tbody = document.getElementById('pointTableBody');
+            tbody.innerHTML = '';
+
+            let totalLoss = 0;
+            let correctCount = 0;
+
+            XOR_POINTS.forEach(pt => {
+                const mapped = mapPoint(pt.x1, pt.x2, 2.0, currentActKey);
+                const { s, p } = computePointScore(mapped.h1, mapped.h2, currentActKey, currentB2);
+
+                // Binary Cross Entropy Loss for single sample: -y ln(p) - (1-y) ln(1-p)
+                const eps = 1e-7;
+                const pClamped = Math.max(eps, Math.min(1 - eps, p));
+                const loss = pt.y === 1 ? -Math.log(pClamped) : -Math.log(1 - pClamped);
+                totalLoss += loss;
+
+                const isCorrect = (pt.y === 1 && p >= 0.5) || (pt.y === 0 && p < 0.5);
+                if (isCorrect) correctCount++;
+
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-elevatedBg/60 transition cursor-pointer';
+                tr.onmouseenter = () => { hoveredPointId = pt.id; };
+                tr.onmouseleave = () => { hoveredPointId = null; };
+
+                tr.innerHTML = `
+                    <td class="p-2.5 font-bold ${pt.y === 1 ? 'text-goldClass' : 'text-cyanClass'}">${pt.id}</td>
+                    <td class="p-2.5">(${pt.x1}, ${pt.x2})</td>
+                    <td class="p-2.5">${pt.x1 + pt.x2}</td>
+                    <td class="p-2.5">(${mapped.z1.toFixed(1)}, ${mapped.z2.toFixed(1)})</td>
+                    <td class="p-2.5 font-bold text-purpleFold">(${mapped.h1.toFixed(2)}, ${mapped.h2.toFixed(2)})</td>
+                    <td class="p-2.5 text-gray-200">${s.toFixed(2)}</td>
+                    <td class="p-2.5 font-bold ${p >= 0.5 ? 'text-goldClass' : 'text-cyanClass'}">${p.toFixed(3)}</td>
+                    <td class="p-2.5 font-bold">${pt.y}</td>
+                    <td class="p-2.5 ${loss > 0.6 ? 'text-coralError' : 'text-emeraldSuccess'}">${loss.toFixed(3)}</td>
+                    <td class="p-2.5">
+                        ${isCorrect 
+                            ? '<span class="text-emeraldSuccess font-bold">✓ 正确</span>' 
+                            : '<span class="text-coralError font-bold">✗ 错误</span>'}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            const avgLoss = totalLoss / XOR_POINTS.length;
+            document.getElementById('avgLossValue').innerText = avgLoss.toFixed(3);
+
+            // Update Loss Gauge Bar
+            const bar = document.getElementById('lossBar');
+            const percent = Math.min(100, (avgLoss / 1.0) * 100);
+            bar.style.width = `${percent}%`;
+
+            // Verdict badge update
+            const verdictBadge = document.getElementById('lossVerdictBadge');
+            const verdictDetail = document.getElementById('lossVerdictDetail');
+            const linearCeiling = Math.log(2); // ~0.6931
+
+            if (currentActKey === 'linear' || avgLoss >= linearCeiling - 0.01) {
+                verdictBadge.innerText = '线性死局';
+                verdictBadge.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-coralError/20 text-coralError border border-coralError/30';
+
+                verdictDetail.innerHTML = `
+                    <div class="font-semibold text-coralError flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>
+                        无法打破 ln(2) ≈ 0.6931 天花板！
+                    </div>
+                    <p class="text-[11px] text-gray-400">
+                        无非线性激活时，A、(B,C)、D 始终共线。直线决策边界无论如何放置，平均损失均卡在 0.693 无法下降。
+                    </p>
+                `;
+            } else {
+                verdictBadge.innerText = '成功突破天花板';
+                verdictBadge.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-emeraldSuccess/20 text-emeraldSuccess border border-emeraldSuccess/30';
+
+                verdictDetail.innerHTML = `
+                    <div class="font-semibold text-emeraldSuccess flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                        成功解开 XOR 问题 (Loss = ${avgLoss.toFixed(3)})！
+                    </div>
+                    <p class="text-[11px] text-gray-400">
+                        非线性函数打破了共线结构，超平面 s = 0 实现了 100% 正确率的分类。微调偏置 b₂ 可进一步降低 Loss。
+                    </p>
+                `;
+            }
+
+            updateProbeReadout();
+        }
+
+        // -------------------------------------------------------------
+        // SECTION 4 MINI CANVASES RENDERING
+        // -------------------------------------------------------------
+        function renderMiniCanvases() {
+            const keys = ['relu', 'gelu', 'tanh', 'linear'];
+            const names = ['Relu', 'Gelu', 'Tanh', 'Linear'];
+
+            keys.forEach((key, idx) => {
+                const canvasId = `miniCanvas${names[idx]}`;
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) return;
+
+                const { ctx, width, height } = setupCanvasDPI(canvas);
+                ctx.clearRect(0, 0, width, height);
+
+                const minH = -0.4, maxH = 2.2;
+                function toScreen(h1, h2) {
+                    const sx = ((h1 - minH) / (maxH - minH)) * width;
+                    const sy = height - ((h2 - minH) / (maxH - minH)) * height;
+                    return { x: sx, y: sy };
+                }
+
+                // Axes & Grid
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = COLOR.grid;
+                for (let v = 0; v <= 2.0; v += 1.0) {
+                    const sp1 = toScreen(v, minH); const sp2 = toScreen(v, maxH);
+                    ctx.beginPath(); ctx.moveTo(sp1.x, sp1.y); ctx.lineTo(sp2.x, sp2.y); ctx.stroke();
+                }
+
+                // Skeleton connecting fold line
+                const mappedPoints = XOR_POINTS.map(pt => {
+                    const m = mapPoint(pt.x1, pt.x2, 2.0, key);
+                    return { ...pt, h1: m.h1, h2: m.h2 };
+                });
+
+                const spA = toScreen(mappedPoints[0].h1, mappedPoints[0].h2);
+                const spB = toScreen(mappedPoints[1].h1, mappedPoints[1].h2);
+                const spD = toScreen(mappedPoints[3].h1, mappedPoints[3].h2);
+
+                ctx.beginPath();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = COLOR.purple;
+                ctx.moveTo(spA.x, spA.y);
+                ctx.lineTo(spB.x, spB.y);
+                ctx.lineTo(spD.x, spD.y);
+                ctx.stroke();
+
+                // Decision Line
+                const config = ACTIVATIONS[key];
+                const w1 = config.W2[0], w2 = config.W2[1], b2 = config.defaultB2;
+                const p1 = toScreen(-0.4, (-w1 * (-0.4) - b2) / w2);
+                const p2 = toScreen(2.2, (-w1 * (2.2) - b2) / w2);
+
+                ctx.beginPath();
+                ctx.strokeStyle = COLOR.class1;
+                ctx.lineWidth = 1.8;
+                ctx.setLineDash([4, 3]);
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Draw Points
+                mappedPoints.forEach(pt => {
+                    const sp = toScreen(pt.h1, pt.h2);
+                    const isClass1 = pt.y === 1;
+                    ctx.beginPath();
+                    ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+                    if (isClass1) {
+                        ctx.fillStyle = COLOR.class1; ctx.fill();
+                    } else {
+                        ctx.fillStyle = COLOR.bg; ctx.fill();
+                        ctx.lineWidth = 2; ctx.strokeStyle = COLOR.class0; ctx.stroke();
+                    }
+                });
+            });
+        }
+    </script>
+</body>
+</html>

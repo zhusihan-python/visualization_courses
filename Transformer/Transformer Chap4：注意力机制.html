@@ -1,0 +1,2187 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer 第 4 章：注意力机制 —— 全教程的心脏</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0d1117',
+                        cardBg: '#141b26',
+                        cardBorder: '#1e293b',
+                        cyanAccent: '#58c4dd',
+                        goldAccent: '#f0b429',
+                        coralAccent: '#ff6b6b',
+                        emeraldAccent: '#4ade80',
+                        violetAccent: '#a78bfa',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+                        math: ['Cambria Math', 'STIXTwoText', 'Times New Roman', 'serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+        /* Custom Math Typography */
+        .math {
+            font-family: 'Cambria Math', 'Times New Roman', serif;
+            font-style: italic;
+            color: #f1f5f9;
+        }
+        .math-block {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.2rem;
+            font-family: 'Cambria Math', 'Times New Roman', serif;
+            font-style: italic;
+        }
+        .frac {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            vertical-align: middle;
+            padding: 0 4px;
+            font-size: 0.9em;
+        }
+        .num {
+            border-bottom: 1.5px solid #94a3b8;
+            padding-bottom: 2px;
+            text-align: center;
+            width: 100%;
+        }
+        .den {
+            padding-top: 2px;
+            text-align: center;
+            width: 100%;
+        }
+        .math-symbol {
+            font-style: normal;
+            font-weight: 600;
+        }
+        
+        /* Glassmorphism & Micro-animations */
+        .glass-card {
+            background: rgba(20, 27, 38, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(30, 41, 59, 0.8);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, box-shadow 0.25s ease;
+        }
+        .glass-card:hover {
+            border-color: rgba(88, 196, 221, 0.4);
+            box-shadow: 0 15px 35px -10px rgba(88, 196, 221, 0.15);
+        }
+        
+        .tab-btn.active {
+            border-bottom: 2px solid #58c4dd;
+            color: #58c4dd;
+            background: rgba(88, 196, 221, 0.08);
+        }
+
+        /* Pulse glowing effect */
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(88, 196, 221, 0.2); }
+            50% { box-shadow: 0 0 25px rgba(88, 196, 221, 0.5); }
+        }
+        .glow-active { animation: pulseGlow 3s infinite ease-in-out; }
+    </style>
+</head>
+<body class="bg-darkBg text-slate-200 font-sans selection:bg-cyanAccent selection:text-darkBg min-h-screen flex flex-col">
+
+    <!-- Sticky Navigation Header -->
+    <header class="sticky top-0 z-50 bg-darkBg/90 backdrop-blur-md border-b border-cardBorder">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <span class="w-3 h-3 rounded-full bg-cyanAccent animate-ping"></span>
+                <span class="font-bold text-lg text-white tracking-wide">Transformer 教程</span>
+                <span class="text-xs px-2 py-0.5 rounded bg-cyanAccent/10 text-cyanAccent font-mono border border-cyanAccent/30">CHAPTER 04</span>
+            </div>
+            
+            <!-- Desktop Nav Links -->
+            <nav class="hidden md:flex space-x-1 lg:space-x-4 text-xs lg:text-sm font-medium">
+                <a href="#mod-4-1" class="nav-link px-2 py-1 rounded hover:text-cyanAccent hover:bg-cardBg transition">4.1 串行 vs 并行</a>
+                <a href="#mod-4-2" class="nav-link px-2 py-1 rounded hover:text-cyanAccent hover:bg-cardBg transition">4.2 Q/K/V 直觉</a>
+                <a href="#mod-4-3" class="nav-link px-2 py-1 rounded hover:text-cyanAccent hover:bg-cardBg transition">4.3&4.5 5步与Mask</a>
+                <a href="#mod-4-4" class="nav-link px-2 py-1 rounded hover:text-cyanAccent hover:bg-cardBg transition">4.4 缩放因子 &radic;d<sub>k</sub></a>
+                <a href="#mod-4-6" class="nav-link px-2 py-1 rounded hover:text-cyanAccent hover:bg-cardBg transition">4.6 多头机制</a>
+                <a href="#mod-4-7" class="nav-link px-2 py-1 rounded hover:text-cyanAccent hover:bg-cardBg transition">4.7 位置编码与RoPE</a>
+                <a href="#mod-4-8" class="nav-link px-2 py-1 rounded hover:text-cyanAccent hover:bg-cardBg transition">4.8 实战与测验</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-16">
+
+        <!-- MODULE 0: HERO HEADER -->
+        <section id="hero" class="glass-card rounded-2xl p-6 sm:p-10 relative overflow-hidden">
+            <div class="absolute -right-20 -top-20 w-96 h-96 bg-cyanAccent/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -left-20 -bottom-20 w-96 h-96 bg-violetAccent/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="relative z-10 space-y-6">
+                <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-goldAccent/10 border border-goldAccent/30 text-goldAccent text-xs font-mono">
+                    <span>⚡ 核心原理 · 全教程心脏</span>
+                </div>
+                
+                <h1 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
+                    第 4 章：注意力机制
+                    <span class="block text-transparent bg-clip-text bg-gradient-to-r from-cyanAccent via-goldAccent to-violetAccent text-2xl sm:text-4xl mt-2">
+                        Attention(Q, K, V) —— 全教程的心脏
+                    </span>
+                </h1>
+
+                <p class="text-slate-300 max-w-4xl text-base sm:text-lg leading-relaxed">
+                    注意力机制打破了传统 RNN 无法并行化与长距离信息衰减的致命枷锁。本章将从直觉到严密数学，带你手拆 Transformer 核心计算全流程、理解缩放因子 <span class="math">&radic;d<sub>k</sub></span> 的梯度救命机制、探索多头拆分与拼接收恒律，并深入 RoPE 旋转位置编码的几何魔力。
+                </p>
+
+                <!-- Interactive Hero Formula Banner -->
+                <div class="p-6 rounded-xl bg-darkBg/90 border border-cardBorder space-y-4">
+                    <div class="text-xs uppercase tracking-wider text-slate-400 font-mono text-center mb-2">
+                        👇 点击公式中的组件，解锁其线性代数含义与张量 Shape
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-lg sm:text-2xl font-mono text-white py-4 border-y border-slate-800">
+                        <span class="math text-slate-400 font-sans">Attention(Q, K, V) =</span>
+                        
+                        <!-- Softmax -->
+                        <button onclick="inspectFormula('softmax')" class="formula-btn px-3 py-1.5 rounded-lg bg-violetAccent/10 border border-violetAccent/40 hover:bg-violetAccent/30 text-violetAccent font-bold transition">
+                            softmax
+                        </button>
+                        
+                        <span class="text-slate-500 font-sans">(</span>
+
+                        <!-- Q -->
+                        <button onclick="inspectFormula('Q')" class="formula-btn px-3 py-1.5 rounded-lg bg-cyanAccent/10 border border-cyanAccent/40 hover:bg-cyanAccent/30 text-cyanAccent font-bold transition">
+                            Q
+                        </button>
+                        
+                        <span class="text-slate-400">&middot;</span>
+                        
+                        <!-- K^T -->
+                        <button onclick="inspectFormula('KT')" class="formula-btn px-3 py-1.5 rounded-lg bg-goldAccent/10 border border-goldAccent/40 hover:bg-goldAccent/30 text-goldAccent font-bold transition">
+                            K<sup>T</sup>
+                        </button>
+
+                        <span class="text-slate-400">/</span>
+
+                        <!-- sqrt(d_k) -->
+                        <button onclick="inspectFormula('scale')" class="formula-btn px-3 py-1.5 rounded-lg bg-emeraldAccent/10 border border-emeraldAccent/40 hover:bg-emeraldAccent/30 text-emeraldAccent font-bold transition">
+                            &radic;d<sub>k</sub>
+                        </button>
+
+                        <span class="text-slate-400">+</span>
+
+                        <!-- Mask -->
+                        <button onclick="inspectFormula('mask')" class="formula-btn px-3 py-1.5 rounded-lg bg-coralAccent/10 border border-coralAccent/40 hover:bg-coralAccent/30 text-coralAccent font-bold transition">
+                            Mask
+                        </button>
+
+                        <span class="text-slate-500 font-sans">)</span>
+                        
+                        <span class="text-slate-400">&middot;</span>
+
+                        <!-- V -->
+                        <button onclick="inspectFormula('V')" class="formula-btn px-3 py-1.5 rounded-lg bg-cyanAccent/10 border border-cyanAccent/40 hover:bg-cyanAccent/30 text-cyanAccent font-bold transition">
+                            V
+                        </button>
+                    </div>
+
+                    <!-- Formula Inspection Detail Box -->
+                    <div id="formula-detail" class="p-4 rounded-lg bg-cardBg border border-slate-700 text-sm space-y-2">
+                        <!-- Default view -->
+                        <div class="flex items-center space-x-2 text-cyanAccent font-semibold">
+                            <span>🔍 组件解析器：点击上方公式按钮即可查看对应维度与物理含义。</span>
+                        </div>
+                        <p class="text-slate-400">
+                            Transformer 输入序列经由三个投影矩阵 <span class="math">W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub></span> 映射为 Query、Key、Value，在矩阵空间中完成全关联关联度计算。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- MODULE 4.1: RNN vs ATTENTION -->
+        <section id="mod-4-1" class="space-y-6">
+            <div class="border-l-4 border-cyanAccent pl-4">
+                <h2 class="text-2xl font-bold text-white">Module 4.1 — 痛点引入：RNN 串行瓶颈 vs Attention 并行直达</h2>
+                <p class="text-slate-400 text-sm mt-1">为什么 Transformer 彻底淘汰了循环神经网络（RNN）？路径长度与梯度传播的决定性比赛。</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Controls Card -->
+                <div class="glass-card rounded-xl p-5 space-y-5">
+                    <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                        <span class="text-cyanAccent">⚙️</span> 实验参数控制
+                    </h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-xs font-mono mb-1">
+                                <span class="text-slate-300">序列长度 L (Token 数量)</span>
+                                <span id="lbl-seq-len" class="text-cyanAccent font-bold">40</span>
+                            </div>
+                            <input type="range" id="slider-seq-len" min="10" max="100" value="40" class="w-full accent-cyanAccent cursor-pointer">
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-xs font-mono mb-1">
+                                <span class="text-slate-300">每步梯度衰减因子 r</span>
+                                <span id="lbl-grad-factor" class="text-goldAccent font-bold">0.90</span>
+                            </div>
+                            <input type="range" id="slider-grad-factor" min="0.85" max="1.12" step="0.01" value="0.90" class="w-full accent-goldAccent cursor-pointer">
+                            <p class="text-xs text-slate-500 mt-1">r &lt; 1 表示梯度消失，r &gt; 1 表示梯度爆炸。</p>
+                        </div>
+
+                        <button id="btn-run-race" onclick="runRaceSimulation()" class="w-full py-2.5 rounded-lg bg-cyanAccent text-darkBg font-bold hover:bg-cyan-400 transition flex items-center justify-center gap-2 shadow-lg shadow-cyanAccent/20">
+                            ▶ 运行对比动画
+                        </button>
+                    </div>
+
+                    <!-- Realtime Math Readout -->
+                    <div class="p-3 rounded-lg bg-darkBg border border-slate-800 space-y-2 text-xs font-mono">
+                        <div class="flex justify-between">
+                            <span class="text-slate-400">RNN 最长路径距离:</span>
+                            <span id="rnn-path-readout" class="text-coralAccent font-bold">L = 40</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-400">RNN 末尾梯度残余:</span>
+                            <span id="rnn-grad-readout" class="text-coralAccent font-bold">0.90<sup>39</sup> = 0.016</span>
+                        </div>
+                        <div class="flex justify-between border-t border-slate-800 pt-2">
+                            <span class="text-slate-400">Attention 最长路径:</span>
+                            <span class="text-emeraldAccent font-bold">O(1) （单步直达）</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-400">Attention 梯度保留:</span>
+                            <span class="text-emeraldAccent font-bold">100% (直接无衰减)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Simulation Canvas Card -->
+                <div class="glass-card rounded-xl p-5 lg:col-span-2 space-y-4 flex flex-col justify-between">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-base font-semibold text-white">动画赛道：信息与梯度传递路线图</h3>
+                        <div class="flex items-center gap-4 text-xs">
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-coralAccent inline-block"></span> RNN (串行)</span>
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-emeraldAccent inline-block"></span> Attention (并行)</span>
+                        </div>
+                    </div>
+
+                    <div class="relative w-full h-64 bg-darkBg rounded-lg border border-slate-800 overflow-hidden">
+                        <canvas id="canvas-race" class="w-full h-full block"></canvas>
+                    </div>
+
+                    <!-- Comparison Table -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-800 text-slate-400">
+                                    <th class="py-2 px-3">对比维度</th>
+                                    <th class="py-2 px-3 text-coralAccent">RNN (LSTM / GRU)</th>
+                                    <th class="py-2 px-3 text-emeraldAccent">Self-Attention (Transformer)</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800/50 text-slate-300">
+                                <tr>
+                                    <td class="py-2 px-3 font-semibold">长距离路径长度</td>
+                                    <td class="py-2 px-3 text-coralAccent"><span class="math">O(L)</span> (随序列线性增长)</td>
+                                    <td class="py-2 px-3 text-emeraldAccent"><span class="math">O(1)</span> (任意两词一步联通)</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-2 px-3 font-semibold">GPU 并行计算能力</td>
+                                    <td class="py-2 px-3 text-coralAccent">❌ 无法并行 (第 t 步依赖 t-1 步)</td>
+                                    <td class="py-2 px-3 text-emeraldAccent">✅ 完全并行 (一次性全矩阵运算)</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-2 px-3 font-semibold">计算复杂度 (每层)</td>
+                                    <td class="py-2 px-3"><span class="math">O(L &middot; d<sup>2</sup>)</span></td>
+                                    <td class="py-2 px-3"><span class="math">O(L<sup>2</sup> &middot; d)</span> <span class="text-slate-500 text-[10px] block">(注：128K长文本需 FlashAttention 优化)</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- MODULE 4.2: Q/K/V INTUITION & PROJECTION -->
+        <section id="mod-4-2" class="space-y-6">
+            <div class="border-l-4 border-goldAccent pl-4">
+                <h2 class="text-2xl font-bold text-white">Module 4.2 — Self-Attention 直觉：Q / K / V 图书馆检索与三投影矩阵</h2>
+                <p class="text-slate-400 text-sm mt-1">从图书馆查书比喻，到探究为什么必须引入独立的三大权重矩阵 W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>。</p>
+            </div>
+
+            <!-- Library Metaphor 3 Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="glass-card rounded-xl p-4 border-t-4 border-t-cyanAccent space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono font-bold text-cyanAccent uppercase">Query (查询)</span>
+                        <span class="text-xs font-mono px-2 py-0.5 rounded bg-cyanAccent/10 text-cyanAccent">Q = X W<sub>Q</sub></span>
+                    </div>
+                    <h4 class="text-base font-bold text-white">📚 图书馆场景：我的搜索需求</h4>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        当前 Token 发出的“疑问”或“需求描述”（例如：“寻找动作的主语”或“指代消解对象”）。
+                    </p>
+                </div>
+
+                <div class="glass-card rounded-xl p-4 border-t-4 border-t-goldAccent space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono font-bold text-goldAccent uppercase">Key (索引键)</span>
+                        <span class="text-xs font-mono px-2 py-0.5 rounded bg-goldAccent/10 text-goldAccent">K = X W<sub>K</sub></span>
+                    </div>
+                    <h4 class="text-base font-bold text-white">🏷️ 图书馆场景：书脊上的分类标签</h4>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        其他 Token 暴露给外界的“特征签名”。计算 <span class="math">Q &middot; K<sup>T</sup></span> 即是将搜索需求与标签进行向量点积匹配。
+                    </p>
+                </div>
+
+                <div class="glass-card rounded-xl p-4 border-t-4 border-t-emeraldAccent space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono font-bold text-emeraldAccent uppercase">Value (数值内容)</span>
+                        <span class="text-xs font-mono px-2 py-0.5 rounded bg-emeraldAccent/10 text-emeraldAccent">V = X W<sub>V</sub></span>
+                    </div>
+                    <h4 class="text-base font-bold text-white">📖 图书馆场景：书中真正的知识正文</h4>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Token 实际承载的语义信息。最终输出输出即为按 Attention 权重加权混调后的 Value 向量。
+                    </p>
+                </div>
+            </div>
+
+            <!-- Interactive Projection Matrix Explorer -->
+            <div class="glass-card rounded-xl p-6 space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-white">交互实验：无投影 (X·Xᵀ) vs 独立三矩阵 (W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>)</h3>
+                        <p class="text-xs text-slate-400">选择当前观察的 Query Token，感受独立投影矩阵如何打破“自身点积最大”的对角线霸权。</p>
+                    </div>
+
+                    <div class="flex items-center bg-darkBg p-1 rounded-lg border border-slate-800 text-xs font-medium">
+                        <button id="mode-no-proj" onclick="setProjectionMode(false)" class="px-3 py-1.5 rounded-md transition text-slate-400">无投影 (Q=K=X)</button>
+                        <button id="mode-with-proj" onclick="setProjectionMode(true)" class="px-3 py-1.5 rounded-md transition bg-cyanAccent text-darkBg font-bold">独立三矩阵 (W<sub>Q</sub>,W<sub>K</sub>,W<sub>V</sub>)</button>
+                    </div>
+                </div>
+
+                <!-- Sentence Token Chips -->
+                <div class="space-y-2">
+                    <div class="text-xs text-slate-400 font-mono">点击切换聚焦的 Query Token:</div>
+                    <div id="token-chips-container" class="flex flex-wrap gap-3">
+                        <!-- JS populated -->
+                    </div>
+                </div>
+
+                <!-- Canvas Visualization of Arcs & Live Bars -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+                    <!-- Attention Arc Canvas -->
+                    <div class="relative w-full h-64 bg-darkBg rounded-xl border border-slate-800 overflow-hidden flex flex-col items-center justify-center p-2">
+                        <canvas id="canvas-attention-arcs" class="w-full h-full block"></canvas>
+                    </div>
+
+                    <!-- Breakdown & Weight Distribution Readout -->
+                    <div class="space-y-4">
+                        <div class="p-4 rounded-lg bg-darkBg border border-slate-800 space-y-3">
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs font-mono text-slate-400">聚焦 Token: <strong id="active-token-name" class="text-cyanAccent">它</strong></span>
+                                <span id="proj-mode-status" class="text-xs px-2 py-0.5 rounded bg-emeraldAccent/10 text-emeraldAccent font-mono">三投影矩阵启用</span>
+                            </div>
+
+                            <div id="attention-weight-bars" class="space-y-2">
+                                <!-- JS populated bars -->
+                            </div>
+                        </div>
+
+                        <div id="proj-explanation" class="text-xs text-slate-300 leading-relaxed bg-cardBg p-3 rounded-lg border border-slate-800">
+                            <!-- JS dynamic text -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- MODULE 4.3 & 4.5: 5-STEP PIPELINE & CAUSAL MASK LAB -->
+        <section id="mod-4-3" class="space-y-6">
+            <div class="border-l-4 border-coralAccent pl-4">
+                <h2 class="text-2xl font-bold text-white">Module 4.3 & 4.5 — 五步计算拆解、Shape 追踪与因果掩码（Causal Mask）实验室</h2>
+                <p class="text-slate-400 text-sm mt-1">分步步进追踪矩阵维度变化，体验 GPT 单向生成时因果掩码（Causal Mask）如何防止“偷看未来”。</p>
+            </div>
+
+            <div class="glass-card rounded-xl p-6 space-y-6">
+                <!-- 5-Step Pipeline Buttons -->
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    <button onclick="setPipelineStep(1)" id="step-btn-1" class="step-btn p-3 rounded-lg border text-left transition flex flex-col justify-between h-20">
+                        <span class="text-[10px] font-mono uppercase text-slate-400">步骤 1</span>
+                        <span class="text-xs font-bold text-white">线性投影</span>
+                        <span class="text-[10px] font-mono text-cyanAccent">(B, L, d) &rarr; Q,K,V</span>
+                    </button>
+                    
+                    <button onclick="setPipelineStep(2)" id="step-btn-2" class="step-btn p-3 rounded-lg border text-left transition flex flex-col justify-between h-20">
+                        <span class="text-[10px] font-mono uppercase text-slate-400">步骤 2</span>
+                        <span class="text-xs font-bold text-white">点积相似度</span>
+                        <span class="text-[10px] font-mono text-goldAccent">Q &middot; K<sup>T</sup> &rarr; (B, L, L)</span>
+                    </button>
+
+                    <button onclick="setPipelineStep(3)" id="step-btn-3" class="step-btn p-3 rounded-lg border text-left transition flex flex-col justify-between h-20">
+                        <span class="text-[10px] font-mono uppercase text-slate-400">步骤 3</span>
+                        <span class="text-xs font-bold text-white">除以 &radic;d<sub>k</sub> 缩放</span>
+                        <span class="text-[10px] font-mono text-emeraldAccent">Scores / &radic;d<sub>k</sub></span>
+                    </button>
+
+                    <button onclick="setPipelineStep(4)" id="step-btn-4" class="step-btn p-3 rounded-lg border text-left transition flex flex-col justify-between h-20">
+                        <span class="text-[10px] font-mono uppercase text-slate-400">步骤 4</span>
+                        <span class="text-xs font-bold text-white">Mask + Softmax</span>
+                        <span class="text-[10px] font-mono text-coralAccent">Softmax(S + M)</span>
+                    </button>
+
+                    <button onclick="setPipelineStep(5)" id="step-btn-5" class="step-btn p-3 rounded-lg border text-left transition flex flex-col justify-between h-20">
+                        <span class="text-[10px] font-mono uppercase text-slate-400">步骤 5</span>
+                        <span class="text-xs font-bold text-white">加权 Value 聚合</span>
+                        <span class="text-[10px] font-mono text-violetAccent">Weights &middot; V</span>
+                    </button>
+                </div>
+
+                <!-- Pipeline Description Banner -->
+                <div id="pipeline-desc-box" class="p-4 rounded-lg bg-darkBg border border-slate-800 text-sm space-y-1">
+                    <!-- JS populated -->
+                </div>
+
+                <!-- Causal Mask Toggle & Interactive Heatmap Grid -->
+                <div class="space-y-4 pt-4 border-t border-slate-800">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <span>🔥 5&times;5 Attention 矩阵热力图与计算拆解</span>
+                            <span class="text-xs text-slate-400 font-normal">（点击任意行/单元格查看数学推导）</span>
+                        </h3>
+
+                        <div class="flex items-center bg-darkBg p-1 rounded-lg border border-slate-800 text-xs font-medium">
+                            <button id="mask-off" onclick="setCausalMask(false)" class="px-3 py-1.5 rounded-md transition text-slate-400">无掩码 (双向 · BERT)</button>
+                            <button id="mask-on" onclick="setCausalMask(true)" class="px-3 py-1.5 rounded-md transition bg-coralAccent text-darkBg font-bold">因果掩码 (单向 · GPT)</button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <!-- Heatmap Grid Container -->
+                        <div class="lg:col-span-7 bg-darkBg p-4 rounded-xl border border-slate-800 flex flex-col items-center justify-center">
+                            <div id="heatmap-matrix-container" class="w-full max-w-md">
+                                <!-- JS Dynamic Matrix Table -->
+                            </div>
+                        </div>
+
+                        <!-- Live Calculation Step-by-Step Box -->
+                        <div class="lg:col-span-5 glass-card rounded-xl p-4 space-y-3 text-xs">
+                            <h4 class="font-bold text-cyanAccent text-sm border-b border-slate-800 pb-2 flex justify-between">
+                                <span>实时行计算拆解</span>
+                                <span id="active-row-label" class="font-mono text-slate-300">行 2: "机器"</span>
+                            </h4>
+
+                            <div class="space-y-3 font-mono">
+                                <div>
+                                    <span class="text-slate-400 block mb-1">1. 原始点积得分 Q&middot;K<sup>T</sup>:</span>
+                                    <div id="calc-raw-scores" class="p-2 rounded bg-darkBg border border-slate-800 text-slate-200 overflow-x-auto"></div>
+                                </div>
+
+                                <div>
+                                    <span class="text-slate-400 block mb-1">2. 掩码后得分 (Masked Scores):</span>
+                                    <div id="calc-masked-scores" class="p-2 rounded bg-darkBg border border-slate-800 text-coralAccent overflow-x-auto"></div>
+                                </div>
+
+                                <div>
+                                    <span class="text-slate-400 block mb-1">3. Softmax 概率分布 (&Sigma; = 1.000):</span>
+                                    <div id="calc-softmax-weights" class="p-2 rounded bg-darkBg border border-slate-800 text-emeraldAccent overflow-x-auto"></div>
+                                </div>
+
+                                <div class="p-3 rounded bg-cardBg border border-emeraldAccent/30 text-slate-300 font-sans space-y-1">
+                                    <span class="font-bold text-emeraldAccent block">凸组合性质验证 (Convex Combination):</span>
+                                    <p class="text-[11px] leading-relaxed">
+                                        由于 Softmax 权重非负且和为 1，输出向量 <span class="math">out<sub>i</sub></span> 必定落在输入 Value 向量组成的凸包内。证明：<span class="math">||out<sub>i</sub>|| &le; max ||V<sub>j</sub>||</span>。
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- MODULE 4.4: WHY DIVIDE BY SQRT(D_K) -->
+        <section id="mod-4-4" class="space-y-6">
+            <div class="border-l-4 border-emeraldAccent pl-4">
+                <h2 class="text-2xl font-bold text-white">Module 4.4 — 为什么除以 &radic;d<sub>k</sub>：方差增长与 Softmax 梯度消失实验室</h2>
+                <p class="text-slate-400 text-sm mt-1">数学推导与数值模拟：当维度 d<sub>k</sub> 变大时，无缩放的点积方差如何炸裂导致 Softmax 饱和与梯度消失。</p>
+            </div>
+
+            <div class="glass-card rounded-xl p-6 space-y-6">
+                <!-- Control Panel -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-darkBg p-4 rounded-xl border border-slate-800">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-bold text-white">选择 Key 向量维度 d<sub>k</sub>:</span>
+                            <span id="lbl-dk-val" class="text-emeraldAccent font-mono font-bold text-lg">64</span>
+                        </div>
+                        <p class="text-xs text-slate-400">假设 q, k 的每个分量相互独立且均值为 0，方差为 1。</p>
+                    </div>
+
+                    <!-- Discrete d_k Selector Buttons -->
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <button onclick="setDkValue(4)" class="dk-btn px-2.5 py-1 rounded border text-xs font-mono transition">4</button>
+                        <button onclick="setDkValue(8)" class="dk-btn px-2.5 py-1 rounded border text-xs font-mono transition">8</button>
+                        <button onclick="setDkValue(16)" class="dk-btn px-2.5 py-1 rounded border text-xs font-mono transition">16</button>
+                        <button onclick="setDkValue(32)" class="dk-btn px-2.5 py-1 rounded border text-xs font-mono transition">32</button>
+                        <button onclick="setDkValue(64)" class="dk-btn px-2.5 py-1 rounded border text-xs font-mono transition bg-emeraldAccent text-darkBg font-bold">64</button>
+                        <button onclick="setDkValue(128)" class="dk-btn px-2.5 py-1 rounded border text-xs font-mono transition">128</button>
+                        <button onclick="setDkValue(256)" class="dk-btn px-2.5 py-1 rounded border text-xs font-mono transition">256</button>
+                        <button onclick="setDkValue(512)" class="dk-btn px-2.5 py-1 rounded border text-xs font-mono transition">512</button>
+                        
+                        <button onclick="resampleGaussianVectors()" class="ml-2 px-3 py-1 rounded bg-slate-800 text-cyanAccent hover:bg-slate-700 text-xs font-bold transition">
+                            🎲 重新采样
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Side-by-Side Charts & Metrics -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Left: Unscaled -->
+                    <div class="p-4 rounded-xl bg-darkBg border border-coralAccent/30 space-y-3">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <h4 class="text-sm font-bold text-coralAccent">未缩放 (Unscaled): Q &middot; K<sup>T</sup></h4>
+                            <span class="text-xs px-2 py-0.5 rounded bg-coralAccent/10 text-coralAccent font-mono">方差 Var &approx; d<sub>k</sub></span>
+                        </div>
+                        
+                        <div class="relative w-full h-48 bg-cardBg rounded-lg border border-slate-800">
+                            <canvas id="canvas-chart-unscaled" class="w-full h-full block"></canvas>
+                        </div>
+
+                        <!-- Metrics Card Unscaled -->
+                        <div class="grid grid-cols-2 gap-2 text-xs font-mono pt-2">
+                            <div class="bg-cardBg p-2 rounded border border-slate-800">
+                                <span class="text-slate-400 block text-[10px]">理论点积方差</span>
+                                <span id="metric-unscaled-var" class="text-coralAccent font-bold text-sm">64.0</span>
+                            </div>
+                            <div class="bg-cardBg p-2 rounded border border-slate-800">
+                                <span class="text-slate-400 block text-[10px]">最大 Softmax 权重</span>
+                                <span id="metric-unscaled-max" class="text-coralAccent font-bold text-sm">0.9982</span>
+                            </div>
+                            <div class="bg-cardBg p-2 rounded border border-slate-800">
+                                <span class="text-slate-400 block text-[10px]">分布信息熵 H(w)</span>
+                                <span id="metric-unscaled-entropy" class="text-coralAccent font-bold text-sm">0.021 nats</span>
+                            </div>
+                            <div class="bg-cardBg p-2 rounded border border-slate-800">
+                                <span class="text-slate-400 block text-[10px]">Softmax 雅可比最大梯度</span>
+                                <span id="metric-unscaled-grad" class="text-coralAccent font-bold text-sm">0.0018 (饱和消失!)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Scaled -->
+                    <div class="p-4 rounded-xl bg-darkBg border border-emeraldAccent/30 space-y-3">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <h4 class="text-sm font-bold text-emeraldAccent">已缩放 (Scaled): (Q &middot; K<sup>T</sup>) / &radic;d<sub>k</sub></h4>
+                            <span class="text-xs px-2 py-0.5 rounded bg-emeraldAccent/10 text-emeraldAccent font-mono">方差 Var &approx; 1.0</span>
+                        </div>
+                        
+                        <div class="relative w-full h-48 bg-cardBg rounded-lg border border-slate-800">
+                            <canvas id="canvas-chart-scaled" class="w-full h-full block"></canvas>
+                        </div>
+
+                        <!-- Metrics Card Scaled -->
+                        <div class="grid grid-cols-2 gap-2 text-xs font-mono pt-2">
+                            <div class="bg-cardBg p-2 rounded border border-slate-800">
+                                <span class="text-slate-400 block text-[10px]">理论点积方差</span>
+                                <span id="metric-scaled-var" class="text-emeraldAccent font-bold text-sm">1.0</span>
+                            </div>
+                            <div class="bg-cardBg p-2 rounded border border-slate-800">
+                                <span class="text-slate-400 block text-[10px]">最大 Softmax 权重</span>
+                                <span id="metric-scaled-max" class="text-emeraldAccent font-bold text-sm">0.3421</span>
+                            </div>
+                            <div class="bg-cardBg p-2 rounded border border-slate-800">
+                                <span class="text-slate-400 block text-[10px]">分布信息熵 H(w)</span>
+                                <span id="metric-scaled-entropy" class="text-emeraldAccent font-bold text-sm">1.845 nats</span>
+                            </div>
+                            <div class="bg-cardBg p-2 rounded border border-slate-800">
+                                <span class="text-slate-400 block text-[10px]">Softmax 雅可比最大梯度</span>
+                                <span id="metric-scaled-grad" class="text-emeraldAccent font-bold text-sm">0.2250 (健康流动)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Math Proof Explanation Box -->
+                <div class="p-4 rounded-lg bg-darkBg border border-slate-800 text-xs text-slate-300 leading-relaxed space-y-2">
+                    <h4 class="font-bold text-goldAccent text-sm flex items-center gap-1">
+                        📐 数学证明：为什么 Var(q &middot; k) = d<sub>k</sub> ？
+                    </h4>
+                    <p>
+                        设两个独立的向量 <span class="math">q, k &in; &real;<sup>d<sub>k</sub></sup></span>，其分量满足独立同分布 <span class="math">q<sub>i</sub>, k<sub>i</sub> &sim; (0, 1)</span>。
+                        点积为 <span class="math">q &middot; k = &Sigma;<sub>i=1</sub><sup>d<sub>k</sub></sup> q<sub>i</sub> k<sub>i</sub></span>。
+                    </p>
+                    <p>
+                        由于独立性：<span class="math">E[q<sub>i</sub> k<sub>i</sub>] = E[q<sub>i</sub>] E[k<sub>i</sub>] = 0</span>。
+                        方差为 <span class="math">Var(q<sub>i</sub> k<sub>i</sub>) = E[q<sub>i</sub><sup>2</sup> k<sub>i</sub><sup>2</sup>] - (E[q<sub>i</sub> k<sub>i</sub>])<sup>2</sup> = Var(q<sub>i</sub>) Var(k<sub>i</sub>) = 1 &times; 1 = 1</span>。
+                    </p>
+                    <p>
+                        根据独立变量和的方差性质：<span class="math">Var(q &middot; k) = &Sigma;<sub>i=1</sub><sup>d<sub>k</sub></sup> Var(q<sub>i</sub> k<sub>i</sub>) = d<sub>k</sub></span>。
+                        因此标准差为 <span class="math">&sigma; = &radic;d<sub>k</sub></span>。除以 <span class="math">&radic;d<sub>k</sub></span> 可以将方差强行缩放回 1.0，防止进入 Softmax 的平坦极值区导致梯度消失。
+                    </p>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- MODULE 4.6: MULTI-HEAD ATTENTION & PARAM CONSERVATION -->
+        <section id="mod-4-6" class="space-y-6">
+            <div class="border-l-4 border-violetAccent pl-4">
+                <h2 class="text-2xl font-bold text-white">Module 4.6 — 多头注意力（Multi-Head Attention）：拆头、拼接与参数量守恒</h2>
+                <p class="text-slate-400 text-sm mt-1">多头机制如何让模型在不同子空间中并行捕捉多种不同类型的语义关系，同时维持总参数量不变？</p>
+            </div>
+
+            <div class="glass-card rounded-xl p-6 space-y-6">
+                <!-- Interactive Parameter & Shape Calculator -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-darkBg p-4 rounded-xl border border-slate-800">
+                    <div class="space-y-3">
+                        <label class="text-xs font-bold text-slate-300 block">模型隐层维度 d<sub>model</sub>:</label>
+                        <select id="select-dmodel" onchange="updateMultiHeadCalc()" class="w-full bg-cardBg border border-slate-700 rounded-lg p-2 text-xs font-mono text-cyanAccent focus:outline-none focus:border-cyanAccent">
+                            <option value="64">64 (微型模型)</option>
+                            <option value="128">128</option>
+                            <option value="512" selected>512 (Standard Transformer)</option>
+                            <option value="768">768 (BERT-Base)</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="text-xs font-bold text-slate-300 block">注意力头数 h (n_heads):</label>
+                        <select id="select-heads" onchange="updateMultiHeadCalc()" class="w-full bg-cardBg border border-slate-700 rounded-lg p-2 text-xs font-mono text-goldAccent focus:outline-none focus:border-goldAccent">
+                            <option value="1">1 头 (Single Head)</option>
+                            <option value="2">2 头</option>
+                            <option value="4">4 头</option>
+                            <option value="8" selected>8 头 (Standard)</option>
+                            <option value="16">16 头</option>
+                        </select>
+                    </div>
+
+                    <div class="p-3 rounded-lg bg-cardBg border border-slate-700 space-y-1 text-xs font-mono">
+                        <div class="flex justify-between">
+                            <span class="text-slate-400">单头维度 d<sub>k</sub> = d<sub>model</sub>/h:</span>
+                            <span id="mha-dk-out" class="text-emeraldAccent font-bold">64</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-400">单个投影矩阵 Params:</span>
+                            <span id="mha-single-params" class="text-slate-200">512 &times; 512 = 262,144</span>
+                        </div>
+                        <div class="flex justify-between border-t border-slate-800 pt-1">
+                            <span class="text-slate-400">4矩阵总参数 (W<sub>Q,K,V,O</sub>):</span>
+                            <span id="mha-total-params" class="text-cyanAccent font-bold">1,048,576</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tensor Reshape & Transpose Flow Visualizer -->
+                <div class="p-4 rounded-xl bg-darkBg border border-slate-800 space-y-3">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
+                        📐 多头维度 Reshape 与 Transpose 张量变换流
+                    </h4>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-5 gap-2 text-center text-xs font-mono">
+                        <div class="p-2 rounded bg-cardBg border border-slate-800">
+                            <span class="text-[10px] text-slate-400 block">输入 Tensor</span>
+                            <span class="text-cyanAccent font-bold">(B, L, d_model)</span>
+                        </div>
+                        <div class="p-2 rounded bg-cardBg border border-slate-800">
+                            <span class="text-[10px] text-slate-400 block">拆分多头 Reshape</span>
+                            <span class="text-goldAccent font-bold">(B, L, h, d_k)</span>
+                        </div>
+                        <div class="p-2 rounded bg-cardBg border border-slate-800">
+                            <span class="text-[10px] text-slate-400 block">转置 Transpose(1,2)</span>
+                            <span class="text-violetAccent font-bold">(B, h, L, d_k)</span>
+                        </div>
+                        <div class="p-2 rounded bg-cardBg border border-slate-800">
+                            <span class="text-[10px] text-slate-400 block">并行 Attention</span>
+                            <span class="text-emeraldAccent font-bold">(B, h, L, d_k)</span>
+                        </div>
+                        <div class="p-2 rounded bg-cardBg border border-slate-800">
+                            <span class="text-[10px] text-slate-400 block">拼接 Concat &amp; W<sub>O</sub></span>
+                            <span class="text-cyanAccent font-bold">(B, L, d_model)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4-Head Pattern Explorer -->
+                <div class="space-y-4 pt-2">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                            <span>🎭 4 头注意力分工交互探索 ["小猫", "追着", "它", "自己的", "尾巴"]</span>
+                        </h4>
+
+                        <!-- Head Tabs -->
+                        <div class="flex flex-wrap items-center bg-darkBg p-1 rounded-lg border border-slate-800 text-xs font-medium">
+                            <button onclick="setHeadExplorerTab(0)" id="head-tab-0" class="head-tab px-2.5 py-1 rounded transition text-slate-400">Head 0 (主谓)</button>
+                            <button onclick="setHeadExplorerTab(1)" id="head-tab-1" class="head-tab px-2.5 py-1 rounded transition text-slate-400">Head 1 (代词)</button>
+                            <button onclick="setHeadExplorerTab(2)" id="head-tab-2" class="head-tab px-2.5 py-1 rounded transition text-slate-400">Head 2 (相邻)</button>
+                            <button onclick="setHeadExplorerTab(3)" id="head-tab-3" class="head-tab px-2.5 py-1 rounded transition text-slate-400">Head 3 (锚点)</button>
+                            <button onclick="setHeadExplorerTab('all')" id="head-tab-all" class="head-tab px-2.5 py-1 rounded transition bg-violetAccent text-darkBg font-bold">四头全景视图</button>
+                        </div>
+                    </div>
+
+                    <div id="multihead-heatmap-display" class="bg-darkBg p-4 rounded-xl border border-slate-800">
+                        <!-- JS Rendered Head Maps -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- MODULE 4.7: POSITIONAL ENCODING & ROPE -->
+        <section id="mod-4-7" class="space-y-6">
+            <div class="border-l-4 border-cyanAccent pl-4">
+                <h2 class="text-2xl font-bold text-white">Module 4.7 — 位置编码：打破置换等变性、正弦编码与 RoPE 旋转实验室</h2>
+                <p class="text-slate-400 text-sm mt-1">从词袋缺陷到正弦高维波长，再到现代 LLM 标准配置 RoPE 旋转位置编码的二维复数平面旋转。</p>
+            </div>
+
+            <!-- PART A: Permutation Equivariance Demo -->
+            <div class="glass-card rounded-xl p-6 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                    <div>
+                        <h3 class="text-base font-bold text-white">Part A — 置换等变性 (Permutation Equivariance) 验证实验室</h3>
+                        <p class="text-xs text-slate-400">对比 "狗 咬 人" 与 "人 咬 狗"：若无位置编码，向量特征集合完全相同！</p>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button id="btn-toggle-pe" onclick="togglePEinEquivDemo()" class="px-3 py-1.5 rounded-md text-xs font-bold transition bg-coralAccent text-darkBg">
+                            位置编码: OFF
+                        </button>
+                        <button onclick="swapWordsInEquivDemo()" class="px-3 py-1.5 rounded-md text-xs font-bold bg-slate-800 text-cyanAccent hover:bg-slate-700 transition">
+                            🔄 交换语序 ("狗 咬 人" &harr; "人 咬 狗")
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="p-3 rounded-lg bg-darkBg border border-slate-800 space-y-2">
+                        <span class="text-slate-400 font-mono">当前输入序列:</span>
+                        <div id="equiv-seq-display" class="flex gap-2 font-bold text-white text-sm"></div>
+                    </div>
+
+                    <div class="p-3 rounded-lg bg-darkBg border border-slate-800 space-y-2">
+                        <span class="text-slate-400 font-mono">模型输出向量表示检测:</span>
+                        <div id="equiv-result-status" class="font-semibold text-coralAccent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PART B: Sinusoidal Positional Encoding Canvas Heatmap -->
+            <div class="glass-card rounded-xl p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-base font-bold text-white">Part B — 绝对正弦位置编码 (Sinusoidal Positional Encoding) 频谱热力图</h3>
+                        <p class="text-xs text-slate-400">PE(pos, 2i) = sin(pos / 10000<sup>2i/d</sup>), PE(pos, 2i+1) = cos(pos / 10000<sup>2i/d</sup>)</p>
+                    </div>
+                    <span id="pe-hover-info" class="text-xs font-mono text-cyanAccent bg-darkBg px-3 py-1 rounded border border-slate-800">
+                        悬停画布查看具体 (pos, dim) 对应数值
+                    </span>
+                </div>
+
+                <div class="relative w-full h-48 bg-darkBg rounded-lg border border-slate-800 overflow-hidden">
+                    <canvas id="canvas-sinusoidal-pe" class="w-full h-full block cursor-crosshair"></canvas>
+                </div>
+            </div>
+
+            <!-- PART C: RoPE 2D Rotation Interactive Lab -->
+            <div class="glass-card rounded-xl p-6 space-y-6">
+                <div class="border-b border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-base font-bold text-goldAccent flex items-center gap-2">
+                            <span>🌀 Part C — RoPE (旋转位置编码) 2D 单位圆几何实验室</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">通过复数平面旋转 R<sub>m</sub> 与 R<sub>n</sub>，使点积仅取决于相对距离 &Delta; = n - m。</p>
+                    </div>
+
+                    <!-- Presets for Delta = 2 -->
+                    <div class="flex flex-wrap items-center gap-1 text-xs">
+                        <span class="text-slate-400 mr-1">预设 &Delta;=2:</span>
+                        <button onclick="setRopePositions(0, 2)" class="px-2 py-1 rounded bg-slate-800 text-slate-200 hover:text-cyanAccent font-mono">(0, 2)</button>
+                        <button onclick="setRopePositions(1, 3)" class="px-2 py-1 rounded bg-slate-800 text-slate-200 hover:text-cyanAccent font-mono">(1, 3)</button>
+                        <button onclick="setRopePositions(5, 7)" class="px-2 py-1 rounded bg-slate-800 text-slate-200 hover:text-cyanAccent font-mono">(5, 7)</button>
+                        <button onclick="setRopePositions(100, 102)" class="px-2 py-1 rounded bg-slate-800 text-slate-200 hover:text-cyanAccent font-mono">(100, 102)</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                    <!-- Controls & Sliders -->
+                    <div class="lg:col-span-5 space-y-5">
+                        <div class="space-y-3 bg-darkBg p-4 rounded-xl border border-slate-800">
+                            <div>
+                                <div class="flex justify-between text-xs font-mono mb-1">
+                                    <span class="text-cyanAccent font-bold">Query 位置 pos_q (m):</span>
+                                    <span id="lbl-pos-q" class="text-cyanAccent font-bold">0</span>
+                                </div>
+                                <input type="range" id="slider-pos-q" min="0" max="105" value="0" oninput="updateRopeLab()" class="w-full accent-cyanAccent cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs font-mono mb-1">
+                                    <span class="text-goldAccent font-bold">Key 位置 pos_k (n):</span>
+                                    <span id="lbl-pos-k" class="text-goldAccent font-bold">2</span>
+                                </div>
+                                <input type="range" id="slider-pos-k" min="0" max="105" value="2" oninput="updateRopeLab()" class="w-full accent-goldAccent cursor-pointer">
+                            </div>
+                        </div>
+
+                        <!-- Live Dot-Product Invariance Readout -->
+                        <div class="p-4 rounded-xl bg-cardBg border border-goldAccent/40 space-y-2 text-xs font-mono">
+                            <div class="flex justify-between border-b border-slate-800 pb-1">
+                                <span class="text-slate-400">相对距离 &Delta; = pos_k - pos_q:</span>
+                                <span id="rope-delta-readout" class="text-goldAccent font-bold text-sm">2</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">旋转前内积 q &middot; k:</span>
+                                <span id="rope-orig-dot" class="text-slate-300">0.820000</span>
+                            </div>
+                            <div class="flex justify-between text-emeraldAccent font-bold pt-1 border-t border-slate-800">
+                                <span>旋转后内积 q'<sub>m</sub> &middot; k'<sub>n</sub>:</span>
+                                <span id="rope-rot-dot">0.714521</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 font-sans mt-2">
+                                ✨ 验证结论：保持相对距离 <span class="math">&Delta; = 2</span> 不变，无论整体平移至位置 <span class="math">m=0</span> 还是 <span class="math">m=100</span>，旋转后的内积数值<strong>严格保持一致到小数点后 6 位</strong>！
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 2D Canvas Unit Circle -->
+                    <div class="lg:col-span-7 relative w-full h-80 bg-darkBg rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center p-2">
+                        <canvas id="canvas-rope-circle" class="w-full h-full block"></canvas>
+                    </div>
+                </div>
+
+                <!-- Comparison Table of Positional Encodings -->
+                <div class="overflow-x-auto pt-2">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-800 text-slate-400">
+                                <th class="py-2 px-3">编码类型</th>
+                                <th class="py-2 px-3">额外参数量</th>
+                                <th class="py-2 px-3">外推能力 (Extrapolation)</th>
+                                <th class="py-2 px-3">相对位置感知</th>
+                                <th class="py-2 px-3">代表模型</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/50 text-slate-300 font-mono">
+                            <tr>
+                                <td class="py-2 px-3 font-semibold font-sans text-cyanAccent">绝对正弦编码 (Sinusoidal)</td>
+                                <td class="py-2 px-3">0 (固定公式)</td>
+                                <td class="py-2 px-3 text-goldAccent">中等</td>
+                                <td class="py-2 px-3">通过三角函数积化和差间接具备</td>
+                                <td class="py-2 px-3 font-sans">Transformer 原始论文</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-3 font-semibold font-sans text-coralAccent">可学习位置编码 (Learned PE)</td>
+                                <td class="py-2 px-3">L<sub>max</sub> &times; d<sub>model</sub></td>
+                                <td class="py-2 px-3 text-coralAccent">极差 (超过最大长度崩溃)</td>
+                                <td class="py-2 px-3">无显式几何关系</td>
+                                <td class="py-2 px-3 font-sans">BERT, GPT-2</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 px-3 font-semibold font-sans text-emeraldAccent">RoPE (旋转位置编码)</td>
+                                <td class="py-2 px-3">0 (旋转矩阵)</td>
+                                <td class="py-2 px-3 text-emeraldAccent">极强 (结合 YaRN / NTK 扩展)</td>
+                                <td class="py-2 px-3 text-emeraldAccent">完美支持 (内积仅依赖 relative &Delta;)</td>
+                                <td class="py-2 px-3 font-sans">LLaMA 1-3, Qwen 2.5, DeepSeek</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- MODULE 4.8: NUMPY CODE & QUIZ -->
+        <section id="mod-4-8" class="space-y-6">
+            <div class="border-l-4 border-goldAccent pl-4">
+                <h2 class="text-2xl font-bold text-white">Module 4.8 — 纯 NumPy 实战代码库 &amp; 5 题互动测验</h2>
+                <p class="text-slate-400 text-sm mt-1">手写 Python/NumPy 完整实现，并通关 5 道核心知识点测试。</p>
+            </div>
+
+            <!-- NumPy Code Viewer with Tabs -->
+            <div class="glass-card rounded-xl p-6 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-lg">🐍</span>
+                        <h3 class="text-base font-bold text-white">纯 NumPy 实战源码库</h3>
+                    </div>
+
+                    <!-- Code Tabs -->
+                    <div class="flex items-center bg-darkBg p-1 rounded-lg border border-slate-800 text-xs font-mono">
+                        <button onclick="setCodeTab('attn')" id="code-tab-attn" class="code-tab px-3 py-1.5 rounded-md transition text-slate-400">ch4_attention.py</button>
+                        <button onclick="setCodeTab('mha')" id="code-tab-mha" class="code-tab px-3 py-1.5 rounded-md transition text-slate-400">ch4_multihead.py</button>
+                        <button onclick="setCodeTab('rope')" id="code-tab-rope" class="code-tab px-3 py-1.5 rounded-md transition text-slate-400">ch4_rope_pe.py</button>
+                    </div>
+                </div>
+
+                <!-- Code Container with Copy Button -->
+                <div class="relative">
+                    <button onclick="copyCurrentCode()" class="absolute right-3 top-3 px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono border border-slate-700 transition flex items-center gap-1 z-10">
+                        📋 复制源码
+                    </button>
+                    
+                    <pre class="p-4 rounded-xl bg-darkBg border border-slate-800 font-mono text-xs text-slate-300 overflow-x-auto leading-relaxed max-h-96"><code id="code-display"></code></pre>
+                </div>
+            </div>
+
+            <!-- 5-Question Interactive Quiz -->
+            <div class="glass-card rounded-xl p-6 space-y-6">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <span>🧪 4 章核心知识点互动测验</span>
+                    </h3>
+                    <div class="text-xs font-mono text-cyanAccent bg-darkBg px-3 py-1 rounded border border-slate-800">
+                        得分: <span id="quiz-score" class="font-bold text-lg">0</span> / 5
+                    </div>
+                </div>
+
+                <div id="quiz-container" class="space-y-6">
+                    <!-- JS populated Quiz Questions -->
+                </div>
+
+                <div class="text-center pt-2">
+                    <button onclick="resetQuiz()" class="px-6 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyanAccent font-bold text-xs transition">
+                        🔄 重新挑战测验
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chapter Summary Box -->
+            <div class="p-6 rounded-2xl bg-gradient-to-br from-cardBg via-darkBg to-cardBg border border-cyanAccent/40 space-y-4">
+                <h3 class="text-lg font-bold text-cyanAccent flex items-center gap-2">
+                    <span>🎓 第 4 章 核心总结 Checklist</span>
+                </h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-300">
+                    <div class="flex items-start gap-2">
+                        <span class="text-emeraldAccent font-bold">✓</span>
+                        <span><strong>并行效率:</strong> Attention 将序列传输距离压缩为 O(1)，打破了 RNN 无法并行训练的致命缺点。</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <span class="text-emeraldAccent font-bold">✓</span>
+                        <span><strong>三投影矩阵:</strong> W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> 解耦了 Token 的“被检索属性”与“主动检索需求”。</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <span class="text-emeraldAccent font-bold">✓</span>
+                        <span><strong>缩放因子 &radic;d<sub>k</sub>:</strong> 将点积方差从 d<sub>k</sub> 缩放回 1.0，防止 Softmax 极值饱和引发梯度消失。</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <span class="text-emeraldAccent font-bold">✓</span>
+                        <span><strong>因果掩码 Causal Mask:</strong> 在上三角置入 -&infin;，保证生成式 LLM 无法“偷看未来的答案”。</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <span class="text-emeraldAccent font-bold">✓</span>
+                        <span><strong>多头守恒律:</strong> 拆分多头提升多子空间表达力的同时，总矩阵参数量与计算复杂度严格保持不变。</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <span class="text-emeraldAccent font-bold">✓</span>
+                        <span><strong>RoPE 旋转位置:</strong> 二维复数旋转矩阵实现绝对编码形式下相对位置依赖的完美数学内积性。</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-cardBorder py-6 text-center text-xs text-slate-500 font-mono">
+        Transformer 深度全景教程 · 第 4 章 注意力机制 · 交互式教学网页
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // High-DPI Canvas Setup Helper
+        function setupRetinaCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return null;
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            return { ctx, width: rect.width, height: rect.height, dpr };
+        }
+
+        // ==========================================
+        // MODULE 0: HERO FORMULA INSPECTOR
+        // ==========================================
+        const formulaDetails = {
+            'softmax': {
+                title: 'Softmax 归一化激活函数',
+                shape: '(B, H, L, L)',
+                desc: '沿着最后一个维度计算指数归一化，将原始相似度得分转换为非负且和为 1.0 的概率分布矩阵。'
+            },
+            'Q': {
+                title: 'Query (查询矩阵)',
+                shape: '(B, L, d_k) 或 (B, H, L, d_k)',
+                desc: '输入 X 乘以 W_Q 投影得到，代表当前序列各个位置主动向外寻求信息的“搜索需求向量”。'
+            },
+            'KT': {
+                title: 'K^T (Key 矩阵的转置)',
+                shape: '(B, d_k, L) 或 (B, H, d_k, L)',
+                desc: '输入 X 乘以 W_K 后转置，与 Q 做点积求取相似度。转置使得维度 (L, d_k) @ (d_k, L) 相乘得到 (L, L) 的全相关配对矩阵。'
+            },
+            'scale': {
+                title: '÷ √d_k 缩放因子',
+                shape: '标量 (Scalar)',
+                desc: 'Key 向量维度的平方根。除以 √d_k 可以将点积的方差强行缩放归一为 1.0，彻底消除 Softmax 极值饱和导致的梯度消失。'
+            },
+            'mask': {
+                title: 'Mask (掩码矩阵)',
+                shape: '(1, 1, L, L) 或 (L, L)',
+                desc: '在解码生成（GPT 风格）时，在矩阵上三角加上 -∞（或 -1e9），使 Softmax 在这些未来位置上的权重严格归零。'
+            },
+            'V': {
+                title: 'Value (数值内容矩阵)',
+                shape: '(B, L, d_v) 或 (B, H, L, d_k)',
+                desc: '输入 X 乘以 W_V 投影得到，代表 Token 实际承载的语义正文。输出即为 Softmax 权重矩阵对 Value 的加权凸组合。'
+            }
+        };
+
+        function inspectFormula(key) {
+            const info = formulaDetails[key];
+            if (!info) return;
+            const box = document.getElementById('formula-detail');
+            box.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <span class="text-cyanAccent font-bold text-base">${info.title}</span>
+                    <span class="text-xs font-mono px-2 py-0.5 rounded bg-cyanAccent/10 text-cyanAccent border border-cyanAccent/30">Shape: ${info.shape}</span>
+                </div>
+                <p class="text-slate-300 text-xs leading-relaxed mt-1">${info.desc}</p>
+            `;
+        }
+
+        // ==========================================
+        // MODULE 4.1: RNN vs ATTENTION RACE SIMULATOR
+        // ==========================================
+        let raceAnimId = null;
+        let raceProgress = 0;
+
+        function runRaceSimulation() {
+            const L = parseInt(document.getElementById('slider-seq-len').value);
+            const r = parseFloat(document.getElementById('slider-grad-factor').value);
+            
+            // Update Math Readout
+            document.getElementById('rnn-path-readout').textContent = `L = ${L}`;
+            const gradVal = Math.pow(r, L - 1);
+            document.getElementById('rnn-grad-readout').textContent = `${r.toFixed(2)}^${L - 1} = ${gradVal.toFixed(4)}`;
+
+            if (raceAnimId) cancelAnimationFrame(raceAnimId);
+            raceProgress = 0;
+
+            function animate() {
+                raceProgress += 0.015;
+                drawRaceCanvas(L, r, raceProgress);
+                if (raceProgress < 1.0) {
+                    raceAnimId = requestAnimationFrame(animate);
+                }
+            }
+            animate();
+        }
+
+        function drawRaceCanvas(L, r, progress) {
+            const setup = setupRetinaCanvas('canvas-race');
+            if (!setup) return;
+            const { ctx, width, height } = setup;
+
+            ctx.clearRect(0, 0, width, height);
+
+            const padding = 50;
+            const trackWidth = width - 2 * padding;
+            const rnnY = height * 0.3;
+            const attnY = height * 0.75;
+
+            // Track Labels
+            ctx.font = '12px Inter, sans-serif';
+            ctx.fillStyle = '#ff6b6b';
+            ctx.fillText('RNN Track (串行 step-by-step)', padding, rnnY - 25);
+
+            ctx.fillStyle = '#4ade80';
+            ctx.fillText('Attention Track (并行 全连通矩阵)', padding, attnY - 25);
+
+            // Draw RNN Track
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(padding, rnnY);
+            ctx.lineTo(width - padding, rnnY);
+            ctx.stroke();
+
+            const nodeSpacing = trackWidth / Math.min(L, 20);
+            const visibleNodes = Math.min(L, 20);
+
+            for (let i = 0; i < visibleNodes; i++) {
+                const x = padding + i * nodeSpacing;
+                const nodeStep = (i / (visibleNodes - 1)) * progress;
+                const localGrad = Math.pow(r, i);
+                
+                // Draw Node
+                ctx.beginPath();
+                ctx.arc(x, rnnY, 6, 0, Math.PI * 2);
+                ctx.fillStyle = i / visibleNodes <= progress ? '#ff6b6b' : '#334155';
+                ctx.fill();
+
+                if (i > 0 && (i / visibleNodes) <= progress) {
+                    // Draw step arrow
+                    ctx.strokeStyle = `rgba(255, 107, 107, ${Math.min(1, localGrad)})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x - nodeSpacing, rnnY);
+                    ctx.lineTo(x, rnnY);
+                    ctx.stroke();
+                }
+            }
+
+            // Draw Attention Track
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(padding, attnY);
+            ctx.lineTo(width - padding, attnY);
+            ctx.stroke();
+
+            for (let i = 0; i < visibleNodes; i++) {
+                const x = padding + i * nodeSpacing;
+                ctx.beginPath();
+                ctx.arc(x, attnY, 6, 0, Math.PI * 2);
+                ctx.fillStyle = progress > 0.1 ? '#4ade80' : '#334155';
+                ctx.fill();
+            }
+
+            // Draw all-to-all Attention arcs at once when progress > 0.1
+            if (progress > 0.1) {
+                const arcAlpha = Math.min(0.6, (progress - 0.1) * 1.2);
+                ctx.strokeStyle = `rgba(74, 222, 128, ${arcAlpha})`;
+                ctx.lineWidth = 1;
+
+                for (let i = 0; i < visibleNodes; i++) {
+                    const x1 = padding + i * nodeSpacing;
+                    for (let j = i + 1; j < visibleNodes; j++) {
+                        const x2 = padding + j * nodeSpacing;
+                        const arcHeight = Math.min(35, (j - i) * 4);
+                        ctx.beginPath();
+                        ctx.moveTo(x1, attnY);
+                        ctx.quadraticCurveTo((x1 + x2) / 2, attnY - arcHeight, x2, attnY);
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        // Add event listeners for Module 4.1 Sliders
+        document.getElementById('slider-seq-len').addEventListener('input', (e) => {
+            document.getElementById('lbl-seq-len').textContent = e.target.value;
+            runRaceSimulation();
+        });
+        document.getElementById('slider-grad-factor').addEventListener('input', (e) => {
+            document.getElementById('lbl-grad-factor').textContent = e.target.value;
+            runRaceSimulation();
+        });
+
+
+        // ==========================================
+        // MODULE 4.2: TOKEN ATTENTION ARC EXPLORER
+        // ==========================================
+        const tokens42 = ["小猫", "追着", "它", "自己的", "尾巴"];
+        let activeTokenIdx = 2; // Default "它"
+        let useProjectionMatrices = true;
+
+        // Mock pre-computed attention matrices (5x5)
+        // With projection: "它" strongly attends to "小猫" (cat) & "尾巴" (tail)
+        const attnWeightsWithProj = [
+            [0.45, 0.25, 0.10, 0.10, 0.10],
+            [0.35, 0.40, 0.05, 0.05, 0.15],
+            [0.55, 0.10, 0.15, 0.05, 0.15], // "它" attends 0.55 to "小猫"!
+            [0.10, 0.10, 0.15, 0.45, 0.20],
+            [0.20, 0.25, 0.05, 0.10, 0.40]
+        ];
+
+        // Without projection (Q=K=X): Diagonal x_i · x_i dominates completely
+        const attnWeightsNoProj = [
+            [0.82, 0.05, 0.04, 0.04, 0.05],
+            [0.06, 0.80, 0.04, 0.05, 0.05],
+            [0.05, 0.05, 0.81, 0.04, 0.05], // "它" just stares at itself (0.81)!
+            [0.04, 0.05, 0.05, 0.81, 0.05],
+            [0.05, 0.06, 0.04, 0.05, 0.80]
+        ];
+
+        function initModule42() {
+            const container = document.getElementById('token-chips-container');
+            container.innerHTML = tokens42.map((t, idx) => `
+                <button onclick="setActiveToken(${idx})" id="token-chip-${idx}" class="token-chip px-4 py-2 rounded-lg border text-sm font-bold transition flex items-center gap-2">
+                    <span class="text-xs text-slate-400 font-mono">T${idx}</span>
+                    <span>${t}</span>
+                </button>
+            `).join('');
+
+            updateModule42UI();
+        }
+
+        function setActiveToken(idx) {
+            activeTokenIdx = idx;
+            updateModule42UI();
+        }
+
+        function setProjectionMode(withProj) {
+            useProjectionMatrices = withProj;
+            document.getElementById('mode-no-proj').className = !withProj ? "px-3 py-1.5 rounded-md transition bg-coralAccent text-darkBg font-bold" : "px-3 py-1.5 rounded-md transition text-slate-400";
+            document.getElementById('mode-with-proj').className = withProj ? "px-3 py-1.5 rounded-md transition bg-cyanAccent text-darkBg font-bold" : "px-3 py-1.5 rounded-md transition text-slate-400";
+            updateModule42UI();
+        }
+
+        function updateModule42UI() {
+            // Update Chip active styles
+            tokens42.forEach((_, idx) => {
+                const chip = document.getElementById(`token-chip-${idx}`);
+                if (idx === activeTokenIdx) {
+                    chip.className = "token-chip px-4 py-2 rounded-lg border border-cyanAccent bg-cyanAccent/20 text-cyanAccent shadow-lg shadow-cyanAccent/10 font-bold flex items-center gap-2";
+                } else {
+                    chip.className = "token-chip px-4 py-2 rounded-lg border border-slate-800 bg-darkBg text-slate-300 hover:bg-slate-800 font-bold flex items-center gap-2 transition";
+                }
+            });
+
+            document.getElementById('active-token-name').textContent = `"${tokens42[activeTokenIdx]}"`;
+            document.getElementById('proj-mode-status').textContent = useProjectionMatrices ? "独立三矩阵 W_Q,W_K,W_V 启用" : "无投影 Q=K=X";
+            document.getElementById('proj-mode-status').className = useProjectionMatrices ? "text-xs px-2 py-0.5 rounded bg-emeraldAccent/10 text-emeraldAccent font-mono" : "text-xs px-2 py-0.5 rounded bg-coralAccent/10 text-coralAccent font-mono";
+
+            const weights = useProjectionMatrices ? attnWeightsWithProj[activeTokenIdx] : attnWeightsNoProj[activeTokenIdx];
+
+            // Render weight bars
+            const barContainer = document.getElementById('attention-weight-bars');
+            barContainer.innerHTML = tokens42.map((t, idx) => {
+                const w = weights[idx];
+                const pct = (w * 100).toFixed(1);
+                const isSelf = idx === activeTokenIdx;
+                const barColor = isSelf ? 'bg-goldAccent' : (w > 0.3 ? 'bg-cyanAccent' : 'bg-slate-700');
+
+                return `
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs font-mono">
+                            <span class="${isSelf ? 'text-goldAccent font-bold' : 'text-slate-300'}">Key T${idx}: "${t}"</span>
+                            <span class="text-slate-400">${pct}%</span>
+                        </div>
+                        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                            <div class="h-full ${barColor} transition-all duration-300" style="width: ${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Dynamic explanation text
+            const exp = document.getElementById('proj-explanation');
+            if (!useProjectionMatrices) {
+                exp.innerHTML = `
+                    <span class="text-coralAccent font-bold block mb-1">❌ 无投影问题 (Q = K = X):</span>
+                    当缺少 <span class="math">W<sub>Q</sub>, W<sub>K</sub></span> 时，相似度直接由原始向量点积 <span class="math">x<sub>i</sub> &middot; x<sub>j</sub></span> 决定。由于向量与自身点积 <span class="math">x<sub>i</sub> &middot; x<sub>i</sub> = ||x<sub>i</sub>||<sup>2</sup></span> 在数值上占据绝对主导，导致注意力权重极度偏向对角线（自关注），代词“它”无法将注意力投射到实际指代的主语“小猫”。
+                `;
+            } else {
+                exp.innerHTML = `
+                    <span class="text-emeraldAccent font-bold block mb-1">✅ 独立三矩阵优势 (W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>):</span>
+                    通过线性投影映射，<span class="math">Q = X W<sub>Q</sub></span> 表示“我想寻找什么”，<span class="math">K = X W<sub>K</sub></span> 表示“我能提供什么”。矩阵解耦了自关联与相互关联，使得代词“它”的 Query 能精确匹配“小猫”的 Key（关注度高达 <span class="text-cyanAccent font-bold">55%</span>），成功实现语义指代消解！
+                `;
+            }
+
+            drawAttentionArcsCanvas(weights);
+        }
+
+        function drawAttentionArcsCanvas(weights) {
+            const setup = setupRetinaCanvas('canvas-attention-arcs');
+            if (!setup) return;
+            const { ctx, width, height } = setup;
+
+            ctx.clearRect(0, 0, width, height);
+
+            const padding = 45;
+            const availableW = width - 2 * padding;
+            const stepX = availableW / (tokens42.length - 1);
+            const posY = height * 0.75;
+
+            // Draw tokens along baseline
+            tokens42.forEach((t, idx) => {
+                const x = padding + idx * stepX;
+                const isQuery = idx === activeTokenIdx;
+
+                // Draw arc from active token to key tokens
+                const w = weights[idx];
+                if (w > 0.02) {
+                    const arcH = Math.min(100, Math.abs(idx - activeTokenIdx) * 30 + 20);
+                    ctx.strokeStyle = isQuery ? 'rgba(240, 180, 41, 0.8)' : `rgba(88, 196, 221, ${Math.max(0.2, w * 1.5)})`;
+                    ctx.lineWidth = Math.max(1, w * 12);
+                    ctx.beginPath();
+                    ctx.moveTo(padding + activeTokenIdx * stepX, posY - 10);
+                    ctx.quadraticCurveTo(
+                        (padding + activeTokenIdx * stepX + x) / 2,
+                        posY - 10 - arcH,
+                        x,
+                        posY - 10
+                    );
+                    ctx.stroke();
+                }
+
+                // Draw Token Circle Node
+                ctx.beginPath();
+                ctx.arc(x, posY, isQuery ? 8 : 5, 0, Math.PI * 2);
+                ctx.fillStyle = isQuery ? '#f0b429' : '#58c4dd';
+                ctx.fill();
+
+                // Token Label
+                ctx.font = isQuery ? 'bold 13px Inter' : '12px Inter';
+                ctx.fillStyle = isQuery ? '#f0b429' : '#94a3b8';
+                ctx.textAlign = 'center';
+                ctx.fillText(t, x, posY + 22);
+            });
+        }
+
+
+        // ==========================================
+        // MODULE 4.3 & 4.5: 5-STEP PIPELINE & CAUSAL MASK LAB
+        // ==========================================
+        let currentPipelineStep = 4;
+        let isCausalMaskOn = true;
+        let selectedRowIdx = 2; // Default Row 2 ("机器")
+
+        const sentence43 = ["我", "爱", "机器", "学习", "。"];
+        
+        // Base Raw Dot Product Matrix 5x5
+        const rawScores5x5 = [
+            [4.2, 1.8, 0.5, 0.2, 0.1],
+            [2.1, 5.0, 3.2, 1.1, 0.4],
+            [0.8, 2.5, 6.1, 4.8, 0.9],
+            [0.3, 1.2, 4.2, 5.8, 1.5],
+            [0.1, 0.5, 1.0, 2.1, 3.5]
+        ];
+
+        const stepDescriptions = {
+            1: { title: '步骤 1 — 线性投影 (Linear Projection)', desc: '输入序列矩阵 X (1, 5, d_model) 分别乘以权重矩阵 W_Q, W_K, W_V，映射得到 Q, K, V 张量，形状均为 (1, 5, d_k)。' },
+            2: { title: '步骤 2 — 点积相似度 (Scaled Dot-Product)', desc: '计算 Q 和 K^T 的矩阵乘法 Q @ K^T，得到 5×5 的配对注意力得分矩阵，形状为 (1, 5, 5)。' },
+            3: { title: '步骤 3 — 除以 √d_k 缩放', desc: '将所有得分除以 √d_k（假设 d_k=64，则除以 8），缩放后的数值集中在 [-2, 2] 理想方差区间。' },
+            4: { title: '步骤 4 — Mask 掩码与 Softmax 概率归一化', desc: '若开启因果掩码（Causal Mask），矩阵上三角置为 -1e9。随后进行 Softmax 归一化，每行概率之和等于 1.000。' },
+            5: { title: '步骤 5 — 加权 Value 聚合 (Weights @ V)', desc: 'Softmax 权重矩阵 (1, 5, 5) 乘以 V 矩阵 (1, 5, d_v)，得到加权语义融合后的最终输出 (1, 5, d_v)。' }
+        };
+
+        function setPipelineStep(step) {
+            currentPipelineStep = step;
+            for (let i = 1; i <= 5; i++) {
+                const btn = document.getElementById(`step-btn-${i}`);
+                if (i === step) {
+                    btn.className = "step-btn p-3 rounded-lg border border-cyanAccent bg-cyanAccent/10 text-left transition flex flex-col justify-between h-20 shadow-lg shadow-cyanAccent/10";
+                } else {
+                    btn.className = "step-btn p-3 rounded-lg border border-slate-800 bg-darkBg text-left hover:bg-slate-800 transition flex flex-col justify-between h-20";
+                }
+            }
+
+            const info = stepDescriptions[step];
+            document.getElementById('pipeline-desc-box').innerHTML = `
+                <span class="font-bold text-cyanAccent block">${info.title}</span>
+                <p class="text-slate-300 text-xs mt-0.5">${info.desc}</p>
+            `;
+        }
+
+        function setCausalMask(on) {
+            isCausalMaskOn = on;
+            document.getElementById('mask-off').className = !on ? "px-3 py-1.5 rounded-md transition bg-cyanAccent text-darkBg font-bold" : "px-3 py-1.5 rounded-md transition text-slate-400";
+            document.getElementById('mask-on').className = on ? "px-3 py-1.5 rounded-md transition bg-coralAccent text-darkBg font-bold" : "px-3 py-1.5 rounded-md transition text-slate-400";
+            renderHeatmapGrid();
+        }
+
+        function renderHeatmapGrid() {
+            const container = document.getElementById('heatmap-matrix-container');
+            const d_k_sqrt = 2.828; // sqrt(8)
+
+            let html = `
+                <table class="w-full text-center border-collapse text-xs font-mono">
+                    <thead>
+                        <tr>
+                            <th class="p-2 text-slate-500">Q \\ K</th>
+                            ${sentence43.map(t => `<th class="p-2 text-goldAccent font-bold">${t}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            for (let i = 0; i < 5; i++) {
+                const isSelectedRow = i === selectedRowIdx;
+                html += `<tr onclick="selectHeatmapRow(${i})" class="cursor-pointer ${isSelectedRow ? 'bg-cyanAccent/10 border-l-2 border-cyanAccent' : 'hover:bg-slate-800/40'}">`;
+                html += `<td class="p-2 font-bold text-cyanAccent">${sentence43[i]}</td>`;
+
+                // Calculate Softmax for row i
+                const rowScores = rawScores5x5[i].map((s, j) => {
+                    if (isCausalMaskOn && j > i) return -1e9;
+                    return s / d_k_sqrt;
+                });
+
+                const maxS = Math.max(...rowScores);
+                const exps = rowScores.map(s => s === -1e9 ? 0 : Math.exp(s - maxS));
+                const sumExp = exps.reduce((a, b) => a + b, 0);
+                const softs = exps.map(e => e / sumExp);
+
+                for (let j = 0; j < 5; j++) {
+                    const isMasked = isCausalMaskOn && j > i;
+                    const val = softs[j];
+                    const bgAlpha = isMasked ? 0 : val.toFixed(2);
+                    const cellBg = isMasked ? 'rgba(255, 107, 107, 0.05)' : `rgba(88, 196, 221, ${bgAlpha})`;
+                    const textColor = isMasked ? '#ff6b6b' : (val > 0.4 ? '#0d1117' : '#f1f5f9');
+                    const textVal = isMasked ? '-&infin;' : val.toFixed(2);
+
+                    html += `
+                        <td class="p-2 border border-slate-800 font-bold transition" style="background-color: ${cellBg}; color: ${textColor};">
+                            ${textVal}
+                        </td>
+                    `;
+                }
+
+                html += `</tr>`;
+            }
+
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+
+            updateRowBreakdownUI();
+        }
+
+        function selectHeatmapRow(rowIdx) {
+            selectedRowIdx = rowIdx;
+            renderHeatmapGrid();
+        }
+
+        function updateRowBreakdownUI() {
+            document.getElementById('active-row-label').textContent = `行 ${selectedRowIdx}: "${sentence43[selectedRowIdx]}"`;
+            
+            const raw = rawScores5x5[selectedRowIdx];
+            const d_k_sqrt = 2.828;
+
+            const masked = raw.map((s, j) => (isCausalMaskOn && j > selectedRowIdx) ? -1e9 : s / d_k_sqrt);
+            
+            const maxS = Math.max(...masked);
+            const exps = masked.map(s => s === -1e9 ? 0 : Math.exp(s - maxS));
+            const sumExp = exps.reduce((a, b) => a + b, 0);
+            const softs = exps.map(e => e / sumExp);
+
+            document.getElementById('calc-raw-scores').textContent = `[ ${raw.map(v => v.toFixed(1)).join(', ')} ]`;
+            document.getElementById('calc-masked-scores').textContent = `[ ${masked.map(v => v === -1e9 ? '-1e9' : v.toFixed(2)).join(', ')} ]`;
+            document.getElementById('calc-softmax-weights').textContent = `[ ${softs.map(v => v.toFixed(3)).join(', ')} ]`;
+        }
+
+
+        // ==========================================
+        // MODULE 4.4: WHY DIVIDE BY SQRT(D_K) LAB
+        // ==========================================
+        let currentDk = 64;
+        let sampleQ = [];
+        let sampleK = [];
+
+        function setDkValue(dk) {
+            currentDk = dk;
+            document.getElementById('lbl-dk-val').textContent = dk;
+            
+            // Highlight selected button
+            document.querySelectorAll('.dk-btn').forEach(btn => {
+                if (parseInt(btn.textContent) === dk) {
+                    btn.className = "dk-btn px-2.5 py-1 rounded border text-xs font-mono transition bg-emeraldAccent text-darkBg font-bold";
+                } else {
+                    btn.className = "dk-btn px-2.5 py-1 rounded border border-slate-800 text-xs font-mono text-slate-400 hover:bg-slate-800 transition";
+                }
+            });
+
+            resampleGaussianVectors();
+        }
+
+        function resampleGaussianVectors() {
+            // Sample 8 pairs of vectors to create an attention logit distribution
+            sampleQ = [];
+            sampleK = [];
+            for (let t = 0; t < 8; t++) {
+                let q = [], k = [];
+                for (let i = 0; i < currentDk; i++) {
+                    // Standard Gaussian N(0, 1)
+                    q.push(gaussianRandom());
+                    k.push(gaussianRandom());
+                }
+                sampleQ.push(q);
+                sampleK.push(k);
+            }
+
+            updateModule44Charts();
+        }
+
+        function gaussianRandom() {
+            let u = 0, v = 0;
+            while(u === 0) u = Math.random();
+            while(v === 0) v = Math.random();
+            return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        function updateModule44Charts() {
+            // Compute raw dot products between Q[0] and K[0..7]
+            const q0 = sampleQ[0];
+            const rawDots = sampleK.map(kVec => {
+                let sum = 0;
+                for (let i = 0; i < currentDk; i++) sum += q0[i] * kVec[i];
+                return sum;
+            });
+
+            const sqrtDk = Math.sqrt(currentDk);
+            const scaledDots = rawDots.map(d => d / sqrtDk);
+
+            // Compute Softmax for both
+            const softUnscaled = computeSoftmax(rawDots);
+            const softScaled = computeSoftmax(scaledDots);
+
+            // Draw Charts
+            drawBarChart('canvas-chart-unscaled', softUnscaled, '#ff6b6b');
+            drawBarChart('canvas-chart-scaled', softScaled, '#4ade80');
+
+            // Metrics Update
+            document.getElementById('metric-unscaled-var').textContent = currentDk.toFixed(1);
+            document.getElementById('metric-unscaled-max').textContent = Math.max(...softUnscaled).toFixed(4);
+            document.getElementById('metric-unscaled-entropy').textContent = computeEntropy(softUnscaled).toFixed(3) + ' nats';
+            document.getElementById('metric-unscaled-grad').textContent = computeMaxJacobianGrad(softUnscaled).toFixed(6);
+
+            document.getElementById('metric-scaled-var').textContent = '1.0';
+            document.getElementById('metric-scaled-max').textContent = Math.max(...softScaled).toFixed(4);
+            document.getElementById('metric-scaled-entropy').textContent = computeEntropy(softScaled).toFixed(3) + ' nats';
+            document.getElementById('metric-scaled-grad').textContent = computeMaxJacobianGrad(softScaled).toFixed(4);
+        }
+
+        function computeSoftmax(arr) {
+            const maxVal = Math.max(...arr);
+            const exps = arr.map(v => Math.exp(v - maxVal));
+            const sum = exps.reduce((a, b) => a + b, 0);
+            return exps.map(e => e / sum);
+        }
+
+        function computeEntropy(weights) {
+            return -weights.reduce((acc, w) => acc + (w > 1e-9 ? w * Math.log(w) : 0), 0);
+        }
+
+        function computeMaxJacobianGrad(weights) {
+            // Softmax derivative w_i * (1 - w_i)
+            let maxGrad = 0;
+            weights.forEach(w => {
+                const g = w * (1.0 - w);
+                if (g > maxGrad) maxGrad = g;
+            });
+            return maxGrad;
+        }
+
+        function drawBarChart(canvasId, values, color) {
+            const setup = setupRetinaCanvas(canvasId);
+            if (!setup) return;
+            const { ctx, width, height } = setup;
+
+            ctx.clearRect(0, 0, width, height);
+
+            const padding = 30;
+            const barW = (width - 2 * padding) / values.length;
+            const maxH = height - 2 * padding;
+
+            values.forEach((v, idx) => {
+                const h = v * maxH;
+                const x = padding + idx * barW + barW * 0.15;
+                const y = height - padding - h;
+
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, barW * 0.7, h);
+
+                // Value Text above bar
+                ctx.font = '10px JetBrains Mono, monospace';
+                ctx.fillStyle = '#94a3b8';
+                ctx.textAlign = 'center';
+                if (v > 0.05) {
+                    ctx.fillText(v.toFixed(2), x + barW * 0.35, y - 5);
+                }
+            });
+        }
+
+
+        // ==========================================
+        // MODULE 4.6: MULTI-HEAD ATTENTION & PARAM PROOF
+        // ==========================================
+        let currentHeadTab = 'all';
+
+        const headPatterns = {
+            0: { name: 'Head 0 (主谓关联)', color: '#58c4dd', weights: [
+                [0.40, 0.50, 0.05, 0.03, 0.02],
+                [0.10, 0.70, 0.10, 0.05, 0.05],
+                [0.60, 0.20, 0.10, 0.05, 0.05],
+                [0.10, 0.10, 0.10, 0.60, 0.10],
+                [0.15, 0.15, 0.10, 0.20, 0.40]
+            ]},
+            1: { name: 'Head 1 (代词指代)', color: '#f0b429', weights: [
+                [0.80, 0.05, 0.05, 0.05, 0.05],
+                [0.10, 0.80, 0.05, 0.03, 0.02],
+                [0.75, 0.05, 0.10, 0.05, 0.05], // "它" -> "小猫"
+                [0.05, 0.05, 0.10, 0.75, 0.05],
+                [0.10, 0.10, 0.05, 0.05, 0.70]
+            ]},
+            2: { name: 'Head 2 (相邻词局部)', color: '#4ade80', weights: [
+                [0.60, 0.40, 0.00, 0.00, 0.00],
+                [0.30, 0.50, 0.20, 0.00, 0.00],
+                [0.00, 0.40, 0.40, 0.20, 0.00],
+                [0.00, 0.00, 0.30, 0.50, 0.20],
+                [0.00, 0.00, 0.00, 0.40, 0.60]
+            ]},
+            3: { name: 'Head 3 (句首/全局锚点)', color: '#a78bfa', weights: [
+                [0.90, 0.03, 0.03, 0.02, 0.02],
+                [0.85, 0.05, 0.04, 0.03, 0.03],
+                [0.88, 0.04, 0.04, 0.02, 0.02],
+                [0.80, 0.05, 0.05, 0.05, 0.05],
+                [0.85, 0.03, 0.04, 0.04, 0.04]
+            ]}
+        };
+
+        function updateMultiHeadCalc() {
+            const d_model = parseInt(document.getElementById('select-dmodel').value);
+            const h = parseInt(document.getElementById('select-heads').value);
+
+            const d_k = d_model / h;
+            const singleP = d_model * d_model;
+            const totalP = 4 * singleP;
+
+            document.getElementById('mha-dk-out').textContent = d_k;
+            document.getElementById('mha-single-params').textContent = `${d_model} × ${d_model} = ${singleP.toLocaleString()}`;
+            document.getElementById('mha-total-params').textContent = `${totalP.toLocaleString()} (守恒不变!)`;
+        }
+
+        function setHeadExplorerTab(headIdx) {
+            currentHeadTab = headIdx;
+
+            for (let i = 0; i <= 3; i++) {
+                const btn = document.getElementById(`head-tab-${i}`);
+                if (i === headIdx) {
+                    btn.className = "head-tab px-2.5 py-1 rounded transition bg-cyanAccent text-darkBg font-bold";
+                } else {
+                    btn.className = "head-tab px-2.5 py-1 rounded transition text-slate-400 hover:bg-slate-800";
+                }
+            }
+            const allBtn = document.getElementById('head-tab-all');
+            allBtn.className = headIdx === 'all' ? "head-tab px-2.5 py-1 rounded transition bg-violetAccent text-darkBg font-bold" : "head-tab px-2.5 py-1 rounded transition text-slate-400 hover:bg-slate-800";
+
+            renderMultiHeadHeatmaps();
+        }
+
+        function renderMultiHeadHeatmaps() {
+            const container = document.getElementById('multihead-heatmap-display');
+
+            if (currentHeadTab === 'all') {
+                container.innerHTML = `
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        ${[0, 1, 2, 3].map(hIdx => renderSingleHeadMiniMap(hIdx)).join('')}
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="max-w-md mx-auto">
+                        ${renderSingleHeadMiniMap(currentHeadTab)}
+                    </div>
+                `;
+            }
+        }
+
+        function renderSingleHeadMiniMap(hIdx) {
+            const head = headPatterns[hIdx];
+            return `
+                <div class="p-3 rounded-lg bg-cardBg border border-slate-800 space-y-2">
+                    <div class="flex justify-between items-center text-xs font-mono font-bold" style="color: ${head.color}">
+                        <span>${head.name}</span>
+                    </div>
+                    <table class="w-full text-center border-collapse text-[10px] font-mono">
+                        <tbody>
+                            ${head.weights.map((row, rIdx) => `
+                                <tr>
+                                    ${row.map((val, cIdx) => {
+                                        const isMasked = isCausalMaskOn && cIdx > rIdx;
+                                        const v = isMasked ? 0 : val;
+                                        const bg = isMasked ? 'transparent' : `rgba(88, 196, 221, ${v})`;
+                                        return `<td class="p-1 border border-slate-800" style="background:${bg}; color:${v > 0.4 ? '#0d1117' : '#e2e8f0'}">${isMasked ? '-' : v.toFixed(2)}</td>`;
+                                    }).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+
+        // ==========================================
+        // MODULE 4.7: POSITIONAL ENCODING & ROPE LAB
+        // ==========================================
+        let peEnabled = false;
+        let wordsInEquiv = ["狗", "咬", "人"];
+
+        function togglePEinEquivDemo() {
+            peEnabled = !peEnabled;
+            const btn = document.getElementById('btn-toggle-pe');
+            btn.textContent = `位置编码: ${peEnabled ? 'ON (已启用)' : 'OFF (关闭)'}`;
+            btn.className = peEnabled ? "px-3 py-1.5 rounded-md text-xs font-bold transition bg-emeraldAccent text-darkBg" : "px-3 py-1.5 rounded-md text-xs font-bold transition bg-coralAccent text-darkBg";
+            updateEquivDemoUI();
+        }
+
+        function swapWordsInEquivDemo() {
+            if (wordsInEquiv[0] === "狗") {
+                wordsInEquiv = ["人", "咬", "狗"];
+            } else {
+                wordsInEquiv = ["狗", "咬", "人"];
+            }
+            updateEquivDemoUI();
+        }
+
+        function updateEquivDemoUI() {
+            const container = document.getElementById('equiv-seq-display');
+            container.innerHTML = wordsInEquiv.map(w => `<span class="px-3 py-1 rounded bg-cardBg border border-slate-700 text-cyanAccent font-mono">${w}</span>`).join('');
+
+            const status = document.getElementById('equiv-result-status');
+            if (!peEnabled) {
+                status.className = "font-semibold text-coralAccent text-xs";
+                status.innerHTML = `⚠️ 无位置编码：交换语序后，输出向量集合彻底相同 (纯排列变动)，模型分不清是谁咬了谁！`;
+            } else {
+                status.className = "font-semibold text-emeraldAccent text-xs";
+                status.innerHTML = `✅ 已融入位置编码：特征融入了绝对/相对位置信号，输出向量唯一改变，成功识别语序语义！`;
+            }
+        }
+
+        function drawSinusoidalPEHeatmap() {
+            const setup = setupRetinaCanvas('canvas-sinusoidal-pe');
+            if (!setup) return;
+            const { ctx, width, height } = setup;
+
+            const seqLen = 40;
+            const dModel = 32;
+
+            const cellW = width / seqLen;
+            const cellH = height / dModel;
+
+            for (let pos = 0; pos < seqLen; pos++) {
+                for (let i = 0; i < dModel; i++) {
+                    let val = 0;
+                    if (i % 2 === 0) {
+                        val = Math.sin(pos / Math.pow(10000, i / dModel));
+                    } else {
+                        val = Math.cos(pos / Math.pow(10000, (i - 1) / dModel));
+                    }
+
+                    // Map [-1, 1] to Color Gradient
+                    const norm = (val + 1) / 2; // [0, 1]
+                    const r = Math.floor(88 + norm * 150);
+                    const g = Math.floor(196 * norm);
+                    const b = Math.floor(221 * (1 - norm));
+
+                    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                    ctx.fillRect(pos * cellW, i * cellH, cellW, cellH);
+                }
+            }
+        }
+
+        // RoPE 2D Lab Interactive Logic
+        function setRopePositions(m, n) {
+            document.getElementById('slider-pos-q').value = m;
+            document.getElementById('slider-pos-k').value = n;
+            updateRopeLab();
+        }
+
+        function updateRopeLab() {
+            const m = parseInt(document.getElementById('slider-pos-q').value);
+            const n = parseInt(document.getElementById('slider-pos-k').value);
+
+            document.getElementById('lbl-pos-q').textContent = m;
+            document.getElementById('lbl-pos-k').textContent = n;
+
+            const delta = n - m;
+            document.getElementById('rope-delta-readout').textContent = delta;
+
+            // Base vectors (2D)
+            const q = [0.8, 0.6];
+            const k = [0.9, 0.4];
+
+            const theta = 0.05; // Base angle frequency
+            const angleQ = m * theta;
+            const angleK = n * theta;
+
+            // Rotated Q'_m
+            const q_rot = [
+                q[0] * Math.cos(angleQ) - q[1] * Math.sin(angleQ),
+                q[0] * Math.sin(angleQ) + q[1] * Math.cos(angleQ)
+            ];
+
+            // Rotated K'_n
+            const k_rot = [
+                k[0] * Math.cos(angleK) - k[1] * Math.sin(angleK),
+                k[0] * Math.sin(angleK) + k[1] * Math.cos(angleK)
+            ];
+
+            // Dot products
+            const origDot = q[0]*k[0] + q[1]*k[1];
+            const rotDot = q_rot[0]*k_rot[0] + q_rot[1]*k_rot[1];
+
+            document.getElementById('rope-orig-dot').textContent = origDot.toFixed(6);
+            document.getElementById('rope-rot-dot').textContent = rotDot.toFixed(6);
+
+            drawRopeUnitCircleCanvas(q_rot, k_rot, angleQ, angleK);
+        }
+
+        function drawRopeUnitCircleCanvas(q_rot, k_rot, angleQ, angleK) {
+            const setup = setupRetinaCanvas('canvas-rope-circle');
+            if (!setup) return;
+            const { ctx, width, height } = setup;
+
+            ctx.clearRect(0, 0, width, height);
+
+            const cx = width / 2;
+            const cy = height / 2;
+            const radius = Math.min(width, height) * 0.35;
+
+            // Draw Coordinate Grid & Unit Circle
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            
+            // X & Y Axes
+            ctx.beginPath();
+            ctx.moveTo(0, cy); ctx.lineTo(width, cy);
+            ctx.moveTo(cx, 0); ctx.lineTo(cx, height);
+            ctx.stroke();
+
+            // Unit Circle
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = '#334155';
+            ctx.stroke();
+
+            // Draw Vector Q'_m
+            const qx = cx + q_rot[0] * radius;
+            const qy = cy - q_rot[1] * radius; // Invert y for canvas coords
+
+            ctx.strokeStyle = '#58c4dd';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy); ctx.lineTo(qx, qy);
+            ctx.stroke();
+
+            ctx.fillStyle = '#58c4dd';
+            ctx.beginPath(); ctx.arc(qx, qy, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.font = 'bold 11px JetBrains Mono';
+            ctx.fillText("Q'_m", qx + 8, qy);
+
+            // Draw Vector K'_n
+            const kx = cx + k_rot[0] * radius;
+            const ky = cy - k_rot[1] * radius;
+
+            ctx.strokeStyle = '#f0b429';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy); ctx.lineTo(kx, ky);
+            ctx.stroke();
+
+            ctx.fillStyle = '#f0b429';
+            ctx.beginPath(); ctx.arc(kx, ky, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillText("K'_n", kx + 8, ky);
+        }
+
+
+        // ==========================================
+        // MODULE 4.8: NUMPY CODE & QUIZ
+        // ==========================================
+        const codeSnippets = {
+            'attn': `import numpy as np
+
+def scaled_dot_product_attention(Q, K, V, mask=None):
+    """
+    计算 Scaled Dot-Product Attention
+    Args:
+        Q: Query 张量, shape (B, L_q, d_k)
+        K: Key 张量, shape (B, L_k, d_k)
+        V: Value 张量, shape (B, L_v, d_v)
+        mask: 掩码矩阵, shape (1, 1, L_q, L_k) 或 (L_q, L_k)
+    Returns:
+        output: 注意力输出, shape (B, L_q, d_v)
+        attn_weights: 注意力权重矩阵, shape (B, L_q, L_k)
+    """
+    d_k = Q.shape[-1]
+    
+    # 步骤 1 & 2 & 3: Q @ K^T / sqrt(d_k)
+    scores = np.matmul(Q, K.swapaxes(-1, -2)) / np.sqrt(d_k)
+    
+    # 步骤 4: 应用因果掩码 (Causal Mask)
+    if mask is not None:
+        scores = np.where(mask == 0, -1e9, scores)
+        
+    # Softmax 归一化
+    # 减去 max 保证数值稳定性 (防止 exp 溢出)
+    exp_scores = np.exp(scores - np.max(scores, axis=-1, keepdims=True))
+    attn_weights = exp_scores / np.sum(exp_scores, axis=-1, keepdims=True)
+    
+    # 步骤 5: 权重乘以 Value 矩阵
+    output = np.matmul(attn_weights, V)
+    return output, attn_weights`,
+
+            'mha': `import numpy as np
+
+class MultiHeadAttention:
+    def __init__(self, d_model=512, n_heads=8):
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.d_k = d_model // n_heads
+        
+        # 4 个可学习的线性投影权重矩阵 (参数量守恒: 4 * d_model^2)
+        self.W_Q = np.random.randn(d_model, d_model) / np.sqrt(d_model)
+        self.W_K = np.random.randn(d_model, d_model) / np.sqrt(d_model)
+        self.W_V = np.random.randn(d_model, d_model) / np.sqrt(d_model)
+        self.W_O = np.random.randn(d_model, d_model) / np.sqrt(d_model)
+
+    def forward(self, X, mask=None):
+        B, L, _ = X.shape
+        
+        # 1. 线性投影: (B, L, d_model)
+        Q = np.dot(X, self.W_Q)
+        K = np.dot(X, self.W_K)
+        V = np.dot(X, self.W_V)
+        
+        # 2. 拆分多头 Reshape: (B, L, h, d_k) -> Transpose: (B, h, L, d_k)
+        Q = Q.reshape(B, L, self.n_heads, self.d_k).transpose(0, 2, 1, 3)
+        K = K.reshape(B, L, self.n_heads, self.d_k).transpose(0, 2, 1, 3)
+        V = V.reshape(B, L, self.n_heads, self.d_k).transpose(0, 2, 1, 3)
+        
+        # 3. Scaled Dot-Product Attention (并行计算 h 个头)
+        scores = np.matmul(Q, K.transpose(0, 1, 3, 2)) / np.sqrt(self.d_k)
+        if mask is not None:
+            scores = np.where(mask == 0, -1e9, scores)
+        attn_weights = np.exp(scores - np.max(scores, axis=-1, keepdims=True))
+        attn_weights /= np.sum(attn_weights, axis=-1, keepdims=True)
+        
+        out = np.matmul(attn_weights, V) # (B, h, L, d_k)
+        
+        # 4. 拼接多头 Merge Heads: (B, L, d_model)
+        out = out.transpose(0, 2, 1, 3).reshape(B, L, self.d_model)
+        
+        # 5. 最终线性输出映射
+        return np.dot(out, self.W_O)`,
+
+            'rope': `import numpy as np
+
+def apply_rope(x, pos_seq):
+    """
+    旋转位置编码 (Rotary Position Embedding, RoPE) NumPy 实现
+    Args:
+        x: 输入张量, shape (B, L, d_model), 假设 d_model 为偶数
+        pos_seq: 位置索引序列, shape (L,)
+    """
+    B, L, d_model = x.shape
+    d_half = d_model // 2
+    
+    # 1. 计算角频率 theta_i = 10000^(-2(i-1)/d)
+    inv_freq = 1.0 / (10000.0 ** (np.arange(0, d_model, 2) / d_model))
+    
+    # 2. 计算外积得到角度矩阵 m * theta_i: shape (L, d_half)
+    angles = np.outer(pos_seq, inv_freq)
+    
+    # 3. 构造 2D 旋转矩阵的 sin 和 cos 分量
+    sin_val = np.sin(angles)
+    cos_val = np.cos(angles)
+    
+    # 4. 将向量 x 拆分为两半 [x1, x2]
+    x1 = x[:, :, :d_half]
+    x2 = x[:, :, d_half:]
+    
+    # 5. 应用旋转变化: [x1*cos - x2*sin, x1*sin + x2*cos]
+    x_rotated_1 = x1 * cos_val - x2 * sin_val
+    x_rotated_2 = x1 * sin_val + x2 * cos_val
+    
+    return np.concatenate([x_rotated_1, x_rotated_2], axis=-1)`
+        };
+
+        function setCodeTab(tabKey) {
+            ['attn', 'mha', 'rope'].forEach(k => {
+                const btn = document.getElementById(`code-tab-${k}`);
+                if (k === tabKey) {
+                    btn.className = "code-tab px-3 py-1.5 rounded-md transition bg-cyanAccent text-darkBg font-bold";
+                } else {
+                    btn.className = "code-tab px-3 py-1.5 rounded-md transition text-slate-400 hover:bg-slate-800";
+                }
+            });
+
+            document.getElementById('code-display').textContent = codeSnippets[tabKey];
+        }
+
+        function copyCurrentCode() {
+            const code = document.getElementById('code-display').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('✅ 源码已成功复制到剪贴板！');
+            });
+        }
+
+        // Quiz Data
+        const quizData = [
+            {
+                q: "1. 为什么 Self-Attention 需要分别引入 3 个独立的权重矩阵 W_Q, W_K, W_V，而不是直接计算 X·Xᵀ？",
+                options: [
+                    "A. 增加参数量以防止模型欠拟合",
+                    "B. 解耦 Token 的主动查询需求与被检索属性，打破对角线自身内积占优的限制",
+                    "C. 仅仅是为了改变张量的维度大小",
+                    "D. 为了强制使注意力权重矩阵成为对称矩阵"
+                ],
+                correct: 1,
+                exp: "正确答案是 B。如果直接用 X·Xᵀ，向量与自身的点积 ||x||² 在数值上占据绝对主导，导致模型只能关注自己（对角线霸权）。独立矩阵投影解耦了 Query 与 Key 空间的表示。"
+            },
+            {
+                q: "2. 在计算点积注意力时，为什么必须除以缩放因子 √d_k？",
+                options: [
+                    "A. 降低矩阵乘法的计算复杂度",
+                    "B. 保证注意力概率之和等于 1",
+                    "C. 将点积方差从 d_k 强行缩放回 1.0，防止进入 Softmax 饱和区导致梯度消失",
+                    "D. 消除输入序列中的噪声"
+                ],
+                correct: 2,
+                exp: "正确答案是 C。当维度 d_k 很大时，点积的方差随 d_k 线性增长。如果不缩放，点积极值过大会导致 Softmax 输出极其陡峭（接近 one-hot），雅可比梯度迅速衰减至零。"
+            },
+            {
+                q: "3. 在 GPT 等自回归语言模型的因果掩码（Causal Mask）中，为什么上三角要填入 -1e9 或 -∞ 而不是 0？",
+                options: [
+                    "A. 因为 0 会导致除以零错误",
+                    "B. 因为 Softmax(0) = e⁰ = 1.0，填零会导致未来 Token 获得极高的权重",
+                    "C. 因为 -1e9 可以在 GPU 浮点数计算中更快地运行",
+                    "D. 因为 Mask 矩阵只能存储负数"
+                ],
+                correct: 1,
+                exp: "正确答案是 B。Softmax 计算指数 e^(x)，如果填入 0，e⁰ = 1 会导致被掩码位置依然分配到显著权重；而填入 -1e9 时，e^(-1e9) ≈ 0，才能严格将未来注意力权重归零。"
+            },
+            {
+                q: "4. 对于维度为 d_model 的 Transformer，将单头 Attention 拆分为 h 个多头（Multi-Head），其投影矩阵的总参数量会发生什么变化？",
+                options: [
+                    "A. 增加 h 倍",
+                    "B. 减少到原来的 1/h",
+                    "C. 严格保持不变（总参数量均为 4 × d_model²）",
+                    "D. 取决于序列长度 L"
+                ],
+                correct: 2,
+                exp: "正确答案是 C。多头机制中单头维度 d_k = d_model / h。h 个头的 W_Q 拼接在一起大小依然是 (d_model, d_model)。因此参数量严格守恒，不会增加额外的计算负担。"
+            },
+            {
+                q: "5. RoPE (旋转位置编码) 核心的几何与数学特性是什么？",
+                options: [
+                    "A. 将绝对位置向量直接加到 Word Embedding 上",
+                    "B. 在 2D 复数平面上旋转 Query 和 Key 向量，使得旋转后的点积仅取决于相对距离 Δ = n - m",
+                    "C. 完全替代了 Softmax 归一化步骤",
+                    "D. 将 Attention 的计算复杂度降低为 O(1)"
+                ],
+                correct: 1,
+                exp: "正确答案是 B。RoPE 巧用复数平面旋转矩阵，使得 (R_m q)ᵀ (R_n k) = qᵀ R_(n-m) k，实现了在绝对位置编码形式下完美保持相对位置依赖关系的几何特性。"
+            }
+        ];
+
+        let quizUserAnswers = Array(5).fill(null);
+
+        function renderQuiz() {
+            const container = document.getElementById('quiz-container');
+            container.innerHTML = quizData.map((item, qIdx) => `
+                <div class="p-4 rounded-xl bg-darkBg border border-slate-800 space-y-3">
+                    <h4 class="text-sm font-bold text-white">${item.q}</h4>
+                    <div class="space-y-2">
+                        ${item.options.map((opt, oIdx) => `
+                            <button onclick="answerQuiz(${qIdx}, ${oIdx})" id="quiz-btn-${qIdx}-${oIdx}" class="w-full text-left p-2.5 rounded-lg border border-slate-800 bg-cardBg hover:bg-slate-800 text-xs text-slate-300 transition">
+                                ${opt}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div id="quiz-exp-${qIdx}" class="hidden p-3 rounded-lg bg-cardBg text-xs leading-relaxed"></div>
+                </div>
+            `).join('');
+        }
+
+        function answerQuiz(qIdx, optionIdx) {
+            quizUserAnswers[qIdx] = optionIdx;
+            const item = quizData[qIdx];
+            const isCorrect = optionIdx === item.correct;
+
+            // Highlight buttons
+            item.options.forEach((_, oIdx) => {
+                const btn = document.getElementById(`quiz-btn-${qIdx}-${oIdx}`);
+                btn.disabled = true;
+                if (oIdx === item.correct) {
+                    btn.className = "w-full text-left p-2.5 rounded-lg border border-emeraldAccent bg-emeraldAccent/10 text-xs font-bold text-emeraldAccent";
+                } else if (oIdx === optionIdx && !isCorrect) {
+                    btn.className = "w-full text-left p-2.5 rounded-lg border border-coralAccent bg-coralAccent/10 text-xs font-bold text-coralAccent";
+                } else {
+                    btn.className = "w-full text-left p-2.5 rounded-lg border border-slate-800 bg-cardBg text-xs text-slate-500 opacity-50";
+                }
+            });
+
+            // Show explanation
+            const expBox = document.getElementById(`quiz-exp-${qIdx}`);
+            expBox.classList.remove('hidden');
+            expBox.className = isCorrect ? "p-3 rounded-lg bg-emeraldAccent/10 border border-emeraldAccent/30 text-emeraldAccent text-xs leading-relaxed" : "p-3 rounded-lg bg-coralAccent/10 border border-coralAccent/30 text-coralAccent text-xs leading-relaxed";
+            expBox.innerHTML = `<strong>${isCorrect ? '✅ 回答正确！' : '❌ 回答错误。'}</strong> ${item.exp}`;
+
+            // Update score
+            const score = quizUserAnswers.reduce((acc, ans, i) => acc + (ans === quizData[i].correct ? 1 : 0), 0);
+            document.getElementById('quiz-score').textContent = score;
+        }
+
+        function resetQuiz() {
+            quizUserAnswers = Array(5).fill(null);
+            document.getElementById('quiz-score').textContent = '0';
+            renderQuiz();
+        }
+
+
+        // ==========================================
+        // INITIALIZATION ON PAGE LOAD
+        // ==========================================
+        window.addEventListener('DOMContentLoaded', () => {
+            // Module 4.1
+            runRaceSimulation();
+
+            // Module 4.2
+            initModule42();
+
+            // Module 4.3
+            setPipelineStep(4);
+            renderHeatmapGrid();
+
+            // Module 4.4
+            resampleGaussianVectors();
+
+            // Module 4.6
+            updateMultiHeadCalc();
+            renderMultiHeadHeatmaps();
+
+            // Module 4.7
+            updateEquivDemoUI();
+            drawSinusoidalPEHeatmap();
+            updateRopeLab();
+
+            // Module 4.8
+            setCodeTab('attn');
+            renderQuiz();
+        });
+
+        // Resize handler for Canvas Retina scaling
+        window.addEventListener('resize', () => {
+            runRaceSimulation();
+            updateModule42UI();
+            updateModule44Charts();
+            drawSinusoidalPEHeatmap();
+            updateRopeLab();
+        });
+    </script>
+</body>
+</html>

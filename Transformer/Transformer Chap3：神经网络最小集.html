@@ -1,0 +1,2078 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transformer 第 3 章：神经网络最小集 —— 从单神经元到手写 XOR</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              bg: '#0d1117',
+              card: '#161f2e',
+              border: '#233044',
+              cyan: '#58c4dd',
+              gold: '#f0b429',
+              coral: '#ff6b6b',
+              emerald: '#4ade80',
+              violet: '#a78bfa',
+              subtle: '#8b949e',
+              text: '#f0f6fc'
+            }
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+            serif: ['Cambria', 'Georgia', 'Times New Roman', 'serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #233044;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #58c4dd;
+    }
+    /* HTML Math Typography */
+    .math {
+      font-family: 'Cambria Math', 'Cambria', 'Georgia', serif;
+      font-style: italic;
+    }
+    .math-block {
+      display: block;
+      background: rgba(35, 48, 68, 0.4);
+      border-left: 3px solid #58c4dd;
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      border-radius: 0.375rem;
+      font-family: 'Cambria Math', 'Georgia', serif;
+      overflow-x: auto;
+    }
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 0.2rem;
+      font-style: normal;
+      font-size: 0.9em;
+    }
+    .num {
+      border-bottom: 1px solid rgba(240, 246, 252, 0.6);
+      padding: 0 0.25rem;
+      line-height: 1.1;
+    }
+    .den {
+      padding: 0 0.25rem;
+      line-height: 1.1;
+    }
+    /* Vibe Motion Micro-interactions */
+    .vibe-card {
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .vibe-card:hover {
+      border-color: rgba(88, 196, 221, 0.4);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    }
+    .glow-cyan {
+      box-shadow: 0 0 15px rgba(88, 196, 221, 0.25);
+    }
+    .glow-gold {
+      box-shadow: 0 0 15px rgba(240, 180, 41, 0.25);
+    }
+  </style>
+</head>
+<body class="bg-[#0d1117] text-[#f0f6fc] antialiased selection:bg-[#58c4dd] selection:text-[#0d1117]">
+
+  <!-- Top Sticky Navigation Bar -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/85 backdrop-blur-md border-b border-[#233044]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#58c4dd] to-[#a78bfa] flex items-center justify-center font-bold text-[#0d1117] text-lg">
+          3
+        </div>
+        <div>
+          <span class="font-bold text-sm sm:text-base text-white tracking-wide">Transformer Tutorial</span>
+          <span class="hidden sm:inline text-xs text-[#8b949e] ml-2">第 3 章：神经网络最小集</span>
+        </div>
+      </div>
+      
+      <!-- Nav Links -->
+      <nav class="hidden md:flex items-center space-x-1 text-xs lg:text-sm font-medium text-[#8b949e]">
+        <a href="#mod-3-1" class="nav-link px-3 py-1.5 rounded-md hover:text-[#58c4dd] hover:bg-[#161f2e] transition">3.1 单神经元</a>
+        <a href="#mod-3-2" class="nav-link px-3 py-1.5 rounded-md hover:text-[#58c4dd] hover:bg-[#161f2e] transition">3.2 非线性坍塌</a>
+        <a href="#mod-3-3" class="nav-link px-3 py-1.5 rounded-md hover:text-[#58c4dd] hover:bg-[#161f2e] transition">3.3 梯度下降</a>
+        <a href="#mod-3-4" class="nav-link px-3 py-1.5 rounded-md hover:text-[#58c4dd] hover:bg-[#161f2e] transition">3.4 手写 XOR</a>
+        <a href="#mod-3-5" class="nav-link px-3 py-1.5 rounded-md hover:text-[#58c4dd] hover:bg-[#161f2e] transition">3.5 PyTorch 避坑</a>
+        <a href="#mod-3-6" class="nav-link px-3 py-1.5 rounded-md hover:text-[#58c4dd] hover:bg-[#161f2e] transition">3.6 实战代码 & 测验</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Header -->
+  <section class="relative pt-12 pb-10 border-b border-[#233044] bg-gradient-to-b from-[#161f2e]/40 to-transparent">
+    <div class="max-w-5xl mx-auto px-4 text-center">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#58c4dd]/10 text-[#58c4dd] text-xs font-semibold mb-4 border border-[#58c4dd]/20">
+        <span>3Blue1Brown 数学美学交互课件</span>
+      </div>
+      <h1 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
+        Transformer 第 3 章：神经网络最小集
+      </h1>
+      <p class="mt-4 text-lg text-[#8b949e] max-w-3xl mx-auto leading-relaxed">
+        从单个神经元的前向传播与激活函数，到反向传播链式法则，再到用纯 <span class="text-[#58c4dd] font-mono">NumPy</span> 从零构造两层网络突破 <span class="text-[#f0b429] font-mono">XOR 异或非线性分水岭</span>。
+      </p>
+    </div>
+  </section>
+
+  <!-- Main Content Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-16">
+
+    <!-- MODULE 3.1 -->
+    <section id="mod-3-1" class="scroll-mt-20">
+      <div class="border border-[#233044] rounded-2xl bg-[#161f2e] p-6 sm:p-8 vibe-card">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="px-2.5 py-1 rounded-md bg-[#58c4dd]/20 text-[#58c4dd] text-xs font-mono font-bold">MODULE 3.1</span>
+          <h2 class="text-2xl font-bold text-white">单神经元：<span class="math text-[#58c4dd]">y = σ(w · x + b)</span> 逐符号实验室</h2>
+        </div>
+
+        <p class="text-[#8b949e] text-sm leading-relaxed mb-6">
+          神经网络的最基本单元是单个神经元。它将多维输入向量 <span class="math">x</span> 与权重向量 <span class="math">w</span> 进行内积，加上偏置 <span class="math">b</span> 得到线性累加值 <span class="math">z</span>，最后通过非线性激活函数 <span class="math">σ(z)</span> 映射为输出 <span class="math">y</span>。
+        </p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <!-- Left Column: Controls & Dynamic Diagram -->
+          <div class="lg:col-span-7 space-y-6">
+            <!-- Dynamic Visualization Canvas -->
+            <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-4 relative">
+              <div class="text-xs text-[#8b949e] font-mono mb-2 flex justify-between">
+                <span>神经元结构图 (线宽代表权重绝对值，青色:正数，珊瑚色:负数)</span>
+                <span id="m1-z-badge" class="text-[#f0b429] font-bold">z = 0.0000</span>
+              </div>
+              <canvas id="canvas-m31-neuron" class="w-full h-56 rounded-lg bg-[#0d1117]"></canvas>
+            </div>
+
+            <!-- Sliders Box -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#0d1117]/60 p-4 rounded-xl border border-[#233044]">
+              <!-- Inputs Slider -->
+              <div class="space-y-3">
+                <div class="text-xs font-bold text-[#58c4dd] border-b border-[#233044] pb-1">输入向量 x</div>
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span>x₁:</span> <span id="val-x1" class="text-[#58c4dd]">0.50</span>
+                  </div>
+                  <input type="range" id="slider-x1" min="-3" max="3" step="0.1" value="0.5" class="w-full accent-[#58c4dd]">
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span>x₂:</span> <span id="val-x2" class="text-[#58c4dd]">-1.20</span>
+                  </div>
+                  <input type="range" id="slider-x2" min="-3" max="3" step="0.1" value="-1.2" class="w-full accent-[#58c4dd]">
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span>x₃:</span> <span id="val-x3" class="text-[#58c4dd]">2.00</span>
+                  </div>
+                  <input type="range" id="slider-x3" min="-3" max="3" step="0.1" value="2.0" class="w-full accent-[#58c4dd]">
+                </div>
+              </div>
+
+              <!-- Weights & Bias Slider -->
+              <div class="space-y-3">
+                <div class="text-xs font-bold text-[#f0b429] border-b border-[#233044] pb-1">权重 w 与 偏置 b</div>
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span>w₁:</span> <span id="val-w1" class="text-[#f0b429]">0.80</span>
+                  </div>
+                  <input type="range" id="slider-w1" min="-3" max="3" step="0.1" value="0.8" class="w-full accent-[#f0b429]">
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span>w₂:</span> <span id="val-w2" class="text-[#f0b429]">0.30</span>
+                  </div>
+                  <input type="range" id="slider-w2" min="-3" max="3" step="0.1" value="0.3" class="w-full accent-[#f0b429]">
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span>w₃:</span> <span id="val-w3" class="text-[#f0b429]">-0.50</span>
+                  </div>
+                  <input type="range" id="slider-w3" min="-3" max="3" step="0.1" value="-0.5" class="w-full accent-[#f0b429]">
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs font-mono mb-1">
+                    <span>bias (b):</span> <span id="val-b" class="text-[#ff6b6b]">0.10</span>
+                  </div>
+                  <input type="range" id="slider-b" min="-3" max="3" step="0.1" value="0.1" class="w-full accent-[#ff6b6b]">
+                </div>
+              </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex gap-3">
+              <button id="btn-m31-reset" class="px-4 py-2 text-xs font-semibold rounded-lg bg-[#233044] text-white hover:bg-[#324460] transition">
+                ↺ 恢复教材默认值
+              </button>
+              <button id="btn-m31-rand" class="px-4 py-2 text-xs font-semibold rounded-lg bg-[#58c4dd]/20 text-[#58c4dd] border border-[#58c4dd]/30 hover:bg-[#58c4dd]/30 transition">
+                🎲 随机生成权重
+              </button>
+            </div>
+          </div>
+
+          <!-- Right Column: Step-by-Step Breakdown -->
+          <div class="lg:col-span-5 space-y-4 flex flex-col justify-between">
+            <!-- Arithmetic Step Box -->
+            <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-5 space-y-3">
+              <div class="text-xs font-bold text-[#8b949e] uppercase tracking-wider">实时分步计算推导</div>
+              
+              <div class="text-xs font-mono space-y-2">
+                <div class="p-2.5 rounded bg-[#161f2e] border border-[#233044]">
+                  <span class="text-[#8b949e]">Step 1: 向量点积 w · x</span><br>
+                  <span id="m31-[#math-wx]" class="text-[#58c4dd] text-sm">
+                    (0.80 × 0.50) + (0.30 × -1.20) + (-0.50 × 2.00) = -0.9600
+                  </span>
+                </div>
+                
+                <div class="p-2.5 rounded bg-[#161f2e] border border-[#233044]">
+                  <span class="text-[#8b949e]">Step 2: 偏置累加 z = w · x + b</span><br>
+                  <span id="m31-[#math-z]" class="text-[#f0b429] text-sm">
+                    -0.9600 + 0.10 = -0.8600
+                  </span>
+                </div>
+              </div>
+
+              <!-- Activation Outputs -->
+              <div class="pt-2">
+                <div class="text-xs text-[#8b949e] mb-2 font-semibold">Step 3: 各种激活函数的输出 y = σ(z)</div>
+                <div class="grid grid-cols-3 gap-2 text-center font-mono text-xs">
+                  <div class="p-2 rounded bg-[#161f2e] border border-[#233044]">
+                    <div class="text-[#8b949e] text-[10px]">ReLU(z)</div>
+                    <div id="m31-out-relu" class="text-white font-bold mt-1">0.0000</div>
+                  </div>
+                  <div class="p-2 rounded bg-[#161f2e] border border-[#233044]">
+                    <div class="text-[#8b949e] text-[10px]">Sigmoid(z)</div>
+                    <div id="m31-out-sig" class="text-[#58c4dd] font-bold mt-1">0.2973</div>
+                  </div>
+                  <div class="p-2 rounded bg-[#161f2e] border border-[#233044]">
+                    <div class="text-[#8b949e] text-[10px]">GELU(z)</div>
+                    <div id="m31-out-gelu" class="text-[#a78bfa] font-bold mt-1">-0.1676</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Matrix Notation Note Card -->
+            <div class="p-4 rounded-xl bg-gradient-to-r from-[#161f2e] to-[#1c293d] border border-[#233044] space-y-2">
+              <div class="flex items-center gap-2 text-xs font-bold text-[#58c4dd]">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span>Transformer 中的向量化线性层</span>
+              </div>
+              <p class="text-xs text-[#8b949e] leading-relaxed">
+                在 PyTorch 中，批量计算写为 <span class="math">Y = X @ Wᵀ + b</span>。对于输入维度 <span class="math">in</span> 和输出维度 <span class="math">out</span>，<span class="math font-mono text-white">nn.Linear(in, out)</span> 内部存储的权重形状为 <span class="math font-mono text-[#f0b429]">(out, in)</span>。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 3.2 -->
+    <section id="mod-3-2" class="scroll-mt-20">
+      <div class="border border-[#233044] rounded-2xl bg-[#161f2e] p-6 sm:p-8 vibe-card">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="px-2.5 py-1 rounded-md bg-[#f0b429]/20 text-[#f0b429] text-xs font-mono font-bold">MODULE 3.2</span>
+          <h2 class="text-2xl font-bold text-white">为什么需要非线性？激活函数对比 & 线性坍塌</h2>
+        </div>
+
+        <p class="text-[#8b949e] text-sm leading-relaxed mb-6">
+          如果没有非线性激活函数，多层神经网络的连续矩阵相乘将发生<strong>线性坍塌 (Linear Collapse)</strong>：<span class="math">(X W₁) W₂ = X (W₁ W₂) = X W<sub>combo</sub></span>，无论叠多少层，本质上仍只等价于一层线性变换！
+        </p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <!-- Main Plot Area -->
+          <div class="lg:col-span-8 space-y-4">
+            <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-4">
+              <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-white">显示模式:</span>
+                  <div class="inline-flex rounded-lg bg-[#161f2e] p-1 border border-[#233044]">
+                    <button id="btn-act-val" class="px-3 py-1 text-xs rounded-md bg-[#58c4dd] text-[#0d1117] font-bold transition">函数值 f(x)</button>
+                    <button id="btn-act-grad" class="px-3 py-1 text-xs rounded-md text-[#8b949e] hover:text-white transition">导数/梯度 f'(x)</button>
+                  </div>
+                </div>
+                
+                <!-- Legend -->
+                <div class="flex items-center gap-4 text-xs font-mono">
+                  <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#58c4dd] inline-block"></span> ReLU</span>
+                  <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#f0b429] inline-block"></span> GELU</span>
+                  <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-[#a78bfa] inline-block"></span> Sigmoid</span>
+                </div>
+              </div>
+
+              <!-- High DPI Interactive Plot Canvas -->
+              <canvas id="canvas-m32-act" class="w-full h-72 rounded-lg bg-[#0d1117] cursor-crosshair"></canvas>
+
+              <!-- Slider for x cursor -->
+              <div class="mt-4 flex items-center gap-4">
+                <span class="text-xs font-mono text-[#8b949e]">游标位置 x:</span>
+                <input type="range" id="slider-m32-x" min="-4" max="4" step="0.1" value="-1.0" class="flex-1 accent-[#58c4dd]">
+                <span id="val-m32-x" class="text-xs font-mono text-[#58c4dd] font-bold w-12 text-right">-1.00</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Readout & Insight Cards -->
+          <div class="lg:col-span-4 space-y-4">
+            <!-- Dynamic Readout Table -->
+            <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-5 space-y-4">
+              <div class="text-xs font-bold text-[#8b949e] uppercase tracking-wider">在 x = <span id="m32-cur-x-title" class="text-white font-mono">-1.00</span> 处比较</div>
+
+              <!-- ReLU Card -->
+              <div class="p-3 rounded-lg bg-[#161f2e] border-l-4 border-[#58c4dd] space-y-1">
+                <div class="flex justify-between items-center text-xs font-bold text-white">
+                  <span>ReLU</span>
+                  <span id="m32-badge-relu" class="px-1.5 py-0.5 rounded text-[10px] bg-[#ff6b6b]/20 text-[#ff6b6b]">神经元死亡</span>
+                </div>
+                <div class="text-xs font-mono text-[#8b949e] flex justify-between">
+                  <span>f(x) = <span id="m32-v-relu" class="text-white">0.0000</span></span>
+                  <span>f'(x) = <span id="m32-g-relu" class="text-[#ff6b6b] font-bold">0.0000</span></span>
+                </div>
+              </div>
+
+              <!-- GELU Card -->
+              <div class="p-3 rounded-lg bg-[#161f2e] border-l-4 border-[#f0b429] space-y-1">
+                <div class="flex justify-between items-center text-xs font-bold text-white">
+                  <span>GELU (Transformer 默认)</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#4ade80]/20 text-[#4ade80]">平滑有梯度</span>
+                </div>
+                <div class="text-xs font-mono text-[#8b949e] flex justify-between">
+                  <span>f(x) = <span id="m32-v-gelu" class="text-white">-0.1588</span></span>
+                  <span>f'(x) = <span id="m32-g-gelu" class="text-[#f0b429] font-bold">-0.1118</span></span>
+                </div>
+              </div>
+
+              <!-- Sigmoid Card -->
+              <div class="p-3 rounded-lg bg-[#161f2e] border-l-4 border-[#a78bfa] space-y-1">
+                <div class="flex justify-between items-center text-xs font-bold text-white">
+                  <span>Sigmoid</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#233044] text-[#8b949e]">梯度饱和危险</span>
+                </div>
+                <div class="text-xs font-mono text-[#8b949e] flex justify-between">
+                  <span>f(x) = <span id="m32-v-sig" class="text-white">0.2689</span></span>
+                  <span>f'(x) = <span id="m32-g-sig" class="text-[#a78bfa] font-bold">0.1966</span></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- XOR Linear Inseparability Callout -->
+            <div class="p-4 rounded-xl bg-gradient-to-br from-[#161f2e] to-[#20162e] border border-[#233044] space-y-2">
+              <div class="text-xs font-bold text-[#ff6b6b] flex items-center gap-1.5">
+                <span>⚠️ 线性无法解决 XOR 分水岭</span>
+              </div>
+              <p class="text-xs text-[#8b949e] leading-relaxed">
+                单个直线平面无法将 XOR 数据点 <span class="math font-mono text-white">(0,0)→0, (1,1)→0</span> 与 <span class="math font-mono text-white">(0,1)→1, (1,0)→1</span> 分开。没有激活函数时，模型 Cost 会彻底卡在 <span class="math text-[#f0b429]">ln(2) ≈ 0.6931</span> (即盲猜概率 0.5)。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 3.3 -->
+    <section id="mod-3-3" class="scroll-mt-20">
+      <div class="border border-[#233044] rounded-2xl bg-[#161f2e] p-6 sm:p-8 vibe-card">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="px-2.5 py-1 rounded-md bg-[#4ade80]/20 text-[#4ade80] text-xs font-mono font-bold">MODULE 3.3</span>
+          <h2 class="text-2xl font-bold text-white">反向传播直觉 & 梯度下降学习率实验室</h2>
+        </div>
+
+        <div class="space-y-8">
+          <!-- PART A: Computation Graph Chain Rule Mini-Lab -->
+          <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-6">
+            <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+              <span>Part A: 链式法则计算图 (Chain Rule Computation Graph)</span>
+            </h3>
+            <p class="text-xs text-[#8b949e] mb-6">
+              考查简单复合函数 <span class="math text-[#58c4dd]">z = w · x</span>，<span class="math text-[#a78bfa]">y = z²</span> 的前向计算与反向梯度传播。
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              <!-- Graph Flow Controls & Visual -->
+              <div class="lg:col-span-7 space-y-4">
+                <!-- Sliders -->
+                <div class="flex gap-4">
+                  <div class="flex-1">
+                    <div class="flex justify-between text-xs font-mono mb-1">
+                      <span class="text-[#8b949e]">权重 w:</span> <span id="val-m33-w" class="text-[#58c4dd]">3.00</span>
+                    </div>
+                    <input type="range" id="slider-m33-w" min="0" max="5" step="0.1" value="3.0" class="w-full accent-[#58c4dd]">
+                  </div>
+                  <div class="flex-1">
+                    <div class="flex justify-between text-xs font-mono mb-1">
+                      <span class="text-[#8b949e]">输入 x:</span> <span id="val-m33-x" class="text-[#58c4dd]">2.00</span>
+                    </div>
+                    <input type="range" id="slider-m33-x" min="0" max="5" step="0.1" value="2.0" class="w-full accent-[#58c4dd]">
+                  </div>
+                </div>
+
+                <!-- Interactive Visual Nodes Flow -->
+                <div class="p-4 bg-[#161f2e] border border-[#233044] rounded-xl flex items-center justify-between text-center font-mono">
+                  <!-- Node w, x -->
+                  <div class="space-y-2">
+                    <div class="w-12 h-12 rounded-lg bg-[#58c4dd]/10 border border-[#58c4dd] flex flex-col items-center justify-center mx-auto">
+                      <span class="text-xs font-bold text-[#58c4dd]">w, x</span>
+                    </div>
+                    <div class="text-[10px] text-[#8b949e]">前向自变量</div>
+                  </div>
+
+                  <!-- Arrow Forward/Backward -->
+                  <div class="flex-1 px-2 space-y-1">
+                    <div class="text-[10px] text-[#58c4dd]">z = w · x →</div>
+                    <div class="h-0.5 bg-[#233044] relative"><div class="absolute inset-0 bg-[#58c4dd] w-2/3"></div></div>
+                    <div class="text-[10px] text-[#f0b429]">← ∂z/∂w = x</div>
+                  </div>
+
+                  <!-- Node z -->
+                  <div class="space-y-2">
+                    <div class="w-12 h-12 rounded-lg bg-[#f0b429]/10 border border-[#f0b429] flex flex-col items-center justify-center mx-auto">
+                      <span class="text-xs font-bold text-[#f0b429]" id="node-m33-z">6.0</span>
+                    </div>
+                    <div class="text-[10px] text-[#8b949e]">中间变量 z</div>
+                  </div>
+
+                  <!-- Arrow Forward/Backward -->
+                  <div class="flex-1 px-2 space-y-1">
+                    <div class="text-[10px] text-[#a78bfa]">y = z² →</div>
+                    <div class="h-0.5 bg-[#233044] relative"><div class="absolute inset-0 bg-[#a78bfa] w-2/3"></div></div>
+                    <div class="text-[10px] text-[#f0b429]">← ∂y/∂z = 2z</div>
+                  </div>
+
+                  <!-- Node y -->
+                  <div class="space-y-2">
+                    <div class="w-12 h-12 rounded-lg bg-[#a78bfa]/10 border border-[#a78bfa] flex flex-col items-center justify-center mx-auto">
+                      <span class="text-xs font-bold text-[#a78bfa]" id="node-m33-y">36.0</span>
+                    </div>
+                    <div class="text-[10px] text-[#8b949e]">最终标量 y</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Numerical Grad Check Box -->
+              <div class="lg:col-span-5 bg-[#161f2e] border border-[#233044] rounded-xl p-4 space-y-3">
+                <div class="flex justify-between items-center">
+                  <span class="text-xs font-bold text-white">数值梯度检验 (中心差分 ε = 10⁻⁶)</span>
+                  <span id="badge-grad-check" class="px-2 py-0.5 text-[10px] rounded font-bold bg-[#4ade80]/20 text-[#4ade80]">✅ 相对误差 < 10⁻⁵ 通过</span>
+                </div>
+
+                <div class="text-xs font-mono space-y-1.5 text-[#8b949e]">
+                  <div class="flex justify-between">
+                    <span>解析梯度 (Analytic):</span>
+                    <span id="m33-grad-ana" class="text-[#f0b429] font-bold">24.000000</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span>数值梯度 (Numeric):</span>
+                    <span id="m33-grad-num" class="text-[#58c4dd] font-bold">24.000001</span>
+                  </div>
+                  <div class="flex justify-between border-t border-[#233044] pt-1.5">
+                    <span>相对误差 (Rel Error):</span>
+                    <span id="m33-grad-err" class="text-[#4ade80] font-bold">2.1e-8</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PART B: Gradient Descent Learning Rate Lab -->
+          <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-6">
+            <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+              <span>Part B: 梯度下降与学习率 η 实验室</span>
+            </h3>
+            <p class="text-xs text-[#8b949e] mb-6">
+              目标函数为 <span class="math text-[#58c4dd]">f(x) = (x - 3)² + 1</span>，极小值点在 <span class="math text-[#4ade80]">x = 3</span>。初始点 <span class="math">x₀ = 0</span>。
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <!-- Controls & Canvas -->
+              <div class="lg:col-span-8 space-y-4">
+                <!-- Learning Rate Presets -->
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-[#8b949e]">预设学习率 η:</span>
+                    <button class="btn-lr-preset px-2.5 py-1 text-xs rounded bg-[#233044] text-white hover:bg-[#324460]" data-lr="0.01">0.01 (极慢)</button>
+                    <button class="btn-lr-preset px-2.5 py-1 text-xs rounded bg-[#58c4dd] text-[#0d1117] font-bold" data-lr="0.1">0.1 (稳健)</button>
+                    <button class="btn-lr-preset px-2.5 py-1 text-xs rounded bg-[#233044] text-white hover:bg-[#324460]" data-lr="0.9">0.9 (震荡)</button>
+                    <button class="btn-lr-preset px-2.5 py-1 text-xs rounded bg-[#ff6b6b]/20 text-[#ff6b6b] border border-[#ff6b6b]/30" data-lr="1.1">1.1 (发散!)</button>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-mono text-[#8b949e]">当前 η:</span>
+                    <input type="range" id="slider-m33-lr" min="0.01" max="1.15" step="0.01" value="0.1" class="w-24 accent-[#58c4dd]">
+                    <span id="val-m33-lr" class="text-xs font-mono text-[#58c4dd] font-bold">0.10</span>
+                  </div>
+                </div>
+
+                <!-- Canvas -->
+                <canvas id="canvas-m33-gd" class="w-full h-64 rounded-lg bg-[#0d1117] border border-[#233044]"></canvas>
+
+                <!-- Interactive Buttons -->
+                <div class="flex items-center justify-between">
+                  <div class="flex gap-3">
+                    <button id="btn-m33-play" class="px-4 py-2 rounded-lg bg-[#58c4dd] text-[#0d1117] font-bold text-xs hover:bg-[#68d4ed] transition">
+                      ▶ 开始迭代
+                    </button>
+                    <button id="btn-m33-step" class="px-4 py-2 rounded-lg bg-[#233044] text-white font-semibold text-xs hover:bg-[#324460] transition">
+                      ⏭ 单步 +1
+                    </button>
+                    <button id="btn-m33-reset" class="px-4 py-2 rounded-lg bg-[#161f2e] text-[#8b949e] border border-[#233044] hover:text-white transition text-xs">
+                      ↺ 重置 x₀=0
+                    </button>
+                  </div>
+                  <div id="m33-div-alert" class="hidden text-xs font-bold text-[#ff6b6b] animate-pulse">
+                    ⚠️ 步长过大，已震荡发散！
+                  </div>
+                </div>
+              </div>
+
+              <!-- Live Numeric Status Card -->
+              <div class="lg:col-span-4 bg-[#161f2e] border border-[#233044] rounded-xl p-5 space-y-4">
+                <div class="text-xs font-bold text-[#8b949e] uppercase tracking-wider">实时优化状态 Readout</div>
+
+                <div class="space-y-3 font-mono text-xs">
+                  <div class="p-2.5 rounded bg-[#0d1117] border border-[#233044]">
+                    <div class="text-[#8b949e] text-[10px]">当前步数 Epoch / Step</div>
+                    <div id="m33-stat-step" class="text-white text-base font-bold mt-0.5">0</div>
+                  </div>
+
+                  <div class="p-2.5 rounded bg-[#0d1117] border border-[#233044]">
+                    <div class="text-[#8b949e] text-[10px]">当前位置 x</div>
+                    <div id="m33-stat-x" class="text-[#58c4dd] text-base font-bold mt-0.5">0.0000</div>
+                  </div>
+
+                  <div class="p-2.5 rounded bg-[#0d1117] border border-[#233044]">
+                    <div class="text-[#8b949e] text-[10px]">目标损失 Loss f(x)</div>
+                    <div id="m33-stat-loss" class="text-[#f0b429] text-base font-bold mt-0.5">10.0000</div>
+                  </div>
+
+                  <div class="p-2.5 rounded bg-[#0d1117] border border-[#233044]">
+                    <div class="text-[#8b949e] text-[10px]">梯度 ∇f(x) = 2(x - 3)</div>
+                    <div id="m33-stat-grad" class="text-[#a78bfa] text-base font-bold mt-0.5">-6.0000</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 3.4 -->
+    <section id="mod-3-4" class="scroll-mt-20">
+      <div class="border border-[#233044] rounded-2xl bg-[#161f2e] p-6 sm:p-8 vibe-card">
+        <div class="flex items-center justify-between flex-wrap gap-4 mb-6">
+          <div class="flex items-center gap-3">
+            <span class="px-2.5 py-1 rounded-md bg-[#ff6b6b]/20 text-[#ff6b6b] text-xs font-mono font-bold">MODULE 3.4</span>
+            <h2 class="text-2xl font-bold text-white">分水岭实战 —— 纯 NumPy 两层网络解 XOR 实时训练</h2>
+          </div>
+        </div>
+
+        <p class="text-[#8b949e] text-sm leading-relaxed mb-6">
+          在浏览器中运行真实神经网络算法！对比<strong>两层非线性网络 (2 → H → 1)</strong> 与 <strong>单层线性模型</strong> 在 XOR 数据集上的表现，观察决策边界与 Loss 变化。
+        </p>
+
+        <!-- Controls Toolbar -->
+        <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-4 mb-6 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+          <!-- Model Arch Toggle -->
+          <div class="md:col-span-4 space-y-1">
+            <div class="text-[10px] text-[#8b949e] font-mono">网络结构选型</div>
+            <div class="flex gap-2">
+              <button id="btn-arch-2layer" class="px-3 py-1.5 rounded text-xs font-bold bg-[#58c4dd] text-[#0d1117] transition">两层非线性 (2→H→1)</button>
+              <button id="btn-arch-1layer" class="px-3 py-1.5 rounded text-xs text-[#8b949e] bg-[#161f2e] border border-[#233044] hover:text-white transition">单层线性</button>
+            </div>
+          </div>
+
+          <!-- Hidden Neurons & Activation -->
+          <div class="md:col-span-4 flex items-center gap-4">
+            <div>
+              <div class="text-[10px] text-[#8b949e] font-mono mb-1">隐层神经元 H</div>
+              <select id="select-m34-h" class="bg-[#161f2e] border border-[#233044] text-xs text-white rounded px-2.5 py-1 focus:outline-none focus:border-[#58c4dd]">
+                <option value="2">H = 2</option>
+                <option value="3">H = 3</option>
+                <option value="4">H = 4</option>
+                <option value="8" selected>H = 8 (推荐)</option>
+              </select>
+            </div>
+
+            <div>
+              <div class="text-[10px] text-[#8b949e] font-mono mb-1">激活函数</div>
+              <select id="select-m34-act" class="bg-[#161f2e] border border-[#233044] text-xs text-white rounded px-2.5 py-1 focus:outline-none focus:border-[#58c4dd]">
+                <option value="relu" selected>ReLU</option>
+                <option value="gelu">GELU</option>
+              </select>
+            </div>
+
+            <div>
+              <div class="text-[10px] text-[#8b949e] font-mono mb-1">学习率 η</div>
+              <input type="range" id="slider-m34-lr" min="0.1" max="1.0" step="0.1" value="0.5" class="w-20 accent-[#58c4dd]">
+              <span id="val-m34-lr" class="text-xs font-mono text-[#58c4dd] ml-1">0.5</span>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="md:col-span-4 flex items-center justify-end gap-2">
+            <button id="btn-m34-train" class="px-4 py-2 rounded-lg bg-[#58c4dd] text-[#0d1117] font-bold text-xs hover:bg-[#68d4ed] transition">
+              ▶ 开始/暂停训练
+            </button>
+            <button id="btn-m34-step" class="px-3 py-2 rounded-lg bg-[#233044] text-white text-xs hover:bg-[#324460] transition">
+              +20 Epoch
+            </button>
+            <button id="btn-m34-reset" class="px-3 py-2 rounded-lg bg-[#161f2e] text-[#8b949e] border border-[#233044] hover:text-white transition text-xs">
+              ↺ 重置权重
+            </button>
+          </div>
+        </div>
+
+        <!-- Dual Canvases Side-by-Side -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <!-- Left: 2D Decision Boundary Heatmap -->
+          <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-4 space-y-2">
+            <div class="flex justify-between items-center text-xs font-mono">
+              <span class="text-white font-bold">2D 决策边界热力图 (Decision Boundary)</span>
+              <span class="text-[#8b949e]">青色: ŷ→1, 珊瑚色: ŷ→0</span>
+            </div>
+            <canvas id="canvas-m34-boundary" class="w-full h-64 rounded-lg bg-[#0d1117]"></canvas>
+          </div>
+
+          <!-- Right: Realtime Loss Curve -->
+          <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-4 space-y-2">
+            <div class="flex justify-between items-center text-xs font-mono">
+              <span class="text-white font-bold">交叉熵 Loss 变化曲线</span>
+              <span class="text-[#ff6b6b]">虚线基准: ln(2) ≈ 0.6931</span>
+            </div>
+            <canvas id="canvas-m34-loss" class="w-full h-64 rounded-lg bg-[#0d1117]"></canvas>
+          </div>
+        </div>
+
+        <!-- Live XOR Prediction Table & Hidden Activation Matrix -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Prediction Table -->
+          <div class="lg:col-span-5 bg-[#0d1117] border border-[#233044] rounded-xl p-4 space-y-3">
+            <div class="text-xs font-bold text-white">4 个 XOR 样本预测结果</div>
+            <table class="w-full text-xs font-mono text-left">
+              <thead>
+                <tr class="text-[#8b949e] border-b border-[#233044]">
+                  <th class="pb-2">输入 (x₁, x₂)</th>
+                  <th class="pb-2">真实 y</th>
+                  <th class="pb-2">预测 ŷ</th>
+                  <th class="pb-2">状态</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-m34-xor" class="divide-y divide-[#233044]">
+                <!-- Rows inserted by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Hidden Activation Matrix -->
+          <div class="lg:col-span-7 bg-[#0d1117] border border-[#233044] rounded-xl p-4 space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-white">隐层神经元激活矩阵 Activation Matrix (4 × H)</span>
+              <span id="m34-dead-alert" class="hidden text-[10px] px-2 py-0.5 rounded bg-[#ff6b6b]/20 text-[#ff6b6b] font-bold">⚠️ 检测到神经元死亡</span>
+            </div>
+            <div class="overflow-x-auto">
+              <div id="m34-matrix-container" class="grid gap-2 text-center text-xs font-mono min-w-[300px]">
+                <!-- Dynamic activation matrix items -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 3.5 -->
+    <section id="mod-3-5" class="scroll-mt-20">
+      <div class="border border-[#233044] rounded-2xl bg-[#161f2e] p-6 sm:p-8 vibe-card">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="px-2.5 py-1 rounded-md bg-[#a78bfa]/20 text-[#a78bfa] text-xs font-mono font-bold">MODULE 3.5</span>
+          <h2 class="text-2xl font-bold text-white">PyTorch 速通对照 & 核心避坑实验室</h2>
+        </div>
+
+        <div class="space-y-8">
+          <!-- NumPy vs PyTorch Comparison Table -->
+          <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-5 overflow-x-auto">
+            <h3 class="text-sm font-bold text-white mb-4">NumPy 手写 vs PyTorch API 速查表</h3>
+            <table class="w-full text-xs font-mono text-left min-w-[600px]">
+              <thead>
+                <tr class="text-[#8b949e] border-b border-[#233044]">
+                  <th class="pb-2 w-1/4">功能模块</th>
+                  <th class="pb-2 w-3/8">NumPy 从零手写</th>
+                  <th class="pb-2 w-3/8">PyTorch 官方 API</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#233044] text-[#8b949e]">
+                <tr>
+                  <td class="py-2.5 text-white font-bold">线性层参数</td>
+                  <td><code class="text-[#58c4dd]">W = np.random.randn(in_d, out_d)</code></td>
+                  <td><code class="text-[#a78bfa]">linear = nn.Linear(in_d, out_d)</code></td>
+                </tr>
+                <tr>
+                  <td class="py-2.5 text-white font-bold">反向传播自动求导</td>
+                  <td>手动推导链式法则 <code class="text-[#f0b429]">dW = X.T @ dz</code></td>
+                  <td><code class="text-[#a78bfa]">loss.backward()</code></td>
+                </tr>
+                <tr>
+                  <td class="py-2.5 text-white font-bold">梯度更新</td>
+                  <td><code class="text-[#58c4dd]">W -= lr * dW</code></td>
+                  <td><code class="text-[#a78bfa]">optimizer.step()</code></td>
+                </tr>
+                <tr>
+                  <td class="py-2.5 text-white font-bold">梯度清零</td>
+                  <td>重新赋值或 <code class="text-[#58c4dd]">dW.fill(0)</code></td>
+                  <td><code class="text-[#a78bfa]">optimizer.zero_grad()</code> (必须!)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- zero_grad Bug Simulator -->
+          <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-6">
+            <h3 class="text-base font-bold text-white mb-2">交互体验：<span class="font-mono text-[#ff6b6b]">optimizer.zero_grad()</span> 避坑模拟器</h3>
+            <p class="text-xs text-[#8b949e] mb-4">
+              在 PyTorch 中，默认梯度是<strong>不断累加 (Accumulate)</strong> 的！观察忘记清零或放错位置造成的灾难后果。假设每次梯度 <span class="math">∂L/∂w = 2.0</span>，学习率 <span class="math">η = 0.1</span>。
+            </p>
+
+            <!-- Mode Selector Tabs -->
+            <div class="flex flex-wrap gap-2 mb-4">
+              <button id="btn-zg-mode0" class="px-3 py-1.5 rounded text-xs font-bold bg-[#4ade80]/20 text-[#4ade80] border border-[#4ade80]/40">
+                ✅ 标准写法: 清零 → 反向 → 更新
+              </button>
+              <button id="btn-zg-mode1" class="px-3 py-1.5 rounded text-xs text-[#8b949e] bg-[#161f2e] border border-[#233044] hover:text-white">
+                ❌ 忘记 zero_grad(): 梯度疯狂累加 Bug
+              </button>
+              <button id="btn-zg-mode2" class="px-3 py-1.5 rounded text-xs text-[#8b949e] bg-[#161f2e] border border-[#233044] hover:text-white">
+                ❌ 放错位置: backward 后立即清零
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+              <div class="md:col-span-5 space-y-3">
+                <button id="btn-zg-step" class="w-full py-2.5 rounded-lg bg-[#a78bfa] text-[#0d1117] font-bold text-xs hover:bg-[#b89bfa] transition shadow-lg">
+                  ⚡ 执行 1 步 PyTorch 训练迭代
+                </button>
+
+                <div class="bg-[#161f2e] border border-[#233044] rounded-lg p-3 font-mono text-xs space-y-2">
+                  <div class="flex justify-between">
+                    <span class="text-[#8b949e]">迭代轮数 Iteration:</span>
+                    <span id="zg-stat-iter" class="text-white font-bold">0</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-[#8b949e]">权重 w:</span>
+                    <span id="zg-stat-w" class="text-[#58c4dd] font-bold">10.00</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-[#8b949e]">w.grad (累加梯度):</span>
+                    <span id="zg-stat-grad" class="text-[#f0b429] font-bold">0.00</span>
+                  </div>
+                  <div class="flex justify-between border-t border-[#233044] pt-2">
+                    <span class="text-[#8b949e]">本轮实际更新 Δw:</span>
+                    <span id="zg-stat-delta" class="text-[#ff6b6b] font-bold">0.00</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Log Console Box -->
+              <div class="md:col-span-7 bg-[#0d1117] border border-[#233044] rounded-lg p-3 h-44 overflow-y-auto font-mono text-[11px] space-y-1" id="zg-log-box">
+                <div class="text-[#8b949e]">// 点击上方按钮开始单步模拟...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- eval vs no_grad Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="p-5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-2">
+              <div class="text-xs font-bold text-[#58c4dd] flex items-center gap-2">
+                <span>1. model.eval()</span>
+              </div>
+              <p class="text-xs text-[#8b949e] leading-relaxed">
+                影响层行为（如关闭 <span class="font-mono text-white">Dropout</span> 随机丢弃，固定 <span class="font-mono text-white">BatchNorm</span> 的均值方差）。<strong>但它不会禁止梯度计算！</strong>
+              </p>
+            </div>
+
+            <div class="p-5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-2">
+              <div class="text-xs font-bold text-[#a78bfa] flex items-center gap-2">
+                <span>2. with torch.no_grad():</span>
+              </div>
+              <p class="text-xs text-[#8b949e] leading-relaxed">
+                彻底关停 PyTorch 的 Autograd 自动求导计算图引擎，不记录中间激活值梯度，<strong>可节省 30% ~ 50% 显存 (VRAM)</strong> 提高推理速度。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 3.6 -->
+    <section id="mod-3-6" class="scroll-mt-20">
+      <div class="border border-[#233044] rounded-2xl bg-[#161f2e] p-6 sm:p-8 vibe-card">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="px-2.5 py-1 rounded-md bg-[#58c4dd]/20 text-[#58c4dd] text-xs font-mono font-bold">MODULE 3.6</span>
+          <h2 class="text-2xl font-bold text-white">实战代码库 & 本章互动测验</h2>
+        </div>
+
+        <div class="space-y-8">
+          <!-- Code Viewer Tabs -->
+          <div class="bg-[#0d1117] border border-[#233044] rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between border-b border-[#233044] bg-[#161f2e] px-4 py-2">
+              <div class="flex gap-2">
+                <button id="tab-code-1" class="px-3 py-1 text-xs font-mono rounded bg-[#58c4dd] text-[#0d1117] font-bold">ch3_xor_numpy.py</button>
+                <button id="tab-code-2" class="px-3 py-1 text-xs font-mono rounded text-[#8b949e] hover:text-white">grad_check.py</button>
+                <button id="tab-code-3" class="px-3 py-1 text-xs font-mono rounded text-[#8b949e] hover:text-white">ch3_xor_torch.py</button>
+              </div>
+              <button id="btn-copy-code" class="px-2.5 py-1 text-[11px] font-mono rounded bg-[#233044] text-[#58c4dd] hover:bg-[#324460] transition">
+                📋 复制源码
+              </button>
+            </div>
+            
+            <pre class="p-4 text-xs font-mono overflow-x-auto text-[#f0f6fc] leading-relaxed max-h-96" id="code-content">
+              <!-- Code injected by JS -->
+            </pre>
+          </div>
+
+          <!-- Interactive Quiz Section -->
+          <div class="bg-[#0d1117] border border-[#233044] rounded-xl p-6">
+            <h3 class="text-lg font-bold text-white mb-6">本章知识点自我检测 (4 题)</h3>
+
+            <div class="space-y-6" id="quiz-container">
+              <!-- Questions generated dynamically by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-[#233044] py-8 bg-[#0d1117] text-center text-xs text-[#8b949e]">
+    <div class="max-w-7xl mx-auto px-4">
+      <p>Transformer 教程第 3 章：神经网络最小集 —— 从单神经元到手写 XOR</p>
+      <p class="mt-2 font-mono text-[11px]">3Blue1Brown Visual Aesthetics & Vibe Motion Micro-Interactions</p>
+    </div>
+  </footer>
+
+  <!-- JavaScript Engine -->
+  <script>
+    // Global Helper: High DPI Canvas Setup
+    function setupCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width: rect.width, height: rect.height };
+    }
+
+    // ==========================================
+    // MODULE 3.1: SINGLE NEURON LAB
+    // ==========================================
+    (function initModule31() {
+      const sliderX1 = document.getElementById('slider-x1');
+      const sliderX2 = document.getElementById('slider-x2');
+      const sliderX3 = document.getElementById('slider-x3');
+      const sliderW1 = document.getElementById('slider-w1');
+      const sliderW2 = document.getElementById('slider-w2');
+      const sliderW3 = document.getElementById('slider-w3');
+      const sliderB = document.getElementById('slider-b');
+
+      const canvas = document.getElementById('canvas-m31-neuron');
+
+      function calculate() {
+        const x1 = parseFloat(sliderX1.value), x2 = parseFloat(sliderX2.value), x3 = parseFloat(sliderX3.value);
+        const w1 = parseFloat(sliderW1.value), w2 = parseFloat(sliderW2.value), w3 = parseFloat(sliderW3.value);
+        const b = parseFloat(sliderB.value);
+
+        // Update readouts
+        document.getElementById('val-x1').textContent = x1.toFixed(2);
+        document.getElementById('val-x2').textContent = x2.toFixed(2);
+        document.getElementById('val-x3').textContent = x3.toFixed(2);
+        document.getElementById('val-w1').textContent = w1.toFixed(2);
+        document.getElementById('val-w2').textContent = w2.toFixed(2);
+        document.getElementById('val-w3').textContent = w3.toFixed(2);
+        document.getElementById('val-b').textContent = b.toFixed(2);
+
+        const wx = (w1 * x1) + (w2 * x2) + (w3 * x3);
+        const z = wx + b;
+
+        // Activations
+        const relu = Math.max(0, z);
+        const sig = 1 / (1 + Math.exp(-z));
+        // GPT-2 GELU Tanh Approximation
+        const gelu = 0.5 * z * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (z + 0.044715 * Math.pow(z, 3))));
+
+        document.getElementById('m1-z-badge').textContent = `z = ${z.toFixed(4)}`;
+        document.getElementById('m31-[#math-wx]').textContent = `(${w1.toFixed(2)} × ${x1.toFixed(2)}) + (${w2.toFixed(2)} × ${x2.toFixed(2)}) + (${w3.toFixed(2)} × ${x3.toFixed(2)}) = ${wx.toFixed(4)}`;
+        document.getElementById('m31-[#math-z]').textContent = `${wx.toFixed(4)} + ${b.toFixed(2)} = ${z.toFixed(4)}`;
+
+        document.getElementById('m31-out-relu').textContent = relu.toFixed(4);
+        document.getElementById('m31-out-sig').textContent = sig.toFixed(4);
+        document.getElementById('m31-out-gelu').textContent = gelu.toFixed(4);
+
+        drawNeuronDiagram(x1, x2, x3, w1, w2, w3, z, sig);
+      }
+
+      function drawNeuronDiagram(x1, x2, x3, w1, w2, w3, z, sig) {
+        if (!canvas) return;
+        const { ctx, width, height } = setupCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+
+        const inputXs = [width * 0.15, width * 0.15, width * 0.15];
+        const inputYs = [height * 0.2, height * 0.5, height * 0.8];
+        const sumPos = { x: width * 0.55, y: height * 0.5 };
+        const actPos = { x: width * 0.85, y: height * 0.5 };
+
+        const weights = [w1, w2, w3];
+        const inputs = [x1, x2, x3];
+
+        // Draw connections (wires)
+        weights.forEach((w, i) => {
+          ctx.beginPath();
+          ctx.moveTo(inputXs[i], inputYs[i]);
+          ctx.lineTo(sumPos.x, sumPos.y);
+          ctx.lineWidth = 1 + Math.abs(w) * 2.5;
+          ctx.strokeStyle = w >= 0 ? '#58c4dd' : '#ff6b6b';
+          ctx.stroke();
+
+          // Label weights along lines
+          const midX = (inputXs[i] + sumPos.x) / 2;
+          const midY = (inputYs[i] + sumPos.y) / 2;
+          ctx.fillStyle = '#8b949e';
+          ctx.font = '10px JetBrains Mono';
+          ctx.fillText(`w${i+1}=${w.toFixed(1)}`, midX - 15, midY - 6);
+        });
+
+        // Connection sum -> act
+        ctx.beginPath();
+        ctx.moveTo(sumPos.x, sumPos.y);
+        ctx.lineTo(actPos.x, actPos.y);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#f0b429';
+        ctx.stroke();
+
+        // Draw Input Nodes
+        inputs.forEach((val, i) => {
+          ctx.beginPath();
+          ctx.arc(inputXs[i], inputYs[i], 18, 0, Math.PI * 2);
+          ctx.fillStyle = '#161f2e';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#58c4dd';
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '11px JetBrains Mono';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`x${i+1}`, inputXs[i], inputYs[i] - 5);
+          ctx.fillStyle = '#58c4dd';
+          ctx.fillText(val.toFixed(1), inputXs[i], inputYs[i] + 7);
+        });
+
+        // Draw Summation Node Σ
+        ctx.beginPath();
+        ctx.arc(sumPos.x, sumPos.y, 24, 0, Math.PI * 2);
+        ctx.fillStyle = '#161f2e';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#f0b429';
+        ctx.stroke();
+
+        ctx.fillStyle = '#f0b429';
+        ctx.font = '14px Cambria';
+        ctx.fillText('z = Σ', sumPos.x, sumPos.y - 4);
+        ctx.font = '10px JetBrains Mono';
+        ctx.fillText(z.toFixed(2), sumPos.x, sumPos.y + 10);
+
+        // Draw Activation Node σ
+        ctx.beginPath();
+        ctx.arc(actPos.x, actPos.y, 22, 0, Math.PI * 2);
+        ctx.fillStyle = '#161f2e';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#a78bfa';
+        ctx.stroke();
+
+        ctx.fillStyle = '#a78bfa';
+        ctx.font = '14px Cambria';
+        ctx.fillText('y = σ', actPos.x, actPos.y - 4);
+        ctx.font = '10px JetBrains Mono';
+        ctx.fillText(sig.toFixed(2), actPos.x, actPos.y + 10);
+      }
+
+      [sliderX1, sliderX2, sliderX3, sliderW1, sliderW2, sliderW3, sliderB].forEach(s => {
+        s.addEventListener('input', calculate);
+      });
+
+      document.getElementById('btn-m31-reset').addEventListener('click', () => {
+        sliderX1.value = 0.5; sliderX2.value = -1.2; sliderX3.value = 2.0;
+        sliderW1.value = 0.8; sliderW2.value = 0.3; sliderW3.value = -0.5;
+        sliderB.value = 0.1;
+        calculate();
+      });
+
+      document.getElementById('btn-m31-rand').addEventListener('click', () => {
+        sliderW1.value = (Math.random() * 4 - 2).toFixed(1);
+        sliderW2.value = (Math.random() * 4 - 2).toFixed(1);
+        sliderW3.value = (Math.random() * 4 - 2).toFixed(1);
+        sliderB.value = (Math.random() * 2 - 1).toFixed(1);
+        calculate();
+      });
+
+      window.addEventListener('resize', calculate);
+      calculate();
+    })();
+
+    // ==========================================
+    // MODULE 3.2: ACTIVATIONS & LINEAR COLLAPSE
+    // ==========================================
+    (function initModule32() {
+      const canvas = document.getElementById('canvas-m32-act');
+      const sliderX = document.getElementById('slider-m32-x');
+      const btnVal = document.getElementById('btn-act-val');
+      const btnGrad = document.getElementById('btn-act-grad');
+      let mode = 'val'; // 'val' or 'grad'
+
+      function relu(x) { return Math.max(0, x); }
+      function reluGrad(x) { return x > 0 ? 1 : 0; }
+
+      function gelu(x) {
+        return 0.5 * x * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (x + 0.044715 * Math.pow(x, 3))));
+      }
+      function geluGrad(x) {
+        const eps = 1e-5;
+        return (gelu(x + eps) - gelu(x - eps)) / (2 * eps);
+      }
+
+      function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+      function sigmoidGrad(x) { const s = sigmoid(x); return s * (1 - s); }
+
+      function render() {
+        if (!canvas) return;
+        const curX = parseFloat(sliderX.value);
+        document.getElementById('val-m32-x').textContent = curX.toFixed(2);
+        document.getElementById('m32-cur-x-title').textContent = curX.toFixed(2);
+
+        // Numeric Readouts
+        const rV = relu(curX), rG = reluGrad(curX);
+        const gV = gelu(curX), gG = geluGrad(curX);
+        const sV = sigmoid(curX), sG = sigmoidGrad(curX);
+
+        document.getElementById('m32-v-relu').textContent = rV.toFixed(4);
+        document.getElementById('m32-g-relu').textContent = rG.toFixed(4);
+        document.getElementById('m32-v-gelu').textContent = gV.toFixed(4);
+        document.getElementById('m32-g-gelu').textContent = gG.toFixed(4);
+        document.getElementById('m32-v-sig').textContent = sV.toFixed(4);
+        document.getElementById('m32-g-sig').textContent = sG.toFixed(4);
+
+        // Dying ReLU Badge
+        const badgeRelu = document.getElementById('m32-badge-relu');
+        if (curX < 0) {
+          badgeRelu.className = "px-1.5 py-0.5 rounded text-[10px] bg-[#ff6b6b]/20 text-[#ff6b6b]";
+          badgeRelu.textContent = "神经元死亡 (Grad = 0)";
+        } else {
+          badgeRelu.className = "px-1.5 py-0.5 rounded text-[10px] bg-[#4ade80]/20 text-[#4ade80]";
+          badgeRelu.textContent = "正常激活";
+        }
+
+        // Draw Plot
+        const { ctx, width, height } = setupCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+
+        const xMin = -4, xMax = 4;
+        const yMin = mode === 'val' ? -1.5 : -0.2;
+        const yMax = mode === 'val' ? 3.5 : 1.2;
+
+        const toScreenX = (x) => ((x - xMin) / (xMax - xMin)) * width;
+        const toScreenY = (y) => height - ((y - yMin) / (yMax - yMin)) * height;
+
+        // Axes
+        ctx.strokeStyle = '#233044';
+        ctx.lineWidth = 1;
+        // X axis
+        ctx.beginPath();
+        ctx.moveTo(0, toScreenY(0)); ctx.lineTo(width, toScreenY(0));
+        ctx.stroke();
+        // Y axis
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(0), 0); ctx.lineTo(toScreenX(0), height);
+        ctx.stroke();
+
+        // Plot Curves
+        const plotCurve = (fn, color) => {
+          ctx.beginPath();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.5;
+          for (let px = 0; px <= width; px += 2) {
+            const x = xMin + (px / width) * (xMax - xMin);
+            const y = fn(x);
+            const py = toScreenY(y);
+            if (px === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+        };
+
+        if (mode === 'val') {
+          plotCurve(relu, '#58c4dd');
+          plotCurve(gelu, '#f0b429');
+          plotCurve(sigmoid, '#a78bfa');
+        } else {
+          plotCurve(reluGrad, '#58c4dd');
+          plotCurve(geluGrad, '#f0b429');
+          plotCurve(sigmoidGrad, '#a78bfa');
+        }
+
+        // Vertical Cursor Line at curX
+        const cx = toScreenX(curX);
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = 'rgba(240, 246, 252, 0.4)';
+        ctx.beginPath();
+        ctx.moveTo(cx, 0); ctx.lineTo(cx, height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Highlight Dots at Cursor
+        const drawDot = (yVal, color) => {
+          const cy = toScreenY(yVal);
+          ctx.beginPath();
+          ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#0d1117';
+          ctx.stroke();
+        };
+
+        if (mode === 'val') {
+          drawDot(rV, '#58c4dd'); drawDot(gV, '#f0b429'); drawDot(sV, '#a78bfa');
+        } else {
+          drawDot(rG, '#58c4dd'); drawDot(gG, '#f0b429'); drawDot(sG, '#a78bfa');
+        }
+      }
+
+      sliderX.addEventListener('input', render);
+      btnVal.addEventListener('click', () => {
+        mode = 'val';
+        btnVal.className = "px-3 py-1 text-xs rounded-md bg-[#58c4dd] text-[#0d1117] font-bold transition";
+        btnGrad.className = "px-3 py-1 text-xs rounded-md text-[#8b949e] hover:text-white transition";
+        render();
+      });
+      btnGrad.addEventListener('click', () => {
+        mode = 'grad';
+        btnGrad.className = "px-3 py-1 text-xs rounded-md bg-[#58c4dd] text-[#0d1117] font-bold transition";
+        btnVal.className = "px-3 py-1 text-xs rounded-md text-[#8b949e] hover:text-white transition";
+        render();
+      });
+
+      window.addEventListener('resize', render);
+      render();
+    })();
+
+    // ==========================================
+    // MODULE 3.3: BACKPROP & GRADIENT DESCENT
+    // ==========================================
+    (function initModule33() {
+      // Part A: Chain Rule
+      const sliderW = document.getElementById('slider-m33-w');
+      const sliderX = document.getElementById('slider-m33-x');
+
+      function calcPartA() {
+        const w = parseFloat(sliderW.value);
+        const x = parseFloat(sliderX.value);
+        document.getElementById('val-m33-w').textContent = w.toFixed(2);
+        document.getElementById('val-m33-x').textContent = x.toFixed(2);
+
+        const z = w * x;
+        const y = z * z;
+        document.getElementById('node-m33-z').textContent = z.toFixed(1);
+        document.getElementById('node-m33-y').textContent = y.toFixed(1);
+
+        // Analytic Grad dy/dw = 2z * x = 2 * (w * x) * x
+        const analyticGrad = 2 * z * x;
+
+        // Numerical Grad via Central Difference eps = 1e-6
+        const eps = 1e-6;
+        const f = (w_val) => Math.pow(w_val * x, 2);
+        const numericGrad = (f(w + eps) - f(w - eps)) / (2 * eps);
+
+        const relError = Math.abs(analyticGrad - numericGrad) / (Math.abs(analyticGrad) + Math.abs(numericGrad) + 1e-12);
+
+        document.getElementById('m33-grad-ana').textContent = analyticGrad.toFixed(6);
+        document.getElementById('m33-grad-num').textContent = numericGrad.toFixed(6);
+        document.getElementById('m33-grad-err').textContent = relError.toExponential(2);
+      }
+
+      sliderW.addEventListener('input', calcPartA);
+      sliderX.addEventListener('input', calcPartA);
+      calcPartA();
+
+      // Part B: Gradient Descent Lab f(x) = (x-3)^2 + 1
+      const canvasGD = document.getElementById('canvas-m33-gd');
+      const sliderLR = document.getElementById('slider-m33-lr');
+      const btnPlay = document.getElementById('btn-m33-play');
+      const btnStep = document.getElementById('btn-m33-step');
+      const btnReset = document.getElementById('btn-m33-reset');
+      const divAlert = document.getElementById('m33-div-alert');
+
+      let curX = 0.0;
+      let stepCount = 0;
+      let history = [0.0];
+      let isAnimating = false;
+      let animId = null;
+
+      function f_opt(x) { return Math.pow(x - 3, 2) + 1; }
+      function grad_opt(x) { return 2 * (x - 3); }
+
+      function renderGD() {
+        const lr = parseFloat(sliderLR.value);
+        document.getElementById('val-m33-lr').textContent = lr.toFixed(2);
+
+        document.getElementById('m33-stat-step').textContent = stepCount;
+        document.getElementById('m33-stat-x').textContent = isNaN(curX) ? 'NaN' : curX.toFixed(4);
+        document.getElementById('m33-stat-loss').textContent = isNaN(curX) ? 'NaN' : f_opt(curX).toFixed(4);
+        document.getElementById('m33-stat-grad').textContent = isNaN(curX) ? 'NaN' : grad_opt(curX).toFixed(4);
+
+        if (Math.abs(curX) > 100 || isNaN(curX)) {
+          divAlert.classList.remove('hidden');
+          stopAnim();
+        } else {
+          divAlert.classList.add('hidden');
+        }
+
+        if (!canvasGD) return;
+        const { ctx, width, height } = setupCanvas(canvasGD);
+        ctx.clearRect(0, 0, width, height);
+
+        const xMin = -2, xMax = 8;
+        const yMin = 0, yMax = 30;
+
+        const toScreenX = (x) => ((x - xMin) / (xMax - xMin)) * width;
+        const toScreenY = (y) => height - ((y - yMin) / (yMax - yMin)) * height;
+
+        // Draw Parabola f(x)
+        ctx.beginPath();
+        ctx.strokeStyle = '#58c4dd';
+        ctx.lineWidth = 2.5;
+        for (let px = 0; px <= width; px += 2) {
+          const x = xMin + (px / width) * (xMax - xMin);
+          const y = f_opt(x);
+          const py = toScreenY(y);
+          if (px === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Draw Minimum Star
+        ctx.fillStyle = '#4ade80';
+        ctx.beginPath();
+        ctx.arc(toScreenX(3), toScreenY(1), 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw Trajectory Trail
+        if (history.length > 1) {
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(240, 180, 41, 0.4)';
+          ctx.lineWidth = 1.5;
+          history.forEach((hx, idx) => {
+            const hy = f_opt(hx);
+            if (idx === 0) ctx.moveTo(toScreenX(hx), toScreenY(hy));
+            else ctx.lineTo(toScreenX(hx), toScreenY(hy));
+          });
+          ctx.stroke();
+        }
+
+        // Draw Current Ball Position
+        if (!isNaN(curX) && Math.abs(curX) <= 100) {
+          const cx = toScreenX(curX);
+          const cy = toScreenY(f_opt(curX));
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#f0b429';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+        }
+      }
+
+      function doStep() {
+        if (Math.abs(curX) > 100 || isNaN(curX)) return;
+        const lr = parseFloat(sliderLR.value);
+        const g = grad_opt(curX);
+        curX = curX - lr * g;
+        stepCount++;
+        history.push(curX);
+        renderGD();
+      }
+
+      function startAnim() {
+        if (isAnimating) return;
+        isAnimating = true;
+        btnPlay.textContent = '⏸ 暂停';
+        function loop() {
+          doStep();
+          if (isAnimating && Math.abs(curX) <= 100 && !isNaN(curX)) {
+            setTimeout(() => { animId = requestAnimationFrame(loop); }, 150);
+          } else {
+            stopAnim();
+          }
+        }
+        loop();
+      }
+
+      function stopAnim() {
+        isAnimating = false;
+        btnPlay.textContent = '▶ 开始迭代';
+        if (animId) cancelAnimationFrame(animId);
+      }
+
+      btnPlay.addEventListener('click', () => {
+        if (isAnimating) stopAnim();
+        else startAnim();
+      });
+
+      btnStep.addEventListener('click', () => {
+        stopAnim();
+        doStep();
+      });
+
+      btnReset.addEventListener('click', () => {
+        stopAnim();
+        curX = 0.0;
+        stepCount = 0;
+        history = [0.0];
+        renderGD();
+      });
+
+      sliderLR.addEventListener('input', renderGD);
+
+      document.querySelectorAll('.btn-lr-preset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          stopAnim();
+          const lr = parseFloat(e.target.dataset.lr);
+          sliderLR.value = lr;
+          curX = 0.0;
+          stepCount = 0;
+          history = [0.0];
+          renderGD();
+        });
+      });
+
+      window.addEventListener('resize', renderGD);
+      renderGD();
+    })();
+
+    // ==========================================
+    // MODULE 3.4: NUMPY XOR NEURAL NETWORK ENGINE
+    // ==========================================
+    (function initModule34() {
+      const X = [[0, 0], [0, 1], [1, 0], [1, 1]];
+      const Y = [[0], [1], [1], [0]];
+
+      let arch = '2layer'; // '2layer' or '1layer'
+      let hiddenDim = 8;
+      let actType = 'relu';
+      let lr = 0.5;
+
+      let W1 = [], b1 = [], W2 = [], b2 = [];
+      let epoch = 0;
+      let lossHistory = [];
+      let isTraining = false;
+      let trainAnimId = null;
+
+      // Matrix Math Helpers
+      function randn(r, c) {
+        let m = [];
+        for (let i = 0; i < r; i++) {
+          let row = [];
+          for (let j = 0; j < c; j++) row.push((Math.random() - 0.5) * 0.8);
+          m.push(row);
+        }
+        return m;
+      }
+
+      function zeros(r, c) {
+        return Array(r).fill(0).map(() => Array(c).fill(0));
+      }
+
+      function resetWeights() {
+        epoch = 0;
+        lossHistory = [];
+        W1 = randn(2, hiddenDim);
+        b1 = zeros(1, hiddenDim);
+        W2 = randn(hiddenDim, 1);
+        b2 = zeros(1, 1);
+        render();
+      }
+
+      function act(z) {
+        if (actType === 'relu') return z > 0 ? z : 0;
+        return 0.5 * z * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (z + 0.044715 * Math.pow(z, 3))));
+      }
+
+      function actPrime(z) {
+        if (actType === 'relu') return z > 0 ? 1 : 0;
+        const eps = 1e-5;
+        return (act(z + eps) - act(z - eps)) / (2 * eps);
+      }
+
+      function sigmoid(z) { return 1 / (1 + Math.exp(-z)); }
+
+      function forward(x_in) {
+        if (arch === '1layer') {
+          // 1-layer linear model: z2 = x @ W1[:2,:1] + b1[0]
+          let z2 = x_in[0] * W1[0][0] + x_in[1] * W1[1][0] + b1[0][0];
+          let a2 = sigmoid(z2);
+          return { a2, a1: [] };
+        } else {
+          // 2-layer network
+          let a1 = [];
+          for (let j = 0; j < hiddenDim; j++) {
+            let z1 = x_in[0] * W1[0][j] + x_in[1] * W1[1][j] + b1[0][j];
+            a1.push(act(z1));
+          }
+          let z2 = b2[0][0];
+          for (let j = 0; j < hiddenDim; j++) {
+            z2 += a1[j] * W2[j][0];
+          }
+          let a2 = sigmoid(z2);
+          return { a2, a1 };
+        }
+      }
+
+      function trainEpochs(numSteps = 1) {
+        for (let step = 0; step < numSteps; step++) {
+          let totalLoss = 0;
+          let dW1 = zeros(2, hiddenDim);
+          let db1 = zeros(1, hiddenDim);
+          let dW2 = zeros(hiddenDim, 1);
+          let db2 = zeros(1, 1);
+
+          for (let i = 0; i < 4; i++) {
+            const xi = X[i];
+            const yi = Y[i][0];
+
+            if (arch === '1layer') {
+              let z2 = xi[0] * W1[0][0] + xi[1] * W1[1][0] + b1[0][0];
+              let a2 = sigmoid(z2);
+              let loss = -(yi * Math.log(a2 + 1e-12) + (1 - yi) * Math.log(1 - a2 + 1e-12));
+              totalLoss += loss;
+
+              let dz2 = (a2 - yi) / 4.0;
+              dW1[0][0] += xi[0] * dz2;
+              dW1[1][0] += xi[1] * dz2;
+              db1[0][0] += dz2;
+            } else {
+              // Forward
+              let z1 = [], a1 = [];
+              for (let j = 0; j < hiddenDim; j++) {
+                let val = xi[0] * W1[0][j] + xi[1] * W1[1][j] + b1[0][j];
+                z1.push(val);
+                a1.push(act(val));
+              }
+              let z2 = b2[0][0];
+              for (let j = 0; j < hiddenDim; j++) z2 += a1[j] * W2[j][0];
+              let a2 = sigmoid(z2);
+
+              let loss = -(yi * Math.log(a2 + 1e-12) + (1 - yi) * Math.log(1 - a2 + 1e-12));
+              totalLoss += loss;
+
+              // Backward
+              let dz2 = (a2 - yi) / 4.0;
+              db2[0][0] += dz2;
+              for (let j = 0; j < hiddenDim; j++) {
+                dW2[j][0] += a1[j] * dz2;
+                let da1 = dz2 * W2[j][0];
+                let dz1 = da1 * actPrime(z1[j]);
+                dW1[0][j] += xi[0] * dz1;
+                dW1[1][j] += xi[1] * dz1;
+                db1[0][j] += dz1;
+              }
+            }
+          }
+
+          totalLoss /= 4.0;
+          epoch++;
+          lossHistory.push(totalLoss);
+
+          // Update Weights
+          if (arch === '1layer') {
+            W1[0][0] -= lr * dW1[0][0];
+            W1[1][0] -= lr * dW1[1][0];
+            b1[0][0] -= lr * db1[0][0];
+          } else {
+            for (let j = 0; j < hiddenDim; j++) {
+              W1[0][j] -= lr * dW1[0][j];
+              W1[1][j] -= lr * dW1[1][j];
+              b1[0][j] -= lr * db1[0][j];
+              W2[j][0] -= lr * dW2[j][0];
+            }
+            b2[0][0] -= lr * db2[0][0];
+          }
+        }
+        render();
+      }
+
+      function render() {
+        drawBoundaryCanvas();
+        drawLossCanvas();
+        updateTableAndMatrix();
+      }
+
+      function drawBoundaryCanvas() {
+        const canvas = document.getElementById('canvas-m34-boundary');
+        if (!canvas) return;
+        const { ctx, width, height } = setupCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+
+        const gridRes = 40;
+        const cellW = width / gridRes;
+        const cellH = height / gridRes;
+
+        // Draw Heatmap Grid
+        for (let i = 0; i < gridRes; i++) {
+          for (let j = 0; j < gridRes; j++) {
+            const x1 = (i + 0.5) / gridRes;
+            const x2 = 1.0 - (j + 0.5) / gridRes; // Y flip for canvas
+            const res = forward([x1, x2]);
+            const p = res.a2;
+
+            // Interpolate color coral (#ff6b6b) -> cyan (#58c4dd)
+            const r = Math.round(255 + (88 - 255) * p);
+            const g = Math.round(107 + (196 - 107) * p);
+            const b = Math.round(107 + (221 - 107) * p);
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(i * cellW, j * cellH, cellW + 0.5, cellH + 0.5);
+          }
+        }
+
+        // Contour line around p = 0.5
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+
+        // Draw XOR 4 Points
+        X.forEach((pt, idx) => {
+          const px = pt[0] * width;
+          const py = (1.0 - pt[1]) * height;
+          const label = Y[idx][0];
+
+          ctx.beginPath();
+          ctx.arc(px, py, 9, 0, Math.PI * 2);
+          ctx.fillStyle = label === 1 ? '#58c4dd' : '#ff6b6b';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+
+          ctx.fillStyle = '#0d1117';
+          ctx.font = 'bold 10px JetBrains Mono';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, px, py);
+        });
+      }
+
+      function drawLossCanvas() {
+        const canvas = document.getElementById('canvas-m34-loss');
+        if (!canvas) return;
+        const { ctx, width, height } = setupCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+
+        // Axis line
+        ctx.strokeStyle = '#233044';
+        ctx.lineWidth = 1;
+
+        // Dashed Reference Line ln(2) ≈ 0.6931
+        const ln2Y = height - (0.6931 / 1.0) * height;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#ff6b6b';
+        ctx.beginPath();
+        ctx.moveTo(0, ln2Y); ctx.lineTo(width, ln2Y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#ff6b6b';
+        ctx.font = '10px JetBrains Mono';
+        ctx.fillText('ln(2) ≈ 0.6931', 10, ln2Y - 4);
+
+        if (lossHistory.length === 0) return;
+
+        // Plot Loss Line
+        ctx.beginPath();
+        ctx.strokeStyle = '#f0b429';
+        ctx.lineWidth = 2;
+        const maxLen = Math.max(200, lossHistory.length);
+        lossHistory.forEach((l, idx) => {
+          const px = (idx / maxLen) * width;
+          const py = height - (Math.min(1.0, l) / 1.0) * height;
+          if (idx === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+      }
+
+      function updateTableAndMatrix() {
+        const tbody = document.getElementById('tbody-m34-xor');
+        tbody.innerHTML = '';
+
+        X.forEach((pt, i) => {
+          const res = forward(pt);
+          const pred = res.a2;
+          const trueY = Y[i][0];
+          const isCorrect = Math.abs(pred - trueY) < 0.2;
+
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="py-2">(${pt[0]}, ${pt[1]})</td>
+            <td class="py-2 text-white">${trueY}</td>
+            <td class="py-2 font-bold ${isCorrect ? 'text-[#58c4dd]' : 'text-[#ff6b6b]'}">${pred.toFixed(4)}</td>
+            <td class="py-2">
+              <span class="px-1.5 py-0.5 text-[10px] rounded font-bold ${isCorrect ? 'bg-[#4ade80]/20 text-[#4ade80]' : 'bg-[#ff6b6b]/20 text-[#ff6b6b]'}">
+                ${isCorrect ? '✅ 正确' : '❌ 错误'}
+              </span>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        // Matrix Container
+        const container = document.getElementById('m34-matrix-container');
+        container.innerHTML = '';
+
+        if (arch === '1layer') {
+          container.innerHTML = `<div class="text-xs text-[#8b949e] py-4">单层线性模型没有隐层神经元</div>`;
+          document.getElementById('m34-dead-alert').classList.add('hidden');
+          return;
+        }
+
+        container.style.gridTemplateColumns = `repeat(${hiddenDim}, minmax(0, 1fr))`;
+
+        let deadCount = 0;
+        for (let h = 0; h < hiddenDim; h++) {
+          let colAllZero = true;
+          let colHtml = `<div class="bg-[#161f2e] border border-[#233044] rounded p-1.5 space-y-1"><div class="text-[10px] text-[#8b949e]">h${h+1}</div>`;
+
+          X.forEach((pt) => {
+            const res = forward(pt);
+            const val = res.a1[h];
+            if (val > 0.001) colAllZero = false;
+            colHtml += `<div class="${val === 0 ? 'text-[#ff6b6b]' : 'text-white'}">${val.toFixed(2)}</div>`;
+          });
+
+          if (colAllZero && actType === 'relu') deadCount++;
+          colHtml += `</div>`;
+          container.innerHTML += colHtml;
+        }
+
+        const alertBox = document.getElementById('m34-dead-alert');
+        if (deadCount > 0) alertBox.classList.remove('hidden');
+        else alertBox.classList.add('hidden');
+      }
+
+      // Event Listeners
+      document.getElementById('btn-arch-2layer').addEventListener('click', (e) => {
+        arch = '2layer';
+        e.target.className = "px-3 py-1.5 rounded text-xs font-bold bg-[#58c4dd] text-[#0d1117] transition";
+        document.getElementById('btn-arch-1layer').className = "px-3 py-1.5 rounded text-xs text-[#8b949e] bg-[#161f2e] border border-[#233044] hover:text-white transition";
+        resetWeights();
+      });
+
+      document.getElementById('btn-arch-1layer').addEventListener('click', (e) => {
+        arch = '1layer';
+        e.target.className = "px-3 py-1.5 rounded text-xs font-bold bg-[#58c4dd] text-[#0d1117] transition";
+        document.getElementById('btn-arch-2layer').className = "px-3 py-1.5 rounded text-xs text-[#8b949e] bg-[#161f2e] border border-[#233044] hover:text-white transition";
+        resetWeights();
+      });
+
+      document.getElementById('select-m34-h').addEventListener('change', (e) => {
+        hiddenDim = parseInt(e.target.value);
+        resetWeights();
+      });
+
+      document.getElementById('select-m34-act').addEventListener('change', (e) => {
+        actType = e.target.value;
+        resetWeights();
+      });
+
+      document.getElementById('slider-m34-lr').addEventListener('input', (e) => {
+        lr = parseFloat(e.target.value);
+        document.getElementById('val-m34-lr').textContent = lr.toFixed(1);
+      });
+
+      document.getElementById('btn-m34-train').addEventListener('click', () => {
+        if (isTraining) {
+          isTraining = false;
+          document.getElementById('btn-m34-train').textContent = '▶ 开始/暂停训练';
+        } else {
+          isTraining = true;
+          document.getElementById('btn-m34-train').textContent = '⏸ 暂停训练';
+          function loop() {
+            trainEpochs(5);
+            if (isTraining && epoch < 1000) {
+              trainAnimId = requestAnimationFrame(loop);
+            } else {
+              isTraining = false;
+              document.getElementById('btn-m34-train').textContent = '▶ 开始/暂停训练';
+            }
+          }
+          loop();
+        }
+      });
+
+      document.getElementById('btn-m34-step').addEventListener('click', () => {
+        isTraining = false;
+        trainEpochs(20);
+      });
+
+      document.getElementById('btn-m34-reset').addEventListener('click', () => {
+        isTraining = false;
+        resetWeights();
+      });
+
+      window.addEventListener('resize', render);
+      resetWeights();
+    })();
+
+    // ==========================================
+    // MODULE 3.5: PYTORCH ZERO_GRAD SIMULATOR
+    // ==========================================
+    (function initModule35() {
+      let zgMode = 0; // 0: correct, 1: forgot zero_grad, 2: misplaced zero_grad
+      let w = 10.0;
+      let wGrad = 0.0;
+      let iter = 0;
+      const lr = 0.1;
+
+      const btnMode0 = document.getElementById('btn-zg-mode0');
+      const btnMode1 = document.getElementById('btn-zg-mode1');
+      const btnMode2 = document.getElementById('btn-zg-mode2');
+      const btnStep = document.getElementById('btn-zg-step');
+      const logBox = document.getElementById('zg-log-box');
+
+      function updateMode(m) {
+        zgMode = m;
+        w = 10.0; wGrad = 0.0; iter = 0;
+        logBox.innerHTML = `<div class="text-[#8b949e]">// 已切换模式并重置状态...</div>`;
+        updateUI(0);
+
+        [btnMode0, btnMode1, btnMode2].forEach((b, idx) => {
+          if (idx === m) {
+            b.className = "px-3 py-1.5 rounded text-xs font-bold bg-[#4ade80]/20 text-[#4ade80] border border-[#4ade80]/40";
+          } else {
+            b.className = "px-3 py-1.5 rounded text-xs text-[#8b949e] bg-[#161f2e] border border-[#233044] hover:text-white";
+          }
+        });
+      }
+
+      function updateUI(delta) {
+        document.getElementById('zg-stat-iter').textContent = iter;
+        document.getElementById('zg-stat-w').textContent = w.toFixed(2);
+        document.getElementById('zg-stat-grad').textContent = wGrad.toFixed(2);
+        document.getElementById('zg-stat-delta').textContent = delta.toFixed(2);
+      }
+
+      btnStep.addEventListener('click', () => {
+        iter++;
+        const targetGrad = 2.0; // Assume gradient for loss = w * 2.0
+        let delta = 0;
+
+        let logLines = [`<span class="text-[#58c4dd]">[Iter ${iter}]</span> Loss forward pass complete.`];
+
+        if (zgMode === 0) {
+          // Standard: zero -> backward -> step
+          wGrad = targetGrad;
+          logLines.push(`optimizer.zero_grad() -> w.grad reset to 0.0`);
+          logLines.push(`loss.backward() -> w.grad = 2.0`);
+          delta = lr * wGrad;
+          w -= delta;
+          logLines.push(`optimizer.step() -> w updated: 10.0 -> ${w.toFixed(2)}`);
+        } else if (zgMode === 1) {
+          // Forgot zero_grad: grad accumulates
+          wGrad += targetGrad;
+          logLines.push(`<span class="text-[#ff6b6b]">❌ No zero_grad()!</span> w.grad accumulated to ${wGrad.toFixed(1)}`);
+          delta = lr * wGrad;
+          w -= delta;
+          logLines.push(`optimizer.step() -> Overshot update Δw = ${delta.toFixed(2)}!`);
+        } else if (zgMode === 2) {
+          // Misplaced: backward then immediate zero_grad before step
+          wGrad = targetGrad;
+          logLines.push(`loss.backward() -> w.grad = 2.0`);
+          wGrad = 0.0;
+          logLines.push(`<span class="text-[#ff6b6b]">❌ Misplaced zero_grad()!</span> Cleared gradient BEFORE step()`);
+          delta = lr * wGrad;
+          w -= delta;
+          logLines.push(`optimizer.step() -> Δw = 0.0, Model STUCK!`);
+        }
+
+        updateUI(delta);
+        logBox.innerHTML += logLines.map(l => `<div>${l}</div>`).join('') + `<div class="border-b border-[#233044] my-1"></div>`;
+        logBox.scrollTop = logBox.scrollHeight;
+      });
+
+      btnMode0.addEventListener('click', () => updateMode(0));
+      btnMode1.addEventListener('click', () => updateMode(1));
+      btnMode2.addEventListener('click', () => updateMode(2));
+    })();
+
+    // ==========================================
+    // MODULE 3.6: CODE VIEWER & QUIZ ENGINE
+    // ==========================================
+    (function initModule36() {
+      const codeFiles = {
+        'ch3_xor_numpy.py': `import numpy as np
+
+# 1. 构造 XOR 异或数据集
+X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])  # (4, 2)
+y = np.array([[0], [1], [1], [0]])              # (4, 1)
+
+# 2. 初始化网络参数 (2 -> 8 -> 1)
+np.random.seed(42)
+W1 = np.random.randn(2, 8) * 0.5
+b1 = np.zeros((1, 8))
+W2 = np.random.randn(8, 1) * 0.5
+b2 = np.zeros((1, 1))
+
+def relu(z): return np.maximum(0, z)
+def relu_prime(z): return (z > 0).astype(float)
+def sigmoid(z): return 1.0 / (1.0 + np.exp(-z))
+
+lr = 0.5
+for epoch in range(1000):
+    # 前向传播 (Forward)
+    z1 = X @ W1 + b1          # (4, 8)
+    a1 = relu(z1)             # (4, 8)
+    z2 = a1 @ W2 + b2         # (4, 1)
+    a2 = sigmoid(z2)          # (4, 1) 预测值 ŷ
+
+    # 交叉熵 Loss
+    loss = -np.mean(y * np.log(a2 + 1e-12) + (1 - y) * np.log(1 - a2 + 1e-12))
+
+    # 反向传播 (Backprop)
+    d_z2 = (a2 - y) / 4.0     # BCE + Sigmoid 结合项 (4, 1)
+    dW2 = a1.T @ d_z2         # (8, 1)
+    db2 = np.sum(d_z2, axis=0, keepdims=True)
+
+    d_a1 = d_z2 @ W2.T        # (4, 8)
+    d_z1 = d_a1 * relu_prime(z1)
+    dW1 = X.T @ d_z1          # (2, 8)
+    db1 = np.sum(d_z1, axis=0, keepdims=True)
+
+    # 梯度更新
+    W1 -= lr * dW1; b1 -= lr * db1
+    W2 -= lr * dW2; b2 -= lr * db2
+
+print("训练完成！预测结果 ŷ:")
+print(np.round(a2, 4))`,
+
+        'grad_check.py': `import numpy as np
+
+def f(w, x):
+    """简单计算图: y = (w * x)^2"""
+    return (w * x) ** 2
+
+w, x = 3.0, 2.0
+# 1. 解析梯度 (Analytic Gradient)
+# y = w^2 * x^2 => dy/dw = 2 * w * x^2
+dy_dw_analytic = 2 * w * (x ** 2)
+
+# 2. 数值梯度 (Numerical Gradient 中心差分)
+eps = 1e-6
+dy_dw_numeric = (f(w + eps, x) - f(w - eps, x)) / (2 * eps)
+
+# 3. 相对误差检验
+rel_error = abs(dy_dw_analytic - dy_dw_numeric) / (abs(dy_dw_analytic) + abs(dy_dw_numeric))
+
+print(f"解析梯度: {dy_dw_analytic:.6f}")
+print(f"数值梯度: {dy_dw_numeric:.6f}")
+print(f"相对误差: {rel_error:.2e}")
+assert rel_error < 1e-5, "梯度检验未通过！"
+print("✅ 数值梯度检验完美通过！")`,
+
+        'ch3_xor_torch.py': `import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# 1. 数据集定义
+X = torch.tensor([[0., 0.], [0., 1.], [1., 0.], [1., 1.]])
+y = torch.tensor([[0.], [1.], [1.], [0.]])
+
+# 2. 搭建 2 层 MLP 模型
+class XORNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(2, 8)
+        self.act = nn.ReLU()
+        self.fc2 = nn.Linear(8, 1)
+        self.sig = nn.Sigmoid()
+
+    def forward(self, x):
+        return self.sig(self.fc2(self.act(self.fc1(x))))
+
+model = XORNet()
+criterion = nn.BCELoss()
+optimizer = optim.SGD(model.parameters(), lr=0.5)
+
+# 3. 训练循环
+for epoch in range(1000):
+    optimizer.zero_grad()  # 避坑 1: 必须清零梯度！
+    output = model(X)
+    loss = criterion(output, y)
+    loss.backward()
+    optimizer.step()
+
+# 4. 推理阶段 (避坑 2 & 3)
+model.eval()               # 固定 Dropout 与 BatchNorm
+with torch.no_grad():     # 禁用梯度图，节省显存
+    preds = model(X)
+    print("PyTorch 训练预测结果:")
+    print(preds.round(decimals=4))`
+      };
+
+      const codeBox = document.getElementById('code-content');
+      const tab1 = document.getElementById('tab-code-1');
+      const tab2 = document.getElementById('tab-code-2');
+      const tab3 = document.getElementById('tab-code-3');
+      let currentFile = 'ch3_xor_numpy.py';
+
+      function showCode(filename) {
+        currentFile = filename;
+        codeBox.textContent = codeFiles[filename];
+
+        [tab1, tab2, tab3].forEach(t => {
+          if (t.textContent.trim() === filename) {
+            t.className = "px-3 py-1 text-xs font-mono rounded bg-[#58c4dd] text-[#0d1117] font-bold";
+          } else {
+            t.className = "px-3 py-1 text-xs font-mono rounded text-[#8b949e] hover:text-white";
+          }
+        });
+      }
+
+      tab1.addEventListener('click', () => showCode('ch3_xor_numpy.py'));
+      tab2.addEventListener('click', () => showCode('grad_check.py'));
+      tab3.addEventListener('click', () => showCode('ch3_xor_torch.py'));
+      showCode('ch3_xor_numpy.py');
+
+      document.getElementById('btn-copy-code').addEventListener('click', () => {
+        navigator.clipboard.writeText(codeFiles[currentFile]);
+        const btn = document.getElementById('btn-copy-code');
+        btn.textContent = '✅ 已复制!';
+        setTimeout(() => { btn.textContent = '📋 复制源码'; }, 2000);
+      });
+
+      // Quiz Engine
+      const quizData = [
+        {
+          q: "1. 为什么一个含 10 层的神经网络如果不使用任何激活函数，仍然无法解决 XOR 问题？其 Loss 会卡在什么数值？",
+          options: [
+            "A. 发生梯度爆炸，Loss 变成 NaN",
+            "B. 发生线性坍塌，相当于 1 层线性变换，Loss 卡在 ln(2) ≈ 0.6931",
+            "C. 权重全部衰减为 0，Loss 卡在 1.0000",
+            "D. 线性网络参数量不足，需增加到 100 层"
+          ],
+          correct: 1,
+          exp: "没有非线性激活函数时，矩阵乘法满结合律 (X W₁) W₂ ... W₁₀ = X W_combo。无论叠加多少层都只能画出直线分割平面，无法分割 XOR 的对角点，交叉熵 Loss 只能盲猜概率 0.5，卡在 <span class=\"math\">ln(2) ≈ 0.6931</span>。"
+        },
+        {
+          q: "2. 为什么在二分类任务中 Sigmoid/Softmax 总是与交叉熵 (Cross-Entropy) 成对使用，而不是均方误差 (MSE)？",
+          options: [
+            "A. MSE 无法计算矩阵导数",
+            "B. 交叉熵求导后消除了 Sigmoid 导数的饱和项 (ŷ - y)，求导形式极其简洁且避免梯度消失",
+            "C. PyTorch 规定只能搭配 Cross-Entropy",
+            "D. MSE 只能用于多分类任务"
+          ],
+          correct: 1,
+          exp: "Sigmoid 在输出接近 0 或 1 时导数极小 (σ' → 0)。若配合 MSE，梯度含 σ' 项会导致严重梯度消失；而配合 Cross-Entropy Loss 时，链式法则相乘完美消去分母，梯度简化为最优雅的 <span class=\"math\">∂L/∂z = ŷ - y</span>。"
+        },
+        {
+          q: "3. 如果在 PyTorch 训练循环中忘记在 backward() 前写 optimizer.zero_grad()，会发生什么？",
+          options: [
+            "A. 代码直接抛出 RuntimeError 崩溃报错",
+            "B. 梯度每次迭代不断累加 (Accumulate)，导致步长过大震荡发散",
+            "C. 模型会自动跳过梯度更新 step()",
+            "D. 权重参数会被直接强制清零"
+          ],
+          correct: 1,
+          exp: "PyTorch 默认累加梯度（用于大 Batch 梯度累加技巧）。若不手动 zero_grad()，第 1 轮 grad=2，第 2 轮 grad=4，第 3 轮 grad=6... 梯度指数级剧增导致模型瞬间训练发散！"
+        },
+        {
+          q: "4. 在模型测试/推理阶段，model.eval() 与 torch.no_grad() 的核心区别是什么？",
+          options: [
+            "A. 两者完全相同，没有任何区别",
+            "B. model.eval() 关停 Dropout/BatchNorm 行为；torch.no_grad() 关停自动求导引擎以节省显存",
+            "C. model.eval() 用于训练，torch.no_grad() 用于评估",
+            "D. torch.no_grad() 会自动冻结所有权重不可修改"
+          ],
+          correct: 1,
+          exp: "<span class=\"font-mono\">model.eval()</span> 改变特定层的前向计算行为（如固定 BatchNorm 均值方差），但仍会构建计算图；而 <span class=\"font-mono\">torch.no_grad()</span> 上下文管理器会彻底不追踪梯度图，省下 30%~50% 显存并加速计算。"
+        }
+      ];
+
+      const quizContainer = document.getElementById('quiz-container');
+      quizData.forEach((item, qIdx) => {
+        const qBox = document.createElement('div');
+        qBox.className = "p-5 rounded-xl bg-[#161f2e] border border-[#233044] space-y-4";
+        
+        let optionsHtml = item.options.map((opt, oIdx) => `
+          <button class="quiz-opt-btn w-full text-left p-3 rounded-lg bg-[#0d1117] border border-[#233044] text-xs font-mono text-[#8b949e] hover:border-[#58c4dd] hover:text-white transition" data-q="${qIdx}" data-o="${oIdx}">
+            ${opt}
+          </button>
+        `).join('');
+
+        qBox.innerHTML = `
+          <div class="text-sm font-bold text-white">${item.q}</div>
+          <div class="space-y-2">${optionsHtml}</div>
+          <div id="quiz-exp-${qIdx}" class="hidden p-3 rounded-lg bg-[#0d1117] border border-[#233044] text-xs text-[#8b949e] leading-relaxed">
+            <div class="font-bold text-white mb-1">解析与公式推导:</div>
+            <div>${item.exp}</div>
+          </div>
+        `;
+        quizContainer.appendChild(qBox);
+      });
+
+      document.querySelectorAll('.quiz-opt-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const qIdx = parseInt(e.target.dataset.q);
+          const oIdx = parseInt(e.target.dataset.o);
+          const qData = quizData[qIdx];
+
+          const parent = e.target.parentElement;
+          const allBtns = parent.querySelectorAll('.quiz-opt-btn');
+
+          allBtns.forEach((b, idx) => {
+            b.disabled = true;
+            if (idx === qData.correct) {
+              b.className = "w-full text-left p-3 rounded-lg bg-[#4ade80]/20 border border-[#4ade80] text-xs font-mono text-[#4ade80] font-bold";
+            } else if (idx === oIdx) {
+              b.className = "w-full text-left p-3 rounded-lg bg-[#ff6b6b]/20 border border-[#ff6b6b] text-xs font-mono text-[#ff6b6b]";
+            }
+          });
+
+          document.getElementById(`quiz-exp-${qIdx}`).classList.remove('hidden');
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer 第 1 章：向量与矩阵 · 交互可视化教程</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- KaTeX for crisp mathematical formulas -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            bg: '#090d16',
+                            card: 'rgba(17, 24, 39, 0.8)',
+                            cyan: '#38bdf8',
+                            amber: '#fbbf24',
+                            emerald: '#34d399',
+                            rose: '#fb7185',
+                            purple: '#a78bfa'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #090d16;
+            color: #f3f4f6;
+            overflow-x: hidden;
+        }
+        /* Glassmorphic Cards */
+        .glass-card {
+            background: rgba(17, 24, 39, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .glass-nav {
+            background: rgba(9, 13, 22, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        /* Custom Glowing effects */
+        .glow-cyan { box-shadow: 0 0 20px rgba(56, 189, 248, 0.25); }
+        .glow-amber { box-shadow: 0 0 20px rgba(251, 191, 36, 0.25); }
+        .glow-emerald { box-shadow: 0 0 20px rgba(52, 211, 153, 0.25); }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #090d16; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+        canvas {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased text-slate-200">
+
+    <!-- Top Sticky Header & Navigation -->
+    <header class="fixed top-0 left-0 right-0 z-50 glass-nav">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-cyan to-brand-purple flex items-center justify-center font-bold text-slate-900 shadow-lg">
+                    T1
+                </div>
+                <div>
+                    <h1 class="text-sm font-semibold text-slate-100 sm:text-base">Transformer 基础：向量与矩阵</h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">3Blue1Brown 几何直觉 × Vibe Motion 动效交互</p>
+                </div>
+            </div>
+
+            <!-- Nav Tabs -->
+            <nav class="hidden md:flex space-x-1 text-xs sm:text-sm font-medium">
+                <button onclick="scrollToModule('mod1')" class="nav-btn px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition">1. 语义向量</button>
+                <button onclick="scrollToModule('mod2')" class="nav-btn px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition">2. 注意力点积</button>
+                <button onclick="scrollToModule('mod3')" class="nav-btn px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition">3. 矩阵空间变换</button>
+                <button onclick="scrollToModule('mod4')" class="nav-btn px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition">4. 并行乘法</button>
+                <button onclick="scrollToModule('mod5')" class="nav-btn px-3 py-1.5 rounded-lg text-brand-cyan hover:bg-slate-800/80 transition flex items-center gap-1">
+                    <span>5. 通关测试</span>
+                    <span class="w-2 h-2 rounded-full bg-brand-cyan animate-pulse"></span>
+                </button>
+            </nav>
+        </div>
+        <!-- Reading Progress Bar -->
+        <div class="w-full bg-slate-800/50 h-1">
+            <div id="progress-bar" class="bg-gradient-to-r from-brand-cyan via-brand-emerald to-brand-purple h-1 w-0 transition-all duration-150"></div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-16 space-y-16">
+
+        <!-- Hero Section -->
+        <section class="text-center py-6 space-y-4">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan text-xs font-semibold tracking-wide uppercase">
+                <span>第 1 章 · Transformer 几何视角</span>
+            </div>
+            <h2 class="text-3xl sm:text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">
+                用几何直觉拆解大模型核心引擎
+            </h2>
+            <p class="max-w-2xl mx-auto text-slate-400 text-sm sm:text-base leading-relaxed">
+                无需复杂的偏微分或高深数学公式。只要理解**“形状怎么变”**和**“两个向量怎么比相似”**，Transformer 的 Self-Attention 就只是这套经典运算的优雅组合。
+            </p>
+        </section>
+
+        <!-- MODULE 1: Vector & Semantic Space -->
+        <section id="mod1" class="glass-card rounded-2xl p-6 sm:p-8 transition-all duration-300">
+            <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan text-xs font-mono font-bold">MODULE 01</span>
+                        <h3 class="text-xl font-bold text-white">向量——把文字变成空间中的箭头</h3>
+                    </div>
+                    <p class="text-slate-400 text-sm mt-1">在 Transformer 里，每个 Token 都用向量表达。几何上，向量就是带方向和长度的箭头。</p>
+                </div>
+                <!-- Controls / Presets -->
+                <div class="flex flex-wrap gap-2">
+                    <button id="btn-king-queen" onclick="runKingQueenDemo()" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-brand-cyan/20 to-brand-purple/20 border border-brand-cyan/40 hover:border-brand-cyan text-xs font-semibold text-brand-cyan transition flex items-center gap-1.5 glow-cyan">
+                        <span>✨ 运行「国王 - 男人 + 女人 ≈ 王后」演算</span>
+                    </button>
+                    <button onclick="resetMod1()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+                        重置向量
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <!-- Interactive Canvas (Left 7 Cols) -->
+                <div class="lg:col-span-7 relative bg-slate-950/80 rounded-xl border border-slate-800/80 p-2 overflow-hidden shadow-inner">
+                    <div class="absolute top-4 left-4 z-10 bg-slate-900/90 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-mono text-slate-300">
+                        提示: 拖拽向量终点点 <span class="inline-block w-2.5 h-2.5 rounded-full bg-brand-cyan"></span> 试试
+                    </div>
+                    <canvas id="canvas-mod1" class="w-full h-[360px] sm:h-[420px] rounded-lg cursor-crosshair"></canvas>
+                </div>
+
+                <!-- Live Math Panel (Right 5 Cols) -->
+                <div class="lg:col-span-5 space-y-4">
+                    <!-- Vector Coordinate display -->
+                    <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800/80 space-y-3">
+                        <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">实时向量参数 (Live Vector)</h4>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                                <div class="text-xs text-slate-400">坐标 $[x, y]$</div>
+                                <div id="mod1-coord" class="text-lg font-mono font-bold text-brand-cyan mt-1">[3.0, 4.0]</div>
+                            </div>
+                            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                                <div class="text-xs text-slate-400">模长 $\|\vec{v}\| = \sqrt{x^2+y^2}$</div>
+                                <div id="mod1-mag" class="text-lg font-mono font-bold text-brand-emerald mt-1">5.00</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Semantic Logic Card -->
+                    <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800/80 space-y-2">
+                        <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">为什么词向量能代表语义？</h4>
+                        <p class="text-xs text-slate-300 leading-relaxed">
+                            大模型通过高维向量嵌入（Embedding）将单词映射到空间中。含义相近的词在空间中距离更近；甚至**“语义关系”**对应着特定的向量加减位移（平行四边形法则）。
+                        </p>
+                        <div id="mod1-explanation" class="p-3 rounded-lg bg-slate-950/60 border border-brand-cyan/20 text-xs font-mono text-brand-cyan/90 min-h-[54px] flex items-center">
+                            点击顶部「国王 - 男人 + 女人」按钮，观赏向量在空间中的加减加移！
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 2: Dot Product & Attention -->
+        <section id="mod2" class="glass-card rounded-2xl p-6 sm:p-8 transition-all duration-300">
+            <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded bg-brand-amber/20 text-brand-amber text-xs font-mono font-bold">MODULE 02</span>
+                        <h3 class="text-xl font-bold text-white">点积与余弦相似度——注意力机制（Attention）的灵魂</h3>
+                    </div>
+                    <p class="text-slate-400 text-sm mt-1">Self-Attention 第一步就是用点积测量 Query ($\vec{q}$) 与 Key ($\vec{k}$) 的相关度。</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="setMod2Preset('aligned')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-brand-emerald font-medium transition">0° 同向 (高度相关)</button>
+                    <button onclick="setMod2Preset('perp')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 font-medium transition">90° 垂直 (无关)</button>
+                    <button onclick="setMod2Preset('opposite')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-brand-rose font-medium transition">180° 反向 (相反)</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <!-- Interactive Canvas (Left 7 Cols) -->
+                <div class="lg:col-span-7 relative bg-slate-950/80 rounded-xl border border-slate-800/80 p-2 overflow-hidden shadow-inner">
+                    <div class="absolute top-4 left-4 z-10 bg-slate-900/90 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-mono">
+                        <span class="text-brand-cyan">■ Query ($\vec{q}$)</span> &nbsp;
+                        <span class="text-brand-amber">■ Key ($\vec{k}$)</span>
+                    </div>
+                    <canvas id="canvas-mod2" class="w-full h-[360px] sm:h-[420px] rounded-lg cursor-crosshair"></canvas>
+                </div>
+
+                <!-- Right Live Metrics (Right 5 Cols) -->
+                <div class="lg:col-span-5 space-y-4">
+                    <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800 space-y-3">
+                        <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">点积公式拆解 (Dot Product Decomposition)</h4>
+                        
+                        <div class="p-3 bg-slate-950 rounded-lg border border-slate-800 font-mono text-xs space-y-1">
+                            <div class="text-slate-400">$\vec{q} \cdot \vec{k} = q_x k_x + q_y k_y$</div>
+                            <div id="mod2-math-step" class="text-slate-200 font-semibold text-sm">
+                                (3.0 × 4.0) + (1.0 × 0.0) = 12.0
+                            </div>
+                        </div>
+
+                        <!-- Cosine Similarity & Angle -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                                <div class="text-xs text-slate-400">夹角 $\theta$</div>
+                                <div id="mod2-angle" class="text-lg font-mono font-bold text-slate-200 mt-1">30.0°</div>
+                            </div>
+                            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                                <div class="text-xs text-slate-400">余弦相似度 $\cos\theta$</div>
+                                <div id="mod2-cos" class="text-lg font-mono font-bold text-brand-amber mt-1">0.866</div>
+                            </div>
+                        </div>
+
+                        <!-- Attention Score Visual Meter -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs font-mono">
+                                <span class="text-slate-400">注意力关联强度 (Attention Weight)</span>
+                                <span id="mod2-score-val" class="font-bold text-brand-cyan">0.86</span>
+                            </div>
+                            <div class="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800 p-0.5">
+                                <div id="mod2-score-bar" class="h-full bg-gradient-to-r from-brand-rose via-brand-amber to-brand-emerald rounded-full transition-all duration-200" style="width: 86%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+                        <span class="text-brand-amber font-semibold">💡 直觉要点：</span> 点积数值本质上是 <span class="text-brand-cyan">$\vec{q}$ 的长度</span> × <span class="text-brand-amber">$\vec{k}$ 在 $\vec{q}$ 方向上的投影长度</span>。方向越一致，点积得分越高！
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 3: Matrix Grid Transformation -->
+        <section id="mod3" class="glass-card rounded-2xl p-6 sm:p-8 transition-all duration-300">
+            <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded bg-brand-emerald/20 text-brand-emerald text-xs font-mono font-bold">MODULE 03</span>
+                        <h3 class="text-xl font-bold text-white">矩阵即空间变换——理解线性层 $W_Q, W_K, W_V$</h3>
+                    </div>
+                    <p class="text-slate-400 text-sm mt-1">3Blue1Brown 视角：矩阵的列就是基向量 $\hat{i}$ 与 $\hat{j}$ 变换后的新坐标！</p>
+                </div>
+                <!-- Transformation Presets -->
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="animateMatrixTo([[1,0],[0,1]])" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 font-medium transition">单位矩阵(复位)</button>
+                    <button onclick="animateMatrixTo([[0.707,-0.707],[0.707,0.707]])" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-brand-cyan font-medium transition">旋转 45°</button>
+                    <button onclick="animateMatrixTo([[1,1],[0,1]])" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-brand-purple font-medium transition">水平剪切</button>
+                    <button onclick="animateMatrixTo([[1.5,0],[0,0.8]])" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-brand-amber font-medium transition">缩放拉伸</button>
+                    <button onclick="animateMatrixTo([[1,1],[1,1]])" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-brand-rose font-medium transition">降维压扁 ($\det=0$)</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <!-- Grid Canvas (Left 7 Cols) -->
+                <div class="lg:col-span-7 relative bg-slate-950/80 rounded-xl border border-slate-800/80 p-2 overflow-hidden shadow-inner">
+                    <div class="absolute top-4 left-4 z-10 bg-slate-900/90 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-mono space-x-3">
+                        <span class="text-brand-emerald">■ 基向量 $\hat{i}$</span>
+                        <span class="text-brand-rose">■ 基向量 $\hat{j}$</span>
+                        <span class="text-brand-cyan">■ 测试向量 $\vec{v}$</span>
+                    </div>
+                    <canvas id="canvas-mod3" class="w-full h-[380px] sm:h-[440px] rounded-lg"></canvas>
+                </div>
+
+                <!-- Matrix Controls (Right 5 Cols) -->
+                <div class="lg:col-span-5 space-y-4">
+                    <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800 space-y-4">
+                        <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">变换矩阵 $M = \begin{bmatrix} a & b \\ c & d \end{bmatrix}$ 调节</h4>
+
+                        <!-- Interactive Sliders for a, b, c, d -->
+                        <div class="grid grid-cols-2 gap-4 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <!-- Col 1: i hat (a, c) -->
+                            <div class="space-y-3 border-r border-slate-800 pr-3">
+                                <div class="text-xs font-mono text-brand-emerald font-bold">第 1 列: $\hat{i}$ 落点 $[a, c]^T$</div>
+                                <div>
+                                    <div class="flex justify-between text-xs font-mono text-slate-400"><span>a =</span><span id="val-a" class="text-slate-200">1.0</span></div>
+                                    <input type="range" id="slider-a" min="-2" max="2" step="0.1" value="1" class="w-full accent-emerald-400">
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-xs font-mono text-slate-400"><span>c =</span><span id="val-c" class="text-slate-200">0.0</span></div>
+                                    <input type="range" id="slider-c" min="-2" max="2" step="0.1" value="0" class="w-full accent-emerald-400">
+                                </div>
+                            </div>
+                            <!-- Col 2: j hat (b, d) -->
+                            <div class="space-y-3 pl-1">
+                                <div class="text-xs font-mono text-brand-rose font-bold">第 2 列: $\hat{j}$ 落点 $[b, d]^T$</div>
+                                <div>
+                                    <div class="flex justify-between text-xs font-mono text-slate-400"><span>b =</span><span id="val-b" class="text-slate-200">0.0</span></div>
+                                    <input type="range" id="slider-b" min="-2" max="2" step="0.1" value="0" class="w-full accent-rose-400">
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-xs font-mono text-slate-400"><span>d =</span><span id="val-d" class="text-slate-200">1.0</span></div>
+                                    <input type="range" id="slider-d" min="-2" max="2" step="0.1" value="1" class="w-full accent-rose-400">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Determinant & Output calculation -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                                <div class="text-xs text-slate-400">行列式 $\det(M) = ad - bc$</div>
+                                <div id="mod3-det" class="text-lg font-mono font-bold text-brand-purple mt-1">1.00</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">几何含义：网格面积放缩倍数</div>
+                            </div>
+                            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                                <div class="text-xs text-slate-400">测试向量 $\vec{v}$ 变换后 $M\vec{v}$</div>
+                                <div id="mod3-v-out" class="text-lg font-mono font-bold text-brand-cyan mt-1">[1.0, 1.0]</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 4: Parallel Matrix Multiplication Simulator -->
+        <section id="mod4" class="glass-card rounded-2xl p-6 sm:p-8 transition-all duration-300">
+            <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded bg-brand-purple/20 text-brand-purple text-xs font-mono font-bold">MODULE 04</span>
+                        <h3 class="text-xl font-bold text-white">矩阵乘法——Transformer 的批量并行加速引擎</h3>
+                    </div>
+                    <p class="text-slate-400 text-sm mt-1">将整句话的所有 Token 堆叠成矩阵 $X$，一次矩阵乘法 $Q = X W_Q$ 并行完成整句变换！</p>
+                </div>
+                <div class="flex gap-2">
+                    <button id="btn-mat-play" onclick="toggleMatMulAnimation()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-purple/30 to-brand-cyan/30 border border-brand-purple/50 hover:border-brand-purple text-xs font-semibold text-white transition flex items-center gap-2">
+                        <span>▶ 自动播放步进计算</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Simulator Matrix Display -->
+            <div class="space-y-6">
+                <div class="flex flex-col lg:flex-row items-center justify-center gap-4 sm:gap-6 bg-slate-950/80 p-6 rounded-xl border border-slate-800 overflow-x-auto">
+                    
+                    <!-- Matrix X -->
+                    <div class="flex flex-col items-center">
+                        <div class="text-xs font-mono text-brand-cyan font-bold mb-2">输入矩阵 $X$ (3个词元 × 3维特征)</div>
+                        <div class="relative border-2 border-brand-cyan/40 rounded-lg p-2 bg-slate-900/90 font-mono text-xs shadow-lg">
+                            <div id="mat-x-grid" class="grid grid-cols-3 gap-2 text-center">
+                                <!-- Filled by JS -->
+                            </div>
+                        </div>
+                        <div class="text-[11px] text-slate-500 mt-1 font-mono">Shape: (3, 3)</div>
+                    </div>
+
+                    <div class="text-slate-500 font-bold text-xl">×</div>
+
+                    <!-- Matrix W -->
+                    <div class="flex flex-col items-center">
+                        <div class="text-xs font-mono text-brand-amber font-bold mb-2">权重矩阵 $W_Q$ (3维 $\rightarrow$ 2维)</div>
+                        <div class="relative border-2 border-brand-amber/40 rounded-lg p-2 bg-slate-900/90 font-mono text-xs shadow-lg">
+                            <div id="mat-w-grid" class="grid grid-cols-2 gap-2 text-center">
+                                <!-- Filled by JS -->
+                            </div>
+                        </div>
+                        <div class="text-[11px] text-slate-500 mt-1 font-mono">Shape: (3, 2)</div>
+                    </div>
+
+                    <div class="text-slate-500 font-bold text-xl">=</div>
+
+                    <!-- Matrix Y (Output) -->
+                    <div class="flex flex-col items-center">
+                        <div class="text-xs font-mono text-brand-emerald font-bold mb-2">输出矩阵 $Y$ (3词元 × 2目标维度)</div>
+                        <div class="relative border-2 border-brand-emerald/40 rounded-lg p-2 bg-slate-900/90 font-mono text-xs shadow-lg">
+                            <div id="mat-y-grid" class="grid grid-cols-2 gap-2 text-center">
+                                <!-- Filled by JS -->
+                            </div>
+                        </div>
+                        <div class="text-[11px] text-slate-500 mt-1 font-mono">Shape: (3, 2)</div>
+                    </div>
+                </div>
+
+                <!-- Step-by-step Formula Breakdown Banner -->
+                <div class="bg-slate-900/90 rounded-xl p-4 border border-slate-800 space-y-2">
+                    <div class="flex items-center justify-between text-xs text-slate-400 font-mono border-b border-slate-800/80 pb-2">
+                        <span id="matmul-step-label">点击输出矩阵 $Y$ 的任意单元格查看计算逻辑</span>
+                        <span class="text-brand-purple font-semibold">维度对应法则：(3 × 3) @ (3 × 2) $\rightarrow$ (3 × 2)</span>
+                    </div>
+                    <div id="matmul-formula-box" class="p-3 bg-slate-950 rounded-lg border border-slate-800/80 text-xs font-mono text-slate-200 min-h-[50px] flex items-center justify-center text-center">
+                        点按上方输出矩阵中的任意数值格，系统将高亮对应相乘的 [X 行] 与 [W 列]！
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 5: End-of-Chapter Quiz -->
+        <section id="mod5" class="glass-card rounded-2xl p-6 sm:p-8 transition-all duration-300">
+            <div class="mb-6 border-b border-slate-800 pb-4">
+                <div class="flex items-center gap-2">
+                    <span class="px-2.5 py-0.5 rounded bg-brand-rose/20 text-brand-rose text-xs font-mono font-bold">MODULE 05</span>
+                    <h3 class="text-xl font-bold text-white">本章直觉通关小测 (Interactive Quiz)</h3>
+                </div>
+                <p class="text-slate-400 text-sm mt-1">通过 3 道紧扣 Transformer 几何直觉的题目，巩固你的核心认知！</p>
+            </div>
+
+            <div class="max-w-3xl mx-auto space-y-6">
+                <!-- Quiz Container -->
+                <div id="quiz-box" class="space-y-6">
+                    <!-- Questions injected dynamically -->
+                </div>
+
+                <!-- Quiz Progress & Completion Banner -->
+                <div id="quiz-result-banner" class="hidden p-6 rounded-2xl bg-gradient-to-r from-brand-cyan/20 via-brand-emerald/20 to-brand-purple/20 border border-brand-emerald/40 text-center space-y-4">
+                    <div class="text-3xl">🎉 🎉 🎉</div>
+                    <h4 class="text-2xl font-extrabold text-white">恭喜！通关第 1 章：向量与矩阵</h4>
+                    <p class="text-slate-300 text-sm max-w-xl mx-auto">
+                        你已完全掌握 Transformer 依赖的线性代数几何本质：向量代表语义，点积代表相似相关度，而矩阵乘法是对空间的批量变换。
+                    </p>
+                    <div class="pt-2">
+                        <button onclick="scrollToModule('mod1')" class="px-6 py-2.5 rounded-xl bg-brand-emerald hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg">
+                            重新回顾全章
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 py-8 text-center text-slate-500 text-xs space-y-2">
+        <p>Transformer 基础知识教程 · 小豚教育AI学院 视觉设计启发</p>
+        <p class="font-mono text-slate-600">Built with HTML5 Canvas, Tailwind CSS & KaTeX</p>
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        /* ==========================================================================
+           GLOBAL UTILITIES & CANVAS HELPER
+           ========================================================================== */
+        function setupRetinaCanvas(canvas) {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            return { ctx, width: rect.width, height: rect.height, dpr };
+        }
+
+        function drawGrid(ctx, width, height, cx, cy, scale, step = 1) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+
+            // Vertical lines
+            for (let x = cx % (scale * step); x < width; x += scale * step) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+            // Horizontal lines
+            for (let y = cy % (scale * step); y < height; y += scale * step) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+
+            // Main Axes
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 1.5;
+
+            // X Axis
+            ctx.beginPath();
+            ctx.moveTo(0, cy);
+            ctx.lineTo(width, cy);
+            ctx.stroke();
+
+            // Y Axis
+            ctx.beginPath();
+            ctx.moveTo(cx, 0);
+            ctx.lineTo(cx, height);
+            ctx.stroke();
+        }
+
+        function drawArrow(ctx, fromX, fromY, toX, toY, color, width = 3, label = '', glow = false) {
+            const headlen = 10;
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            const angle = Math.atan2(dy, dx);
+
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = width;
+
+            if (glow) {
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 12;
+            }
+
+            // Line
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            ctx.lineTo(toX, toY);
+            ctx.stroke();
+
+            // Arrow head
+            ctx.beginPath();
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+
+            // Label
+            if (label) {
+                ctx.font = '600 12px "JetBrains Mono", monospace';
+                ctx.fillText(label, toX + 8, toY - 8);
+            }
+            ctx.restore();
+        }
+
+        /* ==========================================================================
+           MODULE 1: VECTOR & SEMANTIC SPACE
+           ========================================================================== */
+        const mod1State = {
+            v: [3.0, 4.0], // Current Vector
+            scale: 45,
+            isDragging: false,
+            animating: false,
+            demoProgress: 0,
+            demoVectors: null
+        };
+
+        let mod1Canvas, mod1Ctx, mod1Width, mod1Height, mod1Cx, mod1Cy;
+
+        function initMod1() {
+            mod1Canvas = document.getElementById('canvas-mod1');
+            const res = setupRetinaCanvas(mod1Canvas);
+            mod1Ctx = res.ctx;
+            mod1Width = res.width;
+            mod1Height = res.height;
+            mod1Cx = mod1Width / 2;
+            mod1Cy = mod1Height / 2;
+
+            // Events
+            mod1Canvas.addEventListener('pointerdown', (e) => {
+                const rect = mod1Canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                const vxPx = mod1Cx + mod1State.v[0] * mod1State.scale;
+                const vyPx = mod1Cy - mod1State.v[1] * mod1State.scale;
+
+                if (Math.hypot(mx - vxPx, my - vyPx) < 20) {
+                    mod1State.isDragging = true;
+                }
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!mod1State.isDragging || mod1State.animating) return;
+                const rect = mod1Canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                let vx = (mx - mod1Cx) / mod1State.scale;
+                let vy = (mod1Cy - my) / mod1State.scale;
+
+                // Snap/Clamp
+                mod1State.v = [parseFloat(vx.toFixed(1)), parseFloat(vy.toFixed(1))];
+                updateMod1UI();
+            });
+
+            window.addEventListener('pointerup', () => {
+                mod1State.isDragging = false;
+            });
+
+            updateMod1UI();
+            renderMod1();
+        }
+
+        function updateMod1UI() {
+            document.getElementById('mod1-coord').innerText = `[${mod1State.v[0].toFixed(1)}, ${mod1State.v[1].toFixed(1)}]`;
+            const mag = Math.hypot(mod1State.v[0], mod1State.v[1]);
+            document.getElementById('mod1-mag').innerText = mag.toFixed(2);
+        }
+
+        function resetMod1() {
+            mod1State.animating = false;
+            mod1State.v = [3.0, 4.0];
+            document.getElementById('mod1-explanation').innerText = '按需移动终点或使用 preset 测试。';
+            updateMod1UI();
+        }
+
+        function runKingQueenDemo() {
+            mod1State.animating = true;
+            mod1State.demoProgress = 0;
+            
+            // Define semantic vectors
+            // King = [3, 1], Man = [1, 2], Woman = [2, 4]
+            // Result = King - Man + Woman = [3 - 1 + 2, 1 - 2 + 4] = [4, 3] (Queen)
+            mod1State.demoVectors = {
+                king: [3, 1],
+                minusMan: [-1, -2],
+                woman: [2, 4],
+                queen: [4, 3]
+            };
+
+            const startTime = performance.now();
+            const duration = 2400; // ms
+
+            function animate(now) {
+                if (!mod1State.animating) return;
+                const elapsed = now - startTime;
+                mod1State.demoProgress = Math.min(elapsed / duration, 1.0);
+
+                if (mod1State.demoProgress < 1.0) {
+                    requestAnimationFrame(animate);
+                } else {
+                    mod1State.animating = false;
+                    mod1State.v = [4.0, 3.0];
+                    updateMod1UI();
+                    document.getElementById('mod1-explanation').innerHTML = `
+                        <span class="text-brand-emerald font-bold">加减成功!</span><br>
+                        $\vec{v}_{\text{King}} - \vec{v}_{\text{Man}} + \vec{v}_{\text{Woman}} = [4.0, 3.0]$ (恰好落在王后 Queen 附近)
+                    `;
+                    if (window.renderMathInElement) renderMathInElement(document.getElementById('mod1-explanation'));
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+
+        function renderMod1() {
+            mod1Ctx.clearRect(0, 0, mod1Width, mod1Height);
+            drawGrid(mod1Ctx, mod1Width, mod1Height, mod1Cx, mod1Cy, mod1State.scale);
+
+            if (!mod1State.animating) {
+                // Normal Draggable Vector
+                const targetX = mod1Cx + mod1State.v[0] * mod1State.scale;
+                const targetY = mod1Cy - mod1State.v[1] * mod1State.scale;
+
+                drawArrow(mod1Ctx, mod1Cx, mod1Cy, targetX, targetY, '#38bdf8', 3.5, `v=[${mod1State.v[0]}, ${mod1State.v[1]}]`, true);
+
+                // Handle dot
+                mod1Ctx.fillStyle = '#ffffff';
+                mod1Ctx.beginPath();
+                mod1Ctx.arc(targetX, targetY, 6, 0, Math.PI * 2);
+                mod1Ctx.fill();
+            } else {
+                // Animation of King - Man + Woman
+                const p = mod1State.demoProgress;
+                const d = mod1State.demoVectors;
+
+                // Step 1: King Vector (0 -> 0.33)
+                const p1 = Math.min(p / 0.33, 1.0);
+                const kX = mod1Cx + d.king[0] * mod1State.scale * p1;
+                const kY = mod1Cy - d.king[1] * mod1State.scale * p1;
+                drawArrow(mod1Ctx, mod1Cx, mod1Cy, kX, kY, '#38bdf8', 3, 'King [3,1]', true);
+
+                // Step 2: - Man Vector (0.33 -> 0.66)
+                if (p > 0.33) {
+                    const p2 = Math.min((p - 0.33) / 0.33, 1.0);
+                    const endManX = kX + d.minusMan[0] * mod1State.scale * p2;
+                    const endManY = kY - d.minusMan[1] * mod1State.scale * p2;
+                    drawArrow(mod1Ctx, kX, kY, endManX, endManY, '#fb7185', 2.5, '-Man', true);
+
+                    // Step 3: + Woman Vector (0.66 -> 1.0)
+                    if (p > 0.66) {
+                        const p3 = Math.min((p - 0.66) / 0.34, 1.0);
+                        const qX = endManX + d.woman[0] * mod1State.scale * p3;
+                        const qY = endManY - d.woman[1] * mod1State.scale * p3;
+                        drawArrow(mod1Ctx, endManX, endManY, qX, qY, '#34d399', 2.5, '+Woman', true);
+
+                        // Result Vector from origin to Queen
+                        drawArrow(mod1Ctx, mod1Cx, mod1Cy, qX, qY, '#fbbf24', 3.5, '≈ Queen [4,3]', true);
+                    }
+                }
+            }
+
+            requestAnimationFrame(renderMod1);
+        }
+
+        /* ==========================================================================
+           MODULE 2: DOT PRODUCT & ATTENTION
+           ========================================================================== */
+        const mod2State = {
+            q: [3.0, 3.0], // Query
+            k: [4.0, 1.0], // Key
+            scale: 40,
+            activeHandle: null
+        };
+
+        let mod2Canvas, mod2Ctx, mod2Width, mod2Height, mod2Cx, mod2Cy;
+
+        function initMod2() {
+            mod2Canvas = document.getElementById('canvas-mod2');
+            const res = setupRetinaCanvas(mod2Canvas);
+            mod2Ctx = res.ctx;
+            mod2Width = res.width;
+            mod2Height = res.height;
+            mod2Cx = mod2Width / 2;
+            mod2Cy = mod2Height / 2;
+
+            mod2Canvas.addEventListener('pointerdown', (e) => {
+                const rect = mod2Canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                const qPx = [mod2Cx + mod2State.q[0] * mod2State.scale, mod2Cy - mod2State.q[1] * mod2State.scale];
+                const kPx = [mod2Cx + mod2State.k[0] * mod2State.scale, mod2Cy - mod2State.k[1] * mod2State.scale];
+
+                if (Math.hypot(mx - qPx[0], my - qPx[1]) < 18) {
+                    mod2State.activeHandle = 'q';
+                } else if (Math.hypot(mx - kPx[0], my - kPx[1]) < 18) {
+                    mod2State.activeHandle = 'k';
+                }
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!mod2State.activeHandle) return;
+                const rect = mod2Canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                let vx = parseFloat(((mx - mod2Cx) / mod2State.scale).toFixed(1));
+                let vy = parseFloat(((mod2Cy - my) / mod2State.scale).toFixed(1));
+
+                if (mod2State.activeHandle === 'q') mod2State.q = [vx, vy];
+                if (mod2State.activeHandle === 'k') mod2State.k = [vx, vy];
+
+                updateMod2UI();
+            });
+
+            window.addEventListener('pointerup', () => {
+                mod2State.activeHandle = null;
+            });
+
+            updateMod2UI();
+            renderMod2();
+        }
+
+        function setMod2Preset(type) {
+            if (type === 'aligned') {
+                mod2State.q = [3.0, 3.0];
+                mod2State.k = [4.0, 4.0];
+            } else if (type === 'perp') {
+                mod2State.q = [0.0, 4.0];
+                mod2State.k = [4.0, 0.0];
+            } else if (type === 'opposite') {
+                mod2State.q = [3.0, 3.0];
+                mod2State.k = [-3.0, -3.0];
+            }
+            updateMod2UI();
+        }
+
+        function updateMod2UI() {
+            const dot = mod2State.q[0] * mod2State.k[0] + mod2State.q[1] * mod2State.k[1];
+            const magQ = Math.hypot(mod2State.q[0], mod2State.q[1]);
+            const magK = Math.hypot(mod2State.k[0], mod2State.k[1]);
+
+            let cos = (magQ === 0 || magK === 0) ? 0 : dot / (magQ * magK);
+            cos = Math.max(-1, Math.min(1, cos)); // clamp rounding
+
+            const rad = Math.acos(cos);
+            const deg = (rad * 180 / Math.PI).toFixed(1);
+
+            document.getElementById('mod2-math-step').innerText =
+                `(${mod2State.q[0]} × ${mod2State.k[0]}) + (${mod2State.q[1]} × ${mod2State.k[1]}) = ${dot.toFixed(2)}`;
+
+            document.getElementById('mod2-angle').innerText = `${deg}°`;
+            document.getElementById('mod2-cos').innerText = cos.toFixed(3);
+
+            // Attention Score (0 to 1 mapping for UI)
+            const attnScore = Math.max(0, cos); // standard relu style representation
+            document.getElementById('mod2-score-val').innerText = attnScore.toFixed(2);
+            document.getElementById('mod2-score-bar').style.width = `${(attnScore * 100).toFixed(0)}%`;
+        }
+
+        function renderMod2() {
+            mod2Ctx.clearRect(0, 0, mod2Width, mod2Height);
+            drawGrid(mod2Ctx, mod2Width, mod2Height, mod2Cx, mod2Cy, mod2State.scale);
+
+            const qPx = [mod2Cx + mod2State.q[0] * mod2State.scale, mod2Cy - mod2State.q[1] * mod2State.scale];
+            const kPx = [mod2Cx + mod2State.k[0] * mod2State.scale, mod2Cy - mod2State.k[1] * mod2State.scale];
+
+            // Orthogonal Projection of Q onto K
+            const dot = mod2State.q[0] * mod2State.k[0] + mod2State.q[1] * mod2State.k[1];
+            const kMagSq = mod2State.k[0] ** 2 + mod2State.k[1] ** 2;
+
+            if (kMagSq > 0) {
+                const projFactor = dot / kMagSq;
+                const projPoint = [mod2State.k[0] * projFactor, mod2State.k[1] * projFactor];
+                const projPx = [mod2Cx + projPoint[0] * mod2State.scale, mod2Cy - projPoint[1] * mod2State.scale];
+
+                // Projection Line (Dashed)
+                mod2Ctx.save();
+                mod2Ctx.setLineDash([4, 4]);
+                mod2Ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+                mod2Ctx.lineWidth = 1.5;
+                mod2Ctx.beginPath();
+                mod2Ctx.moveTo(qPx[0], qPx[1]);
+                mod2Ctx.lineTo(projPx[0], projPx[1]);
+                mod2Ctx.stroke();
+                mod2Ctx.restore();
+
+                // Highlighted Projection Shadow on K line
+                mod2Ctx.save();
+                mod2Ctx.strokeStyle = 'rgba(251, 191, 36, 0.3)';
+                mod2Ctx.lineWidth = 8;
+                mod2Ctx.beginPath();
+                mod2Ctx.moveTo(mod2Cx, mod2Cy);
+                mod2Ctx.lineTo(projPx[0], projPx[1]);
+                mod2Ctx.stroke();
+                mod2Ctx.restore();
+            }
+
+            // Draw Vectors
+            drawArrow(mod2Ctx, mod2Cx, mod2Cy, qPx[0], qPx[1], '#38bdf8', 3, 'Query (q)', true);
+            drawArrow(mod2Ctx, mod2Cx, mod2Cy, kPx[0], kPx[1], '#fbbf24', 3, 'Key (k)', true);
+
+            // Arc for Angle theta
+            const angleQ = Math.atan2(-mod2State.q[1], mod2State.q[0]);
+            const angleK = Math.atan2(-mod2State.k[1], mod2State.k[0]);
+            mod2Ctx.save();
+            mod2Ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            mod2Ctx.lineWidth = 1.5;
+            mod2Ctx.beginPath();
+            mod2Ctx.arc(mod2Cx, mod2Cy, 30, Math.min(angleQ, angleK), Math.max(angleQ, angleK));
+            mod2Ctx.stroke();
+            mod2Ctx.restore();
+
+            requestAnimationFrame(renderMod2);
+        }
+
+        /* ==========================================================================
+           MODULE 3: MATRIX TRANSFORM (3Blue1Brown Grid)
+           ========================================================================== */
+        const mod3State = {
+            M: [[1.0, 0.0], [0.0, 1.0]],
+            targetM: [[1.0, 0.0], [0.0, 1.0]],
+            v: [1.0, 1.0], // Test Vector
+            scale: 45
+        };
+
+        let mod3Canvas, mod3Ctx, mod3Width, mod3Height, mod3Cx, mod3Cy;
+
+        function initMod3() {
+            mod3Canvas = document.getElementById('canvas-mod3');
+            const res = setupRetinaCanvas(mod3Canvas);
+            mod3Ctx = res.ctx;
+            mod3Width = res.width;
+            mod3Height = res.height;
+            mod3Cx = mod3Width / 2;
+            mod3Cy = mod3Height / 2;
+
+            // Bind Sliders
+            ['a', 'b', 'c', 'd'].forEach(param => {
+                const slider = document.getElementById(`slider-${param}`);
+                slider.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    document.getElementById(`val-${param}`).innerText = val.toFixed(1);
+
+                    if (param === 'a') mod3State.targetM[0][0] = val;
+                    if (param === 'b') mod3State.targetM[0][1] = val;
+                    if (param === 'c') mod3State.targetM[1][0] = val;
+                    if (param === 'd') mod3State.targetM[1][1] = val;
+                });
+            });
+
+            renderMod3();
+        }
+
+        function animateMatrixTo(target) {
+            mod3State.targetM = target;
+            document.getElementById('slider-a').value = target[0][0];
+            document.getElementById('val-a').innerText = target[0][0].toFixed(1);
+            document.getElementById('slider-b').value = target[0][1];
+            document.getElementById('val-b').innerText = target[0][1].toFixed(1);
+            document.getElementById('slider-c').value = target[1][0];
+            document.getElementById('val-c').innerText = target[1][0].toFixed(1);
+            document.getElementById('slider-d').value = target[1][1];
+            document.getElementById('val-d').innerText = target[1][1].toFixed(1);
+        }
+
+        function renderMod3() {
+            // Lerp current M towards targetM for 60fps buttery smooth grid deformation
+            for (let r = 0; r < 2; r++) {
+                for (let c = 0; c < 2; c++) {
+                    mod3State.M[r][c] += (mod3State.targetM[r][c] - mod3State.M[r][c]) * 0.12;
+                }
+            }
+
+            const [[a, b], [c, d]] = mod3State.M;
+
+            // Update Det & Vector Output UI
+            const det = a * d - b * c;
+            document.getElementById('mod3-det').innerText = det.toFixed(2);
+            const vOutX = a * mod3State.v[0] + b * mod3State.v[1];
+            const vOutY = c * mod3State.v[0] + d * mod3State.v[1];
+            document.getElementById('mod3-v-out').innerText = `[${vOutX.toFixed(1)}, ${vOutY.toFixed(1)}]`;
+
+            mod3Ctx.clearRect(0, 0, mod3Width, mod3Height);
+
+            // 1. Draw static background grid (Gray dotted)
+            drawGrid(mod3Ctx, mod3Width, mod3Height, mod3Cx, mod3Cy, mod3State.scale);
+
+            // 2. Draw Transformed Grid Lines
+            const gridRange = 7;
+            mod3Ctx.save();
+            mod3Ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+            mod3Ctx.lineWidth = 1;
+
+            // Transformed Vertical Lines (x = constant)
+            for (let x = -gridRange; x <= gridRange; x++) {
+                const p1x = mod3Cx + (a * x + b * (-gridRange)) * mod3State.scale;
+                const p1y = mod3Cy - (c * x + d * (-gridRange)) * mod3State.scale;
+                const p2x = mod3Cx + (a * x + b * gridRange) * mod3State.scale;
+                const p2y = mod3Cy - (c * x + d * gridRange) * mod3State.scale;
+
+                mod3Ctx.beginPath();
+                mod3Ctx.moveTo(p1x, p1y);
+                mod3Ctx.lineTo(p2x, p2y);
+                mod3Ctx.stroke();
+            }
+
+            // Transformed Horizontal Lines (y = constant)
+            for (let y = -gridRange; y <= gridRange; y++) {
+                const p1x = mod3Cx + (a * (-gridRange) + b * y) * mod3State.scale;
+                const p1y = mod3Cy - (c * (-gridRange) + d * y) * mod3State.scale;
+                const p2x = mod3Cx + (a * gridRange + b * y) * mod3State.scale;
+                const p2y = mod3Cy - (c * gridRange + d * y) * mod3State.scale;
+
+                mod3Ctx.beginPath();
+                mod3Ctx.moveTo(p1x, p1y);
+                mod3Ctx.lineTo(p2x, p2y);
+                mod3Ctx.stroke();
+            }
+            mod3Ctx.restore();
+
+            // 3. Shaded Unit Parallelogram (showing Determinant area)
+            const originPx = [mod3Cx, mod3Cy];
+            const iHatPx = [mod3Cx + a * mod3State.scale, mod3Cy - c * mod3State.scale];
+            const jHatPx = [mod3Cx + b * mod3State.scale, mod3Cy - d * mod3State.scale];
+            const cornerPx = [mod3Cx + (a + b) * mod3State.scale, mod3Cy - (c + d) * mod3State.scale];
+
+            mod3Ctx.save();
+            mod3Ctx.fillStyle = det >= 0 ? 'rgba(167, 139, 250, 0.2)' : 'rgba(251, 113, 133, 0.2)';
+            mod3Ctx.beginPath();
+            mod3Ctx.moveTo(originPx[0], originPx[1]);
+            mod3Ctx.lineTo(iHatPx[0], iHatPx[1]);
+            mod3Ctx.lineTo(cornerPx[0], cornerPx[1]);
+            mod3Ctx.lineTo(jHatPx[0], jHatPx[1]);
+            mod3Ctx.closePath();
+            mod3Ctx.fill();
+            mod3Ctx.restore();
+
+            // 4. Draw Basis Vectors i_hat [a, c] and j_hat [b, d]
+            drawArrow(mod3Ctx, mod3Cx, mod3Cy, iHatPx[0], iHatPx[1], '#34d399', 3.5, 'i_hat [a,c]', true);
+            drawArrow(mod3Ctx, mod3Cx, mod3Cy, jHatPx[0], jHatPx[1], '#fb7185', 3.5, 'j_hat [b,d]', true);
+
+            // 5. Draw Transformed Test Vector Mv
+            const vPx = [mod3Cx + vOutX * mod3State.scale, mod3Cy - vOutY * mod3State.scale];
+            drawArrow(mod3Ctx, mod3Cx, mod3Cy, vPx[0], vPx[1], '#38bdf8', 3, 'M v', true);
+
+            requestAnimationFrame(renderMod3);
+        }
+
+        /* ==========================================================================
+           MODULE 4: MATRIX MULTIPLICATION SIMULATOR
+           ========================================================================== */
+        const mod4State = {
+            X: [
+                [0.8, 0.2, 0.9], // 猫
+                [0.1, 0.9, 0.3], // 追
+                [0.7, 0.1, 0.8]  // 鱼
+            ],
+            W: [
+                [0.5, 0.2],
+                [0.1, 0.8],
+                [0.9, 0.4]
+            ],
+            tokens: ['猫', '追', '鱼'],
+            activeCell: null, // [i, j]
+            animating: false,
+            stepIndex: 0
+        };
+
+        function initMod4() {
+            renderMatMulGrids();
+        }
+
+        function renderMatMulGrids() {
+            const gridX = document.getElementById('mat-x-grid');
+            const gridW = document.getElementById('mat-w-grid');
+            const gridY = document.getElementById('mat-y-grid');
+
+            // Render X (3x3)
+            gridX.innerHTML = mod4State.X.map((row, r) => 
+                row.map((val, c) => `
+                    <div id="cell-x-${r}-${c}" class="p-2 rounded bg-slate-950 border border-slate-800 transition-all font-mono">
+                        <span class="text-[10px] text-slate-500 block">${mod4State.tokens[r]}</span>
+                        ${val.toFixed(1)}
+                    </div>
+                `).join('')
+            ).join('');
+
+            // Render W (3x2)
+            gridW.innerHTML = mod4State.W.map((row, r) => 
+                row.map((val, c) => `
+                    <div id="cell-w-${r}-${c}" class="p-2 rounded bg-slate-950 border border-slate-800 transition-all font-mono">
+                        <span class="text-[10px] text-slate-500 block">W[${r}][${c}]</span>
+                        ${val.toFixed(1)}
+                    </div>
+                `).join('')
+            ).join('');
+
+            // Calculate Y = X @ W (3x2)
+            const Y = [
+                [0, 0],
+                [0, 0],
+                [0, 0]
+            ];
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 2; j++) {
+                    let sum = 0;
+                    for (let k = 0; k < 3; k++) {
+                        sum += mod4State.X[i][k] * mod4State.W[k][j];
+                    }
+                    Y[i][j] = sum;
+                }
+            }
+
+            // Render Y (3x2)
+            gridY.innerHTML = Y.map((row, r) => 
+                row.map((val, c) => `
+                    <div id="cell-y-${r}-${c}" onclick="selectMatMulCell(${r}, ${c})" class="p-2 rounded bg-slate-950 border border-slate-800 hover:border-brand-emerald cursor-pointer transition-all font-mono font-bold text-brand-emerald">
+                        <span class="text-[10px] text-slate-500 font-normal block">Y[${mod4State.tokens[r]}][${c}]</span>
+                        ${val.toFixed(2)}
+                    </div>
+                `).join('')
+            ).join('');
+        }
+
+        function selectMatMulCell(r, c) {
+            // Highlight active cell in Y
+            mod4State.activeCell = [r, c];
+
+            // Clear previous highlights
+            document.querySelectorAll('[id^="cell-"]').forEach(el => {
+                el.classList.remove('bg-brand-cyan/20', 'border-brand-cyan', 'bg-brand-amber/20', 'border-brand-amber', 'ring-2', 'ring-brand-emerald');
+            });
+
+            // Highlight Y cell
+            const yCell = document.getElementById(`cell-y-${r}-${c}`);
+            if (yCell) yCell.classList.add('ring-2', 'ring-brand-emerald');
+
+            // Highlight Row r of X
+            for (let k = 0; k < 3; k++) {
+                const xCell = document.getElementById(`cell-x-${r}-${k}`);
+                if (xCell) xCell.classList.add('bg-brand-cyan/20', 'border-brand-cyan');
+            }
+
+            // Highlight Col c of W
+            for (let k = 0; k < 3; k++) {
+                const wCell = document.getElementById(`cell-w-${k}-${c}`);
+                if (wCell) wCell.classList.add('bg-brand-amber/20', 'border-brand-amber');
+            }
+
+            // Render Formula Breakdown
+            const xRow = mod4State.X[r];
+            const wCol = [mod4State.W[0][c], mod4State.W[1][c], mod4State.W[2][c]];
+            const result = (xRow[0] * wCol[0] + xRow[1] * wCol[1] + xRow[2] * wCol[2]).toFixed(2);
+
+            const formulaHtml = `
+                <div class="space-y-1">
+                    <div>
+                        $Y_{[${mod4State.tokens[r]}, ${c}]} = $
+                        <span class="text-brand-cyan">(${xRow[0]} × ${wCol[0]})</span> +
+                        <span class="text-brand-cyan">(${xRow[1]} × ${wCol[1]})</span> +
+                        <span class="text-brand-cyan">(${xRow[2]} × ${wCol[2]})</span>
+                    </div>
+                    <div class="text-brand-emerald font-bold text-sm mt-1">
+                        $= ${ (xRow[0]*wCol[0]).toFixed(2) } + ${ (xRow[1]*wCol[1]).toFixed(2) } + ${ (xRow[2]*wCol[2]).toFixed(2) } = ${result}$
+                    </div>
+                </div>
+            `;
+            const box = document.getElementById('matmul-formula-box');
+            box.innerHTML = formulaHtml;
+            document.getElementById('matmul-step-label').innerText = `正在计算词元「${mod4State.tokens[r]}」的第 ${c + 1} 个输出特征：`;
+            if (window.renderMathInElement) renderMathInElement(box);
+        }
+
+        function toggleMatMulAnimation() {
+            if (mod4State.animating) {
+                mod4State.animating = false;
+                document.getElementById('btn-mat-play').innerText = '▶ 自动播放步进计算';
+                return;
+            }
+
+            mod4State.animating = true;
+            document.getElementById('btn-mat-play').innerText = '⏸ 暂停播放';
+
+            const cells = [
+                [0, 0], [0, 1],
+                [1, 0], [1, 1],
+                [2, 0], [2, 1]
+            ];
+
+            let idx = 0;
+            const interval = setInterval(() => {
+                if (!mod4State.animating) {
+                    clearInterval(interval);
+                    return;
+                }
+                const [r, c] = cells[idx];
+                selectMatMulCell(r, c);
+                idx = (idx + 1) % cells.length;
+            }, 1600);
+        }
+
+        /* ==========================================================================
+           MODULE 5: INTERACTIVE QUIZ
+           ========================================================================== */
+        const quizData = [
+            {
+                q: "1. 如果 Query 向量 $\\vec{q}$ 与 Key 向量 $\\vec{k}$ 正交（夹角 90°），它们的点积结果与注意力得分是多少？",
+                options: [
+                    "点积为 1.0，表示极强注意力相关性",
+                    "点积为 0.0，表示毫无相关性",
+                    "点积为 -1.0，表示语义完全相反",
+                    "点积无穷大，产生计算溢出"
+                ],
+                correct: 1,
+                explain: "正确！向量正交意味着 $\\cos 90^\\circ = 0$，点积为 0。在 Self-Attention 中这意味着该 Query 对此 Key 没有任何关联度。"
+            },
+            {
+                q: "2. 站在 3Blue1Brown 的几何视角下，线性层权重矩阵 $W_Q$ 的作用本质是什么？",
+                options: [
+                    "死记硬背的表格数据累加",
+                    "对输入空间进行旋转、缩放或剪切，将原始词特征映射为 Query 特征",
+                    "将输入文本全部清零",
+                    "仅仅计算所有输入向量的算术平均值"
+                ],
+                correct: 1,
+                explain: "正确！矩阵本质就是对空间的线性变换，矩阵的每一列就是标准基向量变换后的新归宿。"
+            },
+            {
+                q: "3. Transformer 批次矩阵乘法中，若输入词序列矩阵 $X$ 的 Shape 为 $(3, 64)$，权重矩阵 $W$ Shape 为 $(64, 128)$，乘法结果 $X W$ 的 Shape 是？",
+                options: [
+                    "(3, 64)",
+                    "(64, 128)",
+                    "(3, 128)",
+                    "(128, 3)"
+                ],
+                correct: 2,
+                explain: "正确！遵循矩阵乘法维度消除规则：(m × n) @ (n × p) → (m × p)。中间的 64 维特征被融合消去，保留两头的 3 词元与 128 输出特征！"
+            }
+        ];
+
+        const quizState = {
+            answers: [null, null, null]
+        };
+
+        function initQuiz() {
+            const container = document.getElementById('quiz-box');
+            container.innerHTML = quizData.map((item, qIdx) => `
+                <div class="bg-slate-900/80 p-5 rounded-xl border border-slate-800 space-y-4">
+                    <h4 class="text-sm font-semibold text-slate-100 leading-relaxed">${item.q}</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        ${item.options.map((opt, oIdx) => `
+                            <button onclick="answerQuiz(${qIdx}, ${oIdx})" id="quiz-btn-${qIdx}-${oIdx}" class="text-left p-3 rounded-lg bg-slate-950 border border-slate-800 hover:border-brand-cyan text-xs text-slate-300 transition-all">
+                                ${opt}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div id="quiz-explain-${qIdx}" class="hidden p-3 rounded-lg bg-slate-950 border text-xs leading-relaxed"></div>
+                </div>
+            `).join('');
+
+            if (window.renderMathInElement) renderMathInElement(container);
+        }
+
+        function answerQuiz(qIdx, oIdx) {
+            quizState.answers[qIdx] = oIdx;
+            const q = quizData[qIdx];
+            const isCorrect = oIdx === q.correct;
+
+            // Highlight buttons
+            q.options.forEach((_, i) => {
+                const btn = document.getElementById(`quiz-btn-${qIdx}-${i}`);
+                btn.disabled = true;
+                if (i === q.correct) {
+                    btn.classList.add('bg-brand-emerald/20', 'border-brand-emerald', 'text-brand-emerald', 'font-bold');
+                } else if (i === oIdx && !isCorrect) {
+                    btn.classList.add('bg-brand-rose/20', 'border-brand-rose', 'text-brand-rose');
+                }
+            });
+
+            // Show explanation
+            const expBox = document.getElementById(`quiz-explain-${qIdx}`);
+            expBox.classList.remove('hidden');
+            if (isCorrect) {
+                expBox.classList.add('border-brand-emerald/40', 'text-brand-emerald');
+                expBox.innerHTML = `✅ ${q.explain}`;
+            } else {
+                expBox.classList.add('border-brand-rose/40', 'text-brand-rose');
+                expBox.innerHTML = `❌ 回答错误。${q.explain}`;
+            }
+
+            // Check if all answered
+            if (quizState.answers.every(a => a !== null)) {
+                document.getElementById('quiz-result-banner').classList.remove('hidden');
+            }
+        }
+
+        /* ==========================================================================
+           NAVIGATION & PROGRESS BAR SCROLLING
+           ========================================================================== */
+        function scrollToModule(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                const y = el.getBoundingClientRect().top + window.pageYOffset - 80;
+                window.scrollTo({ top: y, behavior: 'smooth' });
+            }
+        }
+
+        window.addEventListener('scroll', () => {
+            const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+            const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+            const scrolled = (winScroll / height) * 100;
+            document.getElementById('progress-bar').style.width = scrolled + '%';
+        });
+
+        /* ==========================================================================
+           WINDOW ONLOAD INITIALIZATION
+           ========================================================================== */
+        window.onload = function() {
+            initMod1();
+            initMod2();
+            initMod3();
+            initMod4();
+            initQuiz();
+            
+            // Re-render MathJax / KaTeX if needed
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ]
+                });
+            }
+        };
+
+        // Resize Canvas dynamically
+        window.addEventListener('resize', () => {
+            if (mod1Canvas) setupRetinaCanvas(mod1Canvas);
+            if (mod2Canvas) setupRetinaCanvas(mod2Canvas);
+            if (mod3Canvas) setupRetinaCanvas(mod3Canvas);
+        });
+    </script>
+</body>
+</html>

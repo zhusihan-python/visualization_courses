@@ -1,0 +1,1695 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer 第 2 章：概率与 Softmax —— 语言模型到底在算什么</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0d1117',
+                        cardBg: '#141b26',
+                        cardBorder: '#212b3b',
+                        accentCyan: '#58c4dd',
+                        accentGold: '#f0b429',
+                        accentCoral: '#ff6b6b',
+                        accentEmerald: '#4ade80',
+                        accentPurple: '#c084fc',
+                        textMain: '#e6edf3',
+                        textMuted: '#8b949e',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 3Blue1Brown Mathematics & Dark Mode Typography */
+        body {
+            background-color: #0d1117;
+            color: #e6edf3;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* Custom Math Typography Rules (Zero LaTeX dependency) */
+        .math {
+            font-family: 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif;
+            font-size: 1.05em;
+            letter-spacing: 0.02em;
+            color: #e6edf3;
+            display: inline-flex;
+            align-items: center;
+            flex-wrap: wrap;
+            line-height: 1.2;
+        }
+        .math var {
+            font-style: italic;
+            font-family: 'Times New Roman', serif;
+            padding: 0 1px;
+        }
+        .math-block {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0.85rem 1.25rem;
+            margin: 0.75rem 0;
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid rgba(88, 196, 221, 0.25);
+            border-radius: 0.75rem;
+            box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.4);
+            overflow-x: auto;
+        }
+        .frac {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            vertical-align: middle;
+            margin: 0 0.3em;
+            font-size: 0.94em;
+        }
+        .frac .num {
+            padding: 0 0.35em;
+            border-bottom: 1.5px solid currentColor;
+            line-height: 1.15;
+            text-align: center;
+        }
+        .frac .den {
+            padding: 0 0.35em;
+            line-height: 1.25;
+            text-align: center;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #212b3b;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #58c4dd;
+        }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #212b3b;
+            border-radius: 3px;
+            border: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: #58c4dd;
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(88, 196, 221, 0.5);
+            transition: transform 0.15s ease, background-color 0.15s ease;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            background: #f0b429;
+        }
+
+        /* Micro Interactions & Animations */
+        .spring-card {
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+        }
+        .spring-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px -10px rgba(88, 196, 221, 0.15);
+        }
+        .glow-cyan {
+            box-shadow: 0 0 15px rgba(88, 196, 221, 0.3);
+        }
+        .glow-gold {
+            box-shadow: 0 0 15px rgba(240, 180, 41, 0.3);
+        }
+        .glow-red {
+            box-shadow: 0 0 15px rgba(255, 107, 107, 0.4);
+        }
+
+        /* Code highlight formatting */
+        pre code {
+            font-family: 'Fira Code', 'Cascadia Code', monospace;
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-textMain selection:bg-accentCyan selection:text-darkBg">
+
+    <!-- Sticky Navigation Header -->
+    <header class="sticky top-0 z-50 bg-darkBg/90 backdrop-blur-md border-b border-cardBorder shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-accentCyan/20 text-accentCyan font-bold text-sm border border-accentCyan/40">
+                        02
+                    </span>
+                    <div>
+                        <div class="text-xs text-accentCyan font-mono uppercase tracking-wider">Transformer 核心系列</div>
+                        <div class="text-sm sm:text-base font-bold text-textMain">第 2 章：概率与 Softmax</div>
+                    </div>
+                </div>
+
+                <!-- Desktop Nav Links -->
+                <nav class="hidden md:flex space-x-1 lg:space-x-2 text-xs font-medium">
+                    <a href="#module-2-1" class="nav-link px-3 py-2 rounded-lg text-textMuted hover:text-accentCyan hover:bg-cardBg transition-all">2.1 链式法则</a>
+                    <a href="#module-2-2" class="nav-link px-3 py-2 rounded-lg text-textMuted hover:text-accentCyan hover:bg-cardBg transition-all">2.2 数值稳定</a>
+                    <a href="#module-2-3" class="nav-link px-3 py-2 rounded-lg text-textMuted hover:text-accentCyan hover:bg-cardBg transition-all">2.3 温度缩放</a>
+                    <a href="#module-2-4" class="nav-link px-3 py-2 rounded-lg text-textMuted hover:text-accentCyan hover:bg-cardBg transition-all">2.4 解码与采样</a>
+                    <a href="#module-2-5" class="nav-link px-3 py-2 rounded-lg text-textMuted hover:text-accentCyan hover:bg-cardBg transition-all">2.5 交叉熵与PPL</a>
+                    <a href="#module-2-6" class="nav-link px-3 py-2 rounded-lg text-textMuted hover:text-accentCyan hover:bg-cardBg transition-all">2.6 NumPy与测验</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-16">
+
+        <!-- HERO HEADER -->
+        <section class="text-center py-10 relative overflow-hidden rounded-2xl bg-gradient-to-b from-cardBg to-darkBg border border-cardBorder p-8">
+            <div class="absolute -top-24 -right-24 w-96 h-96 bg-accentCyan/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-accentGold/10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <span class="inline-block px-3 py-1 text-xs font-semibold text-accentCyan bg-accentCyan/10 border border-accentCyan/30 rounded-full mb-4">
+                3Blue1Brown 动态数学视觉教程
+            </span>
+            <h1 class="text-3xl sm:text-5xl font-extrabold text-textMain tracking-tight mb-4">
+                语言模型到底在算什么？
+            </h1>
+            <p class="max-w-3xl mx-auto text-base sm:text-lg text-textMuted leading-relaxed">
+                从条件概率链式法则到 Softmax 数值稳定性、温度缩放采样、以及交叉熵损失与困惑度（Perplexity）的交互式直观推理。
+            </p>
+        </section>
+
+        <!-- MODULE 2.1 -->
+        <section id="module-2-1" class="scroll-mt-20 space-y-6">
+            <div class="border-l-4 border-accentCyan pl-4">
+                <h2 class="text-2xl font-bold text-textMain">2.1 条件概率、链式法则与 Logits &rarr; 概率分布</h2>
+                <p class="text-sm text-textMuted mt-1">语言模型的本质是一个条件概率分布预测器：根据历史 Token 预测下一个 Token 的概率。</p>
+            </div>
+
+            <!-- Visual Strip: Chain Rule -->
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-6 space-y-4">
+                <h3 class="text-base font-semibold text-accentCyan flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    概率链式法则 (Chain Rule of Probability)
+                </h3>
+                
+                <div class="math-block">
+                    <span class="math">
+                        <var>P</var>(我, 爱, 机器, 学习) = 
+                        <var>P</var>(我) · 
+                        <var>P</var>(爱 | 我) · 
+                        <var>P</var>(机器 | 我爱) · 
+                        <var>P</var>(学习 | 我爱机器)
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="bg-darkBg/60 p-4 rounded-lg border border-cardBorder">
+                        <div class="font-semibold text-accentCoral mb-1">连乘下溢陷阱 (Floating Underflow)</div>
+                        <p class="text-textMuted text-xs leading-relaxed">
+                            当句子较长时，连乘上百个小于 1 的概率（如 <span class="math">0.01<sup>100</sup> = 10<sup>−200</sup></span>）会导致计算机双精度浮点数下溢为 0。
+                        </p>
+                    </div>
+                    <div class="bg-darkBg/60 p-4 rounded-lg border border-cardBorder">
+                        <div class="font-semibold text-accentEmerald mb-1">对数概率拯救 (Log-Probability)</div>
+                        <p class="text-textMuted text-xs leading-relaxed">
+                            利用对数性质将乘法转换为加法：
+                            <span class="math">ln <var>P</var> = ∑ ln <var>P</var><sub>i</sub></span>。数值始终维持在安全的负数区间（如 <span class="math">−4.6 + −3.2 + ... = −460.5</span>）。
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interactive Logit -> Softmax Simulator -->
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-6 space-y-6 spring-card">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-cardBorder pb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-textMain">Logits &rarr; Softmax 动态实验室</h3>
+                        <p class="text-xs text-textMuted">调整未归一化的得分 (Logits)，观察 Softmax 如何将其映射为和为 100% 的概率分布。</p>
+                    </div>
+                    <!-- Context Selector -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-textMuted whitespace-nowrap">预设上下文:</span>
+                        <select id="m21-context-select" class="bg-darkBg border border-cardBorder text-accentCyan text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-accentCyan">
+                            <option value="weather">今天天气真___</option>
+                            <option value="cat">猫最喜欢吃___</option>
+                            <option value="transformer">Transformer的核心是___</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                    <!-- Left: Sliders for 5 tokens -->
+                    <div class="space-y-4" id="m21-sliders-container">
+                        <!-- Dynamic Sliders via JS -->
+                    </div>
+
+                    <!-- Right: Live Softmax Probability Bars -->
+                    <div class="bg-darkBg/80 p-5 rounded-xl border border-cardBorder space-y-4">
+                        <div class="flex justify-between items-center text-xs font-semibold">
+                            <span class="text-textMuted">Token 候选概率分布</span>
+                            <span class="text-accentEmerald font-mono bg-accentEmerald/10 px-2 py-0.5 rounded border border-accentEmerald/30" id="m21-total-sum">
+                                ∑ p<sub>i</sub> = 100.0%
+                            </span>
+                        </div>
+
+                        <div class="space-y-3" id="m21-bars-container">
+                            <!-- Dynamic Bars via JS -->
+                        </div>
+
+                        <div class="pt-3 border-t border-cardBorder text-xs text-textMuted flex justify-between items-center">
+                            <span>计算公式:</span>
+                            <span class="math">
+                                <var>p</var><sub>i</sub> = 
+                                <span class="frac"><span class="num"><var>e</var><sup><var>z</var><sub>i</sub></sup></span><span class="den">∑<sub>j</sub> <var>e</var><sup><var>z</var><sub>j</sub></sup></span></span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 2.2 -->
+        <section id="module-2-2" class="scroll-mt-20 space-y-6">
+            <div class="border-l-4 border-accentGold pl-4">
+                <h2 class="text-2xl font-bold text-textMain">2.2 Softmax 深度拆解与数值稳定性（溢出实验室）</h2>
+                <p class="text-sm text-textMuted mt-1">为什么直接在 PyTorch/NumPy 中计算 Softmax 会导致 NaN？平移不变性的妙用。</p>
+            </div>
+
+            <!-- Formulas Box -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-cardBg border border-cardBorder rounded-xl p-5 space-y-2">
+                    <span class="text-xs font-semibold text-accentCoral bg-accentCoral/10 px-2 py-0.5 rounded border border-accentCoral/30">朴素 Softmax (Naive)</span>
+                    <div class="math-block">
+                        <span class="math">
+                            <var>p</var><sub>i</sub> = 
+                            <span class="frac">
+                                <span class="num"><var>e</var><sup><var>z</var><sub>i</sub></sup></span>
+                                <span class="den">∑<sub>j</sub> <var>e</var><sup><var>z</var><sub>j</sub></sup></span>
+                            </span>
+                        </span>
+                    </div>
+                    <p class="text-xs text-textMuted">当 <span class="math"><var>z</var><sub>i</sub> &gt; 709</span>（Float64）或 <span class="math"><var>z</var><sub>i</sub> &gt; 88.7</span>（Float32）时，<span class="math"><var>e</var><sup><var>z</var><sub>i</sub></sup></span> 溢出为 <span class="math">∞</span>。</p>
+                </div>
+
+                <div class="bg-cardBg border border-cardBorder rounded-xl p-5 space-y-2">
+                    <span class="text-xs font-semibold text-accentEmerald bg-accentEmerald/10 px-2 py-0.5 rounded border border-accentEmerald/30">数值稳定 Softmax (Stable)</span>
+                    <div class="math-block">
+                        <span class="math">
+                            <var>p</var><sub>i</sub> = 
+                            <span class="frac">
+                                <span class="num"><var>e</var><sup><var>z</var><sub>i</sub> − max(<var>z</var>)</sup></span>
+                                <span class="den">∑<sub>j</sub> <var>e</var><sup><var>z</var><sub>j</sub> − max(<var>z</var>)</sup></span>
+                            </span>
+                        </span>
+                    </div>
+                    <p class="text-xs text-textMuted">平移不变性：所有 Logits 减去最大值，使得最大指数项不超过 <span class="math"><var>e</var><sup>0</sup> = 1</span>。</p>
+                </div>
+            </div>
+
+            <!-- Floating Point Overflow Warning Box -->
+            <div class="bg-accentCoral/10 border border-accentCoral/40 rounded-xl p-4 flex items-start gap-3">
+                <svg class="w-6 h-6 text-accentCoral flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <div class="text-xs text-textMain leading-relaxed">
+                    <strong class="text-accentCoral font-semibold">溢出警报机制：</strong>
+                    计算机使用有限位数存储浮点数。一旦指数项产生 <span class="math">∞</span>，计算结果将变成 <span class="math"><span class="frac"><span class="num">∞</span><span class="den">∞</span></span> = NaN</span> (Not a Number)，导致整条神经网络反向传播梯度瞬间崩溃！
+                </div>
+            </div>
+
+            <!-- Overflow Interactive Lab -->
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-6 space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-textMain">溢出实验室：观察 NaN 现象</h3>
+                        <p class="text-xs text-textMuted">为基准 Logits [0, 1, 2] 叠加整体偏移量 C。体验朴素实现如何崩溃，而稳定实现如何坚如磐石。</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-mono text-accentGold">偏移量 C = <span id="m22-c-val">0</span></span>
+                    </div>
+                </div>
+
+                <!-- Shift Slider -->
+                <div class="space-y-1">
+                    <input id="m22-c-slider" type="range" min="0" max="1000" step="10" value="0" class="w-full">
+                    <div class="flex justify-between text-[10px] font-mono text-textMuted">
+                        <span>C = 0 (正常区间)</span>
+                        <span>C = 500 (接近溢出)</span>
+                        <span>C = 1000 (极高溢出)</span>
+                    </div>
+                </div>
+
+                <!-- Side-by-Side Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Naive Card -->
+                    <div id="m22-naive-card" class="bg-darkBg p-5 rounded-xl border border-accentCoral/30 space-y-3 relative overflow-hidden transition-all">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm font-bold text-accentCoral">朴素实现 (Naive Softmax)</span>
+                            <span id="m22-naive-status" class="text-[10px] px-2 py-0.5 rounded font-mono bg-accentEmerald/20 text-accentEmerald">状态正常</span>
+                        </div>
+                        
+                        <div class="text-xs font-mono space-y-1 text-textMuted">
+                            <div>z = [<span id="m22-naive-z">0.0, 1.0, 2.0</span>]</div>
+                            <div>exp(z) = [<span id="m22-naive-exp">1.0, 2.72, 7.39</span>]</div>
+                            <div>∑ exp(z) = <span id="m22-naive-sum">11.11</span></div>
+                        </div>
+
+                        <div class="pt-2 border-t border-cardBorder">
+                            <div class="text-xs font-semibold mb-1">输出概率 p:</div>
+                            <div id="m22-naive-result" class="text-sm font-mono text-accentCyan">
+                                [9.00%, 24.47%, 66.52%]
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stable Card -->
+                    <div class="bg-darkBg p-5 rounded-xl border border-accentEmerald/40 space-y-3 relative overflow-hidden">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm font-bold text-accentEmerald">数值稳定实现 (Stable Softmax)</span>
+                            <span class="text-[10px] px-2 py-0.5 rounded font-mono bg-accentEmerald/20 text-accentEmerald">100% 安全</span>
+                        </div>
+
+                        <div class="text-xs font-mono space-y-1 text-textMuted">
+                            <div>max(z) = <span id="m22-stable-max" class="text-accentGold">2.0</span></div>
+                            <div>z − max(z) = [<span id="m22-stable-shift">-2.0, -1.0, 0.0</span>]</div>
+                            <div>exp(z − max) = [<span id="m22-stable-exp">0.135, 0.368, 1.000</span>]</div>
+                        </div>
+
+                        <div class="pt-2 border-t border-cardBorder">
+                            <div class="text-xs font-semibold mb-1">输出概率 p:</div>
+                            <div id="m22-stable-result" class="text-sm font-mono text-accentEmerald">
+                                [9.00%, 24.47%, 66.52%]
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 2.3 -->
+        <section id="module-2-3" class="scroll-mt-20 space-y-6">
+            <div class="border-l-4 border-accentCyan pl-4">
+                <h2 class="text-2xl font-bold text-textMain">2.3 温度缩放 Temperature Scaling (T)</h2>
+                <p class="text-sm text-textMuted mt-1">控制模型生成结果的确定性与创造力：温度如何调控香农熵（Entropy）。</p>
+            </div>
+
+            <!-- Formula Banner -->
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="space-y-1">
+                    <span class="text-xs font-semibold text-accentCyan uppercase tracking-wider">带温度的 Softmax 公式</span>
+                    <div class="math-block">
+                        <span class="math">
+                            softmax(
+                            <span class="frac"><span class="num"><var>z</var></span><span class="den"><var>T</var></span></span>
+                            )<sub>i</sub> = 
+                            <span class="frac">
+                                <span class="num"><var>e</var><sup><var>z</var><sub>i</sub> / <var>T</var></sup></span>
+                                <span class="den">∑<sub>j</sub> <var>e</var><sup><var>z</var><sub>j</sub> / <var>T</var></sup></span>
+                            </span>
+                        </span>
+                    </div>
+                </div>
+                <div class="text-xs text-textMuted bg-darkBg/60 p-3 rounded-lg border border-cardBorder max-w-md">
+                    💡 <strong class="text-textMain">重要提示：</strong> 温度 <span class="math"><var>T</var></span> 只在推理采样阶段（Inference Sampling）生效。模型训练阶段的目标是最小化交叉熵，温度始终固定为 <span class="math"><var>T</var> = 1</span>。
+                </div>
+            </div>
+
+            <!-- Interactive Temperature Canvas & Stats -->
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-6 space-y-6">
+                <!-- Controls Header -->
+                <div class="flex flex-col md:flex-row justify-between md:items-center gap-4">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-bold text-textMain">采样温度 T:</span>
+                            <span id="m23-t-val" class="text-lg font-mono font-bold text-accentCyan">0.70</span>
+                        </div>
+                        <input id="m23-t-slider" type="range" min="0.1" max="3.0" step="0.05" value="0.7" class="w-64 sm:w-80">
+                    </div>
+
+                    <!-- Presets -->
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="setTempPreset(0.1)" class="px-3 py-1.5 rounded-lg bg-darkBg hover:bg-cardBorder text-xs text-accentCoral border border-cardBorder transition-all">0.1 极低 (贪心/确定)</button>
+                        <button onclick="setTempPreset(0.7)" class="px-3 py-1.5 rounded-lg bg-darkBg hover:bg-cardBorder text-xs text-accentCyan border border-cardBorder transition-all">0.7 默认 (推荐平衡)</button>
+                        <button onclick="setTempPreset(1.0)" class="px-3 py-1.5 rounded-lg bg-darkBg hover:bg-cardBorder text-xs text-textMain border border-cardBorder transition-all">1.0 原始 Softmax</button>
+                        <button onclick="setTempPreset(2.5)" class="px-3 py-1.5 rounded-lg bg-darkBg hover:bg-cardBorder text-xs text-accentGold border border-cardBorder transition-all">2.5 高创造力 (随机)</button>
+                    </div>
+                </div>
+
+                <!-- Canvas Visualization -->
+                <div class="relative bg-darkBg rounded-xl p-4 border border-cardBorder overflow-hidden">
+                    <canvas id="m23-canvas" class="w-full h-64 block"></canvas>
+                </div>
+
+                <!-- Readout Stats Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-cardBorder">
+                        <div class="text-xs text-textMuted mb-1">香农熵 H(p) (Shannon Entropy)</div>
+                        <div id="m23-entropy" class="text-xl font-mono font-bold text-accentCyan">1.24 nats</div>
+                        <div class="text-[10px] text-textMuted mt-1">衡量不确定性：温度越高，熵越大</div>
+                    </div>
+
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-cardBorder">
+                        <div class="text-xs text-textMuted mb-1">最高概率 Token P<sub>max</sub></div>
+                        <div id="m23-pmax" class="text-xl font-mono font-bold text-accentEmerald">68.5%</div>
+                        <div class="text-[10px] text-textMuted mt-1">Top-1 Token 的压倒性优势</div>
+                    </div>
+
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-cardBorder">
+                        <div class="text-xs text-textMuted mb-1">采样特性评估</div>
+                        <div id="m23-eval" class="text-sm font-semibold text-accentGold mt-1">平衡：逻辑通顺且兼具多样性</div>
+                        <div class="text-[10px] text-textMuted mt-1">通用对话 / 文本写作最佳区间</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 2.4 -->
+        <section id="module-2-4" class="scroll-mt-20 space-y-6">
+            <div class="border-l-4 border-accentEmerald pl-4">
+                <h2 class="text-2xl font-bold text-textMain">2.4 解码与采样实验室 (Decoding & Sampling Lab)</h2>
+                <p class="text-sm text-textMuted mt-1">对比 Greedy Search、Top-K 采样与 Top-P (Nucleus/核采样) 的候选词筛选逻辑。</p>
+            </div>
+
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-6 space-y-6">
+                <!-- Strategy Tabs -->
+                <div class="flex flex-wrap gap-2 border-b border-cardBorder pb-4">
+                    <button id="m24-tab-greedy" onclick="setSamplingStrategy('greedy')" class="px-4 py-2 rounded-lg font-medium text-xs border transition-all bg-accentCyan/20 text-accentCyan border-accentCyan/40">Greedy Search (贪心)</button>
+                    <button id="m24-tab-topk" onclick="setSamplingStrategy('topk')" class="px-4 py-2 rounded-lg font-medium text-xs border transition-all bg-darkBg text-textMuted border-cardBorder hover:text-textMain">Top-K 采样</button>
+                    <button id="m24-tab-topp" onclick="setSamplingStrategy('topp')" class="px-4 py-2 rounded-lg font-medium text-xs border transition-all bg-darkBg text-textMuted border-cardBorder hover:text-textMain">Top-P 核采样 (Nucleus)</button>
+                    <button id="m24-tab-combo" onclick="setSamplingStrategy('combo')" class="px-4 py-2 rounded-lg font-medium text-xs border transition-all bg-darkBg text-textMuted border-cardBorder hover:text-textMain">Combo 组合采样</button>
+                </div>
+
+                <!-- Dynamic Controls for K & P -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 bg-darkBg/60 p-4 rounded-xl border border-cardBorder">
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-textMuted">温度 Temp (T):</span>
+                            <span id="m24-t-disp" class="font-mono text-accentCyan">1.00</span>
+                        </div>
+                        <input id="m24-t-slider" type="range" min="0.1" max="2.0" step="0.05" value="1.0" class="w-full">
+                    </div>
+
+                    <div class="space-y-1" id="m24-k-control">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-textMuted">Top-K 截断数:</span>
+                            <span id="m24-k-disp" class="font-mono text-accentGold">K = 3</span>
+                        </div>
+                        <input id="m24-k-slider" type="range" min="1" max="8" step="1" value="3" class="w-full">
+                    </div>
+
+                    <div class="space-y-1" id="m24-p-control">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-textMuted">Top-P 阈值:</span>
+                            <span id="m24-p-disp" class="font-mono text-accentEmerald">P = 0.85</span>
+                        </div>
+                        <input id="m24-p-slider" type="range" min="0.10" max="1.00" step="0.05" value="0.85" class="w-full">
+                    </div>
+                </div>
+
+                <!-- Candidate Pool Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead>
+                            <tr class="border-b border-cardBorder text-textMuted">
+                                <th class="pb-2">排名</th>
+                                <th class="pb-2">Token 候选词</th>
+                                <th class="pb-2">原始 Logit</th>
+                                <th class="pb-2">缩放概率 p<sub>i</sub></th>
+                                <th class="pb-2">累积概率 ∑ p</th>
+                                <th class="pb-2">采样池状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="m24-table-body" class="divide-y divide-cardBorder/50 font-mono">
+                            <!-- JS dynamic population -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Single Step & Monte Carlo Actions -->
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-cardBorder">
+                    <div class="flex items-center gap-3">
+                        <button onclick="runSingleSampling()" class="px-4 py-2.5 rounded-xl bg-accentCyan text-darkBg font-bold text-xs hover:opacity-90 transition-all shadow-lg shadow-accentCyan/20 flex items-center gap-2">
+                            <span>🎲 单步采样一次</span>
+                        </button>
+                        <button onclick="runMonteCarloSimulation()" class="px-4 py-2.5 rounded-xl bg-cardBorder text-textMain font-bold text-xs hover:bg-cardBorder/80 transition-all flex items-center gap-2">
+                            <span>📊 100 次蒙特卡洛模拟</span>
+                        </button>
+                    </div>
+
+                    <div id="m24-sample-result" class="text-xs font-mono px-3 py-1.5 rounded-lg bg-darkBg border border-cardBorder text-accentGold">
+                        等待采样点击...
+                    </div>
+                </div>
+
+                <!-- Monte Carlo Frequency Chart Area -->
+                <div id="m24-mc-chart-area" class="hidden space-y-3 pt-2">
+                    <div class="text-xs font-semibold text-accentEmerald">100 次实测采样频率 VS 理论概率:</div>
+                    <div id="m24-mc-bars" class="space-y-2">
+                        <!-- Dynamic bars -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 2.5 -->
+        <section id="module-2-5" class="scroll-mt-20 space-y-6">
+            <div class="border-l-4 border-accentCoral pl-4">
+                <h2 class="text-2xl font-bold text-textMain">2.5 交叉熵损失与困惑度 (Cross-Entropy & Perplexity)</h2>
+                <p class="text-sm text-textMuted mt-1">评估模型预测质量的核心指标：从 Negative Log-Likelihood 到 Perplexity。</p>
+            </div>
+
+            <!-- Formulas Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-cardBg border border-cardBorder rounded-xl p-5 space-y-2">
+                    <span class="text-xs font-semibold text-accentCoral bg-accentCoral/10 px-2 py-0.5 rounded border border-accentCoral/30">交叉熵损失 Cross-Entropy Loss</span>
+                    <div class="math-block">
+                        <span class="math">
+                            CE = − ln(
+                            <var>p</var><sub>target</sub>
+                            )
+                        </span>
+                    </div>
+                    <p class="text-xs text-textMuted">惩罚离群预测：目标词概率 <span class="math"><var>p</var><sub>target</sub></span> 越接近 1，Loss 越接近 0。</p>
+                </div>
+
+                <div class="bg-cardBg border border-cardBorder rounded-xl p-5 space-y-2">
+                    <span class="text-xs font-semibold text-accentGold bg-accentGold/10 px-2 py-0.5 rounded border border-accentGold/30">困惑度 Perplexity (PPL)</span>
+                    <div class="math-block">
+                        <span class="math">
+                            PPL = <var>e</var><sup>CE</sup> = 
+                            <span class="frac"><span class="num">1</span><span class="den"><var>p</var><sub>target</sub></span></span>
+                        </span>
+                    </div>
+                    <p class="text-xs text-textMuted">直观解读：困惑度相当于模型在预测时，平均在多少个“完全等概率”的候选词中犹豫不决。</p>
+                </div>
+            </div>
+
+            <!-- Interactive Loss Curve Canvas -->
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-6 space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-textMain">交互式 Loss 曲线: Loss = −ln(p)</h3>
+                        <p class="text-xs text-textMuted">拖动滑块或直接在图表上点击，查看不同目标概率下的 Loss 与 困惑度 PPL。</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs text-textMuted">目标词概率 p<sub>target</sub>:</span>
+                        <span id="m25-p-val" class="font-mono text-base font-bold text-accentCyan">0.25</span>
+                    </div>
+                </div>
+
+                <!-- Slider -->
+                <input id="m25-p-slider" type="range" min="0.01" max="1.00" step="0.01" value="0.25" class="w-full">
+
+                <!-- Canvas -->
+                <div class="relative bg-darkBg rounded-xl p-4 border border-cardBorder overflow-hidden">
+                    <canvas id="m25-canvas" class="w-full h-72 block cursor-pointer"></canvas>
+                </div>
+
+                <!-- Live Readouts & Hesitation Badge -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-cardBorder">
+                        <div class="text-xs text-textMuted mb-1">交叉熵 Loss</div>
+                        <div id="m25-loss-disp" class="text-2xl font-mono font-bold text-accentCoral">1.386</div>
+                    </div>
+
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-cardBorder">
+                        <div class="text-xs text-textMuted mb-1">困惑度 PPL</div>
+                        <div id="m25-ppl-disp" class="text-2xl font-mono font-bold text-accentGold">4.00</div>
+                    </div>
+
+                    <div class="bg-darkBg/80 p-4 rounded-xl border border-cardBorder flex flex-col justify-center">
+                        <div class="text-xs text-textMuted mb-1">模型直觉评估</div>
+                        <div class="text-xs text-textMain leading-relaxed">
+                            相当于在 <strong id="m25-ppl-words" class="text-accentCyan font-mono">4.0</strong> 个完全平等的词中随机发愣/犹豫。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Baseline Insight Box -->
+                <div class="bg-darkBg p-5 rounded-xl border border-cardBorder space-y-3">
+                    <h4 class="text-sm font-bold text-accentCyan flex items-center gap-2">
+                        💡 为什么刚初始化的 Transformer 模型 Loss 总是 10.8 左右？
+                    </h4>
+                    <p class="text-xs text-textMuted leading-relaxed">
+                        在未经任何训练时，模型权重为随机初始化，输出概率分布趋近于均匀分布（Uniform Distribution）。
+                        若词表大小为 <span class="math">|<var>V</var>| = 50,257</span>（如 GPT-2 / GPT-3）：
+                    </p>
+                    <div class="math-block">
+                        <span class="math">
+                            <var>p</var><sub>target</sub> ≈ 
+                            <span class="frac"><span class="num">1</span><span class="den">50,257</span></span>
+                            &nbsp;&rArr;&nbsp;
+                            Loss = −ln(
+                            <span class="frac"><span class="num">1</span><span class="den">50,257</span></span>
+                            ) = ln(50,257) ≈ 10.825
+                        </span>
+                    </div>
+                    <p class="text-xs text-textMuted">
+                        🛠️ <strong>代码 Debug 秘籍：</strong> 如果你在训练 GPT 类模型时，第 1 个 Step 的初始 Loss 远大于 10.8，说明你的词表索引或 CrossEntropyLoss 计算逻辑存在严重 Bug！
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 2.6 -->
+        <section id="module-2-6" class="scroll-mt-20 space-y-8">
+            <div class="border-l-4 border-accentPurple pl-4">
+                <h2 class="text-2xl font-bold text-textMain">2.6 NumPy 实战代码与互动测验</h2>
+                <p class="text-sm text-textMuted mt-1">从理论到生产级 Python 实现，并通过 4 道互动题目巩固核心概念。</p>
+            </div>
+
+            <!-- Code Viewer Tabs -->
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-6 space-y-4">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-cardBorder pb-4">
+                    <div class="flex flex-wrap gap-2">
+                        <button id="m26-code-tab-1" onclick="switchCodeTab(1)" class="px-3 py-1.5 rounded-lg text-xs font-mono font-medium border bg-accentCyan/20 text-accentCyan border-accentCyan/40">softmax_stable.py</button>
+                        <button id="m26-code-tab-2" onclick="switchCodeTab(2)" class="px-3 py-1.5 rounded-lg text-xs font-mono font-medium border bg-darkBg text-textMuted border-cardBorder hover:text-textMain">top_p_sampling.py</button>
+                        <button id="m26-code-tab-3" onclick="switchCodeTab(3)" class="px-3 py-1.5 rounded-lg text-xs font-mono font-medium border bg-darkBg text-textMuted border-cardBorder hover:text-textMain">cross_entropy_ppl.py</button>
+                    </div>
+
+                    <button onclick="copyCurrentCode()" class="px-3 py-1.5 rounded-lg bg-darkBg hover:bg-cardBorder text-xs text-textMain border border-cardBorder flex items-center gap-2 transition-all">
+                        <svg class="w-4 h-4 text-accentCyan" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                        <span id="m26-copy-btn-text">复制代码</span>
+                    </button>
+                </div>
+
+                <div class="bg-darkBg rounded-xl p-4 overflow-x-auto border border-cardBorder">
+                    <pre><code id="m26-code-display" class="text-textMain"></code></pre>
+                </div>
+            </div>
+
+            <!-- Quiz Section -->
+            <div class="bg-cardBg border border-cardBorder rounded-xl p-6 space-y-6">
+                <div class="flex justify-between items-center border-b border-cardBorder pb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-textMain">第 2 章 核心概念测验</h3>
+                        <p class="text-xs text-textMuted">实时选择答案，立即获取详细解析。</p>
+                    </div>
+                    <span id="quiz-score-badge" class="text-xs font-mono px-3 py-1 rounded-full bg-accentCyan/10 text-accentCyan border border-accentCyan/30">
+                        得分: 0 / 4
+                    </span>
+                </div>
+
+                <div class="space-y-6" id="quiz-container">
+                    <!-- Dynamic Quiz Render -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-cardBorder bg-darkBg py-8 text-center text-xs text-textMuted space-y-2">
+        <p>Transformer 核心视觉教程 · 第 2 章：概率与 Softmax</p>
+        <p class="font-mono text-[11px] text-accentCyan/70">Designed with 3Blue1Brown Mathematical Aesthetic</p>
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // Global Data & Presets
+        const m21Presets = {
+            weather: {
+                context: "今天天气真___",
+                tokens: ["晴朗", "不错", "糟糕", "下雨", "吃香蕉"],
+                logits: [4.5, 3.2, 1.0, 0.5, -3.0]
+            },
+            cat: {
+                context: "猫最喜欢吃___",
+                tokens: ["鱼", "猫粮", "小虾", "抓老鼠", "写代码"],
+                logits: [5.0, 4.2, 2.5, 1.0, -4.0]
+            },
+            transformer: {
+                context: "Transformer的核心是___",
+                tokens: ["Self-Attention", "Multi-Head", "Positional", "Softmax", "喝珍珠奶茶"],
+                logits: [6.2, 4.5, 3.8, 2.0, -2.5]
+            }
+        };
+
+        let m21CurrentLogits = [...m21Presets.weather.logits];
+        let m21CurrentTokens = [...m21Presets.weather.tokens];
+
+        // Softmax Function Helper
+        function computeSoftmax(logits, temperature = 1.0) {
+            const scaled = logits.map(z => z / Math.max(temperature, 1e-5));
+            const maxVal = Math.max(...scaled);
+            const exps = scaled.map(z => Math.exp(z - maxVal));
+            const sumExps = exps.reduce((a, b) => a + b, 0);
+            return exps.map(e => e / sumExps);
+        }
+
+        // ==========================================
+        // MODULE 2.1 LOGIC
+        // ==========================================
+        function initModule21() {
+            const selectEl = document.getElementById('m21-context-select');
+            selectEl.addEventListener('change', (e) => {
+                const preset = m21Presets[e.target.value];
+                m21CurrentTokens = [...preset.tokens];
+                m21CurrentLogits = [...preset.logits];
+                renderModule21();
+            });
+            renderModule21();
+        }
+
+        function renderModule21() {
+            const slidersContainer = document.getElementById('m21-sliders-container');
+            const barsContainer = document.getElementById('m21-bars-container');
+            const probs = computeSoftmax(m21CurrentLogits);
+
+            // Render Sliders
+            slidersContainer.innerHTML = '';
+            m21CurrentTokens.forEach((token, idx) => {
+                const val = m21CurrentLogits[idx];
+                const div = document.createElement('div');
+                div.className = 'space-y-1';
+                div.innerHTML = `
+                    <div class="flex justify-between text-xs">
+                        <span class="font-medium text-textMain">${token}</span>
+                        <span class="font-mono text-accentCyan">Logit: ${val.toFixed(1)}</span>
+                    </div>
+                    <input type="range" min="-5.0" max="8.0" step="0.1" value="${val}" data-idx="${idx}" class="m21-slider w-full">
+                `;
+                slidersContainer.appendChild(div);
+            });
+
+            // Add Slider Event Listeners
+            document.querySelectorAll('.m21-slider').forEach(slider => {
+                slider.addEventListener('input', (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    m21CurrentLogits[idx] = parseFloat(e.target.value);
+                    updateModule21Bars();
+                });
+            });
+
+            updateModule21Bars();
+        }
+
+        function updateModule21Bars() {
+            const barsContainer = document.getElementById('m21-bars-container');
+            const probs = computeSoftmax(m21CurrentLogits);
+            const maxProb = Math.max(...probs);
+
+            barsContainer.innerHTML = '';
+            m21CurrentTokens.forEach((token, idx) => {
+                const prob = probs[idx];
+                const pct = (prob * 100).toFixed(1);
+                const isMax = prob === maxProb;
+                const barColor = isMax ? 'bg-accentCyan' : 'bg-blue-600/60';
+                const textColor = isMax ? 'text-accentCyan font-bold' : 'text-textMuted';
+
+                const barDiv = document.createElement('div');
+                barDiv.className = 'space-y-1';
+                barDiv.innerHTML = `
+                    <div class="flex justify-between text-xs">
+                        <span class="${textColor}">${token}</span>
+                        <span class="font-mono ${textColor}">${pct}%</span>
+                    </div>
+                    <div class="w-full h-3 bg-cardBg rounded-full overflow-hidden border border-cardBorder">
+                        <div class="h-full ${barColor} transition-all duration-200" style="width: ${pct}%"></div>
+                    </div>
+                `;
+                barsContainer.appendChild(barDiv);
+            });
+
+            // Update sliders text
+            document.querySelectorAll('.m21-slider').forEach(slider => {
+                const idx = parseInt(slider.dataset.idx);
+                const valText = slider.previousElementSibling.querySelector('.font-mono');
+                if (valText) valText.textContent = `Logit: ${m21CurrentLogits[idx].toFixed(1)}`;
+            });
+        }
+
+        // ==========================================
+        // MODULE 2.2 LOGIC (Overflow Lab)
+        // ==========================================
+        function initModule22() {
+            const slider = document.getElementById('m22-c-slider');
+            slider.addEventListener('input', (e) => {
+                renderModule22(parseFloat(e.target.value));
+            });
+            renderModule22(0);
+        }
+
+        function renderModule22(C) {
+            document.getElementById('m22-c-val').textContent = C;
+            const baseLogits = [0.0, 1.0, 2.0];
+            const z = baseLogits.map(x => x + C);
+
+            // Naive Softmax Calculation
+            const naiveExp = z.map(x => Math.exp(x));
+            const naiveSum = naiveExp.reduce((a, b) => a + b, 0);
+
+            const naiveZText = z.map(x => x.toFixed(1)).join(', ');
+            document.getElementById('m22-naive-z').textContent = naiveZText;
+
+            const naiveCard = document.getElementById('m22-naive-card');
+            const naiveStatus = document.getElementById('m22-naive-status');
+            const naiveExpEl = document.getElementById('m22-naive-exp');
+            const naiveSumEl = document.getElementById('m22-naive-sum');
+            const naiveResultEl = document.getElementById('m22-naive-result');
+
+            if (!isFinite(naiveSum) || naiveExp.some(e => !isFinite(e))) {
+                // Overflow occurred!
+                naiveCard.className = "bg-darkBg p-5 rounded-xl border-2 border-accentCoral space-y-3 relative overflow-hidden glow-red";
+                naiveStatus.className = "text-[10px] px-2 py-0.5 rounded font-mono bg-accentCoral/30 text-accentCoral font-bold";
+                naiveStatus.textContent = "💥 算术溢出崩溃 (NaN)";
+                naiveExpEl.textContent = "Infinity, Infinity, Infinity";
+                naiveSumEl.textContent = "Infinity";
+                naiveResultEl.innerHTML = `<span class="text-accentCoral font-bold">[NaN, NaN, NaN] &mdash; (&infin; / &infin; 崩溃)</span>`;
+            } else {
+                naiveCard.className = "bg-darkBg p-5 rounded-xl border border-accentCoral/30 space-y-3 relative overflow-hidden";
+                naiveStatus.className = "text-[10px] px-2 py-0.5 rounded font-mono bg-accentEmerald/20 text-accentEmerald";
+                naiveStatus.textContent = "状态正常";
+                naiveExpEl.textContent = naiveExp.map(x => x < 1e4 ? x.toFixed(2) : x.toExponential(2)).join(', ');
+                naiveSumEl.textContent = naiveSum < 1e4 ? naiveSum.toFixed(2) : naiveSum.toExponential(2);
+                
+                const probs = naiveExp.map(e => (e / naiveSum * 100).toFixed(2) + '%');
+                naiveResultEl.textContent = `[${probs.join(', ')}]`;
+            }
+
+            // Stable Softmax Calculation
+            const maxZ = Math.max(...z);
+            const shiftZ = z.map(x => x - maxZ);
+            const stableExp = shiftZ.map(x => Math.exp(x));
+            const stableSum = stableExp.reduce((a, b) => a + b, 0);
+            const stableProbs = stableExp.map(e => (e / stableSum * 100).toFixed(2) + '%');
+
+            document.getElementById('m22-stable-max').textContent = maxZ.toFixed(1);
+            document.getElementById('m22-stable-shift').textContent = shiftZ.map(x => x.toFixed(1)).join(', ');
+            document.getElementById('m22-stable-exp').textContent = stableExp.map(x => x.toFixed(3)).join(', ');
+            document.getElementById('m22-stable-result').textContent = `[${stableProbs.join(', ')}]`;
+        }
+
+        // ==========================================
+        // MODULE 2.3 LOGIC (Temperature Canvas)
+        // ==========================================
+        const m23BaseLogits = [6.5, 4.8, 3.2, 2.1, 0.5, -2.0];
+        const m23Tokens = ["机器", "深度", "人工", "自然", "奇点", "香蕉"];
+
+        function initModule23() {
+            const slider = document.getElementById('m23-t-slider');
+            slider.addEventListener('input', (e) => {
+                updateModule23(parseFloat(e.target.value));
+            });
+            window.addEventListener('resize', () => drawModule23Canvas());
+            updateModule23(0.7);
+        }
+
+        function setTempPreset(val) {
+            document.getElementById('m23-t-slider').value = val;
+            updateModule23(val);
+        }
+
+        function updateModule23(temp) {
+            document.getElementById('m23-t-val').textContent = temp.toFixed(2);
+            
+            const probs = computeSoftmax(m23BaseLogits, temp);
+            
+            // Shannon Entropy H(p) = -sum(p * ln(p))
+            let entropy = 0;
+            probs.forEach(p => {
+                if (p > 1e-12) entropy -= p * Math.log(p);
+            });
+
+            document.getElementById('m23-entropy').textContent = `${entropy.toFixed(2)} nats`;
+            const maxP = Math.max(...probs);
+            document.getElementById('m23-pmax').textContent = `${(maxP * 100).toFixed(1)}%`;
+
+            const evalEl = document.getElementById('m23-eval');
+            if (temp <= 0.2) {
+                evalEl.textContent = "极度确定：接近 One-hot / Argmax 采样，毫无多样性";
+                evalEl.className = "text-sm font-semibold text-accentCoral mt-1";
+            } else if (temp <= 0.8) {
+                evalEl.textContent = "最佳平衡：逻辑紧密通顺，兼具自然多样性";
+                evalEl.className = "text-sm font-semibold text-accentCyan mt-1";
+            } else if (temp <= 1.5) {
+                evalEl.textContent = "高发散性：充满想象力，但可能出现偏离上下文的词句";
+                evalEl.className = "text-sm font-semibold text-accentGold mt-1";
+            } else {
+                evalEl.textContent = "混乱无序：概率分布趋于均匀，模型近乎随机乱猜";
+                evalEl.className = "text-sm font-semibold text-accentCoral mt-1";
+            }
+
+            drawModule23Canvas(probs);
+        }
+
+        function drawModule23Canvas(probs) {
+            if (!probs) probs = computeSoftmax(m23BaseLogits, parseFloat(document.getElementById('m23-t-slider').value));
+            
+            const canvas = document.getElementById('m23-canvas');
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = rect.width;
+            const height = rect.height;
+
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw Background Grid
+            ctx.strokeStyle = '#212b3b';
+            ctx.lineWidth = 1;
+            for (let y = 0; y < height; y += 40) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+
+            const barWidth = width / probs.length;
+            const padding = 16;
+            const maxBarHeight = height - 60;
+
+            // Draw Smooth Curve
+            ctx.beginPath();
+            ctx.strokeStyle = '#58c4dd';
+            ctx.lineWidth = 3;
+
+            const points = probs.map((p, i) => {
+                const x = i * barWidth + barWidth / 2;
+                const y = height - 35 - (p * maxBarHeight);
+                return { x, y };
+            });
+
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 0; i < points.length - 1; i++) {
+                const xc = (points[i].x + points[i + 1].x) / 2;
+                const yc = (points[i].y + points[i + 1].y) / 2;
+                ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+            }
+            ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+            ctx.stroke();
+
+            // Gradient Fill under curve
+            const grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, 'rgba(88, 196, 221, 0.3)');
+            grad.addColorStop(1, 'rgba(88, 196, 221, 0.0)');
+            
+            ctx.lineTo(points[points.length - 1].x, height - 35);
+            ctx.lineTo(points[0].x, height - 35);
+            ctx.closePath();
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // Draw Bars & Labels
+            probs.forEach((p, i) => {
+                const x = i * barWidth + padding;
+                const bw = barWidth - padding * 2;
+                const bh = p * maxBarHeight;
+                const y = height - 35 - bh;
+
+                // Bar
+                ctx.fillStyle = i === 0 ? 'rgba(88, 196, 221, 0.8)' : 'rgba(33, 43, 59, 0.8)';
+                ctx.beginPath();
+                ctx.roundRect(x, y, bw, bh, [6, 6, 0, 0]);
+                ctx.fill();
+
+                // Token Label
+                ctx.fillStyle = '#e6edf3';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(m23Tokens[i], i * barWidth + barWidth / 2, height - 12);
+
+                // Prob Text
+                ctx.fillStyle = i === 0 ? '#58c4dd' : '#8b949e';
+                ctx.font = '11px monospace';
+                ctx.fillText((p * 100).toFixed(1) + '%', i * barWidth + barWidth / 2, y - 8);
+            });
+        }
+
+        // ==========================================
+        // MODULE 2.4 LOGIC (Sampling Lab)
+        // ==========================================
+        const m24RawPool = [
+            { token: "学习", logit: 6.0 },
+            { token: "研究", logit: 5.2 },
+            { token: "理解", logit: 4.5 },
+            { token: "应用", logit: 3.8 },
+            { token: "探索", logit: 3.0 },
+            { token: "吃饭", logit: 1.2 },
+            { token: "睡觉", logit: -0.5 },
+            { token: "飞翔", logit: -2.0 }
+        ];
+
+        let currentStrategy = 'greedy';
+
+        function initModule24() {
+            ['m24-t-slider', 'm24-k-slider', 'm24-p-slider'].forEach(id => {
+                document.getElementById(id).addEventListener('input', () => renderModule24());
+            });
+            renderModule24();
+        }
+
+        function setSamplingStrategy(strat) {
+            currentStrategy = strat;
+            ['greedy', 'topk', 'topp', 'combo'].forEach(s => {
+                const btn = document.getElementById(`m24-tab-${s}`);
+                if (s === strat) {
+                    btn.className = "px-4 py-2 rounded-lg font-medium text-xs border transition-all bg-accentCyan/20 text-accentCyan border-accentCyan/40";
+                } else {
+                    btn.className = "px-4 py-2 rounded-lg font-medium text-xs border transition-all bg-darkBg text-textMuted border-cardBorder hover:text-textMain";
+                }
+            });
+
+            // Toggle Controls Visibility
+            const kCtrl = document.getElementById('m24-k-control');
+            const pCtrl = document.getElementById('m24-p-control');
+
+            if (strat === 'greedy') {
+                kCtrl.classList.add('opacity-40', 'pointer-events-none');
+                pCtrl.classList.add('opacity-40', 'pointer-events-none');
+            } else if (strat === 'topk') {
+                kCtrl.classList.remove('opacity-40', 'pointer-events-none');
+                pCtrl.classList.add('opacity-40', 'pointer-events-none');
+            } else if (strat === 'topp') {
+                kCtrl.classList.add('opacity-40', 'pointer-events-none');
+                pCtrl.classList.remove('opacity-40', 'pointer-events-none');
+            } else {
+                kCtrl.classList.remove('opacity-40', 'pointer-events-none');
+                pCtrl.classList.remove('opacity-40', 'pointer-events-none');
+            }
+
+            renderModule24();
+        }
+
+        function getActiveSamplingState() {
+            const T = parseFloat(document.getElementById('m24-t-slider').value);
+            const K = parseInt(document.getElementById('m24-k-slider').value);
+            const P = parseFloat(document.getElementById('m24-p-slider').value);
+
+            document.getElementById('m24-t-disp').textContent = T.toFixed(2);
+            document.getElementById('m24-k-disp').textContent = `K = ${K}`;
+            document.getElementById('m24-p-disp').textContent = `P = ${P.toFixed(2)}`;
+
+            const rawLogits = m24RawPool.map(item => item.logit);
+            const initialProbs = computeSoftmax(rawLogits, T);
+
+            let activeFlags = new Array(m24RawPool.length).fill(true);
+            let reasons = new Array(m24RawPool.length).fill('');
+
+            if (currentStrategy === 'greedy') {
+                activeFlags = activeFlags.map((_, i) => i === 0);
+                reasons = reasons.map((_, i) => i === 0 ? 'Top-1 选定' : '被 Greedy 过滤');
+            } else if (currentStrategy === 'topk') {
+                activeFlags = activeFlags.map((_, i) => i < K);
+                reasons = reasons.map((_, i) => i < K ? '保留 (Rank ≤ K)' : `过滤 (Rank > ${K})`);
+            } else if (currentStrategy === 'topp') {
+                let cum = 0;
+                for (let i = 0; i < initialProbs.length; i++) {
+                    cum += initialProbs[i];
+                    if (i > 0 && cum - initialProbs[i] >= P) {
+                        activeFlags[i] = false;
+                        reasons[i] = `过滤 (累积概率超过 ${P.toFixed(2)})`;
+                    } else {
+                        activeFlags[i] = true;
+                        reasons[i] = '保留 (Nucleus 集合)';
+                    }
+                }
+            } else if (currentStrategy === 'combo') {
+                // Combo: Top-K then Top-P
+                let cum = 0;
+                for (let i = 0; i < initialProbs.length; i++) {
+                    if (i >= K) {
+                        activeFlags[i] = false;
+                        reasons[i] = `过滤 (Rank > ${K})`;
+                        continue;
+                    }
+                    cum += initialProbs[i];
+                    if (i > 0 && cum - initialProbs[i] >= P) {
+                        activeFlags[i] = false;
+                        reasons[i] = `过滤 (Top-P 累积超标)`;
+                    } else {
+                        activeFlags[i] = true;
+                        reasons[i] = '保留 (Combo)';
+                    }
+                }
+            }
+
+            // Renormalize active probabilities
+            let activeSum = 0;
+            initialProbs.forEach((p, i) => {
+                if (activeFlags[i]) activeSum += p;
+            });
+
+            const finalProbs = initialProbs.map((p, i) => activeFlags[i] ? p / activeSum : 0);
+
+            let cumSum = 0;
+            const cumProbs = initialProbs.map(p => {
+                cumSum += p;
+                return cumSum;
+            });
+
+            return { T, K, P, initialProbs, activeFlags, reasons, finalProbs, cumProbs };
+        }
+
+        function renderModule24() {
+            const state = getActiveSamplingState();
+            const tbody = document.getElementById('m24-table-body');
+            tbody.innerHTML = '';
+
+            m24RawPool.forEach((item, i) => {
+                const tr = document.createElement('tr');
+                const isActive = state.activeFlags[i];
+                const activeClass = isActive ? 'bg-accentCyan/5 text-textMain' : 'opacity-40 line-through text-textMuted';
+                const statusBadge = isActive ? 
+                    `<span class="px-2 py-0.5 rounded bg-accentEmerald/20 text-accentEmerald text-[10px]">${state.reasons[i]}</span>` :
+                    `<span class="px-2 py-0.5 rounded bg-accentCoral/20 text-accentCoral text-[10px]">${state.reasons[i]}</span>`;
+
+                tr.className = `${activeClass} hover:bg-cardBorder/30 transition-all`;
+                tr.innerHTML = `
+                    <td class="py-2.5 font-bold">#${i + 1}</td>
+                    <td class="font-sans font-bold text-sm">${item.token}</td>
+                    <td>${item.logit.toFixed(1)}</td>
+                    <td>${(state.finalProbs[i] * 100).toFixed(1)}%</td>
+                    <td>${(state.cumProbs[i] * 100).toFixed(1)}%</td>
+                    <td>${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function runSingleSampling() {
+            const state = getActiveSamplingState();
+            const rand = Math.random();
+            let cum = 0;
+            let sampledIndex = 0;
+
+            for (let i = 0; i < state.finalProbs.length; i++) {
+                cum += state.finalProbs[i];
+                if (rand <= cum && state.activeFlags[i]) {
+                    sampledIndex = i;
+                    break;
+                }
+            }
+
+            const token = m24RawPool[sampledIndex].token;
+            const resEl = document.getElementById('m24-sample-result');
+            resEl.className = "text-xs font-mono px-3 py-1.5 rounded-lg bg-accentCyan/20 text-accentCyan border border-accentCyan/40 font-bold animate-pulse";
+            resEl.textContent = `🎲 采样结果: "${token}" (p = ${(state.finalProbs[sampledIndex]*100).toFixed(1)}%)`;
+        }
+
+        function runMonteCarloSimulation() {
+            const state = getActiveSamplingState();
+            const counts = new Array(m24RawPool.length).fill(0);
+
+            for (let run = 0; run < 100; run++) {
+                const rand = Math.random();
+                let cum = 0;
+                for (let i = 0; i < state.finalProbs.length; i++) {
+                    cum += state.finalProbs[i];
+                    if (rand <= cum && state.activeFlags[i]) {
+                        counts[i]++;
+                        break;
+                    }
+                }
+            }
+
+            const chartArea = document.getElementById('m24-mc-chart-area');
+            const barsContainer = document.getElementById('m24-mc-bars');
+            chartArea.classList.remove('hidden');
+            barsContainer.innerHTML = '';
+
+            m24RawPool.forEach((item, i) => {
+                if (!state.activeFlags[i]) return;
+                const empPct = counts[i];
+                const theoPct = (state.finalProbs[i] * 100).toFixed(1);
+
+                const div = document.createElement('div');
+                div.className = "space-y-1 text-xs font-mono";
+                div.innerHTML = `
+                    <div class="flex justify-between text-textMuted">
+                        <span>"${item.token}"</span>
+                        <span>实测: ${empPct}% | 理论: ${theoPct}%</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-darkBg rounded-full overflow-hidden flex border border-cardBorder">
+                        <div class="h-full bg-accentEmerald" style="width: ${empPct}%"></div>
+                    </div>
+                `;
+                barsContainer.appendChild(div);
+            });
+        }
+
+        // ==========================================
+        // MODULE 2.5 LOGIC (Cross-Entropy & PPL Canvas)
+        // ==========================================
+        function initModule25() {
+            const slider = document.getElementById('m25-p-slider');
+            slider.addEventListener('input', (e) => {
+                updateModule25(parseFloat(e.target.value));
+            });
+
+            const canvas = document.getElementById('m25-canvas');
+            canvas.addEventListener('click', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const p = Math.max(0.01, Math.min(1.0, clickX / rect.width));
+                slider.value = p;
+                updateModule25(p);
+            });
+
+            window.addEventListener('resize', () => drawModule25Canvas());
+            updateModule25(0.25);
+        }
+
+        function updateModule25(p) {
+            document.getElementById('m25-p-val').textContent = p.toFixed(2);
+            
+            const loss = -Math.log(p);
+            const ppl = Math.exp(loss);
+
+            document.getElementById('m25-loss-disp').textContent = loss.toFixed(3);
+            document.getElementById('m25-ppl-disp').textContent = ppl.toFixed(2);
+            document.getElementById('m25-ppl-words').textContent = ppl.toFixed(1);
+
+            drawModule25Canvas(p);
+        }
+
+        function drawModule25Canvas(pTarget) {
+            if (pTarget === undefined) pTarget = parseFloat(document.getElementById('m25-p-slider').value);
+            
+            const canvas = document.getElementById('m25-canvas');
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const w = rect.width;
+            const h = rect.height;
+            const padding = 45;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Coordinate Mapping
+            const pToX = (p) => padding + p * (w - 2 * padding);
+            const lossToY = (l) => h - padding - (l / 4.6) * (h - 2 * padding);
+
+            // Grid Lines & Axes
+            ctx.strokeStyle = '#212b3b';
+            ctx.lineWidth = 1;
+
+            for (let l = 0; l <= 4; l += 1) {
+                const y = lossToY(l);
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(w - padding, y);
+                ctx.stroke();
+
+                ctx.fillStyle = '#8b949e';
+                ctx.font = '10px monospace';
+                ctx.fillText(`L=${l}`, 10, y + 3);
+            }
+
+            for (let p = 0.2; p <= 1.0; p += 0.2) {
+                const x = pToX(p);
+                ctx.beginPath();
+                ctx.moveTo(x, padding);
+                ctx.lineTo(x, h - padding);
+                ctx.stroke();
+
+                ctx.fillStyle = '#8b949e';
+                ctx.font = '10px monospace';
+                ctx.fillText(`p=${p.toFixed(1)}`, x - 15, h - 15);
+            }
+
+            // Draw -ln(p) Curve
+            ctx.beginPath();
+            ctx.strokeStyle = '#ff6b6b';
+            ctx.lineWidth = 3;
+
+            for (let p = 0.01; p <= 1.0; p += 0.005) {
+                const l = -Math.log(p);
+                const x = pToX(p);
+                const y = lossToY(Math.min(l, 4.6));
+                if (p === 0.01) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Active Point Coordinates
+            const curLoss = -Math.log(pTarget);
+            const curX = pToX(pTarget);
+            const curY = lossToY(Math.min(curLoss, 4.6));
+
+            // Dotted projection lines
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = '#f0b429';
+            ctx.lineWidth = 1.5;
+
+            ctx.beginPath();
+            ctx.moveTo(curX, h - padding);
+            ctx.lineTo(curX, curY);
+            ctx.lineTo(padding, curY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Glow Circle Target
+            ctx.beginPath();
+            ctx.arc(curX, curY, 8, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(240, 180, 41, 0.3)';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(curX, curY, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#f0b429';
+            ctx.fill();
+
+            // Label Box near point
+            ctx.fillStyle = '#141b26';
+            ctx.strokeStyle = '#58c4dd';
+            ctx.lineWidth = 1;
+            const boxW = 120, boxH = 40;
+            let boxX = curX + 10;
+            let boxY = curY - 45;
+            if (boxX + boxW > w - padding) boxX = curX - boxW - 10;
+            if (boxY < padding) boxY = curY + 10;
+
+            ctx.beginPath();
+            ctx.roundRect(boxX, boxY, boxW, boxH, 6);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#e6edf3';
+            ctx.font = '11px monospace';
+            ctx.fillText(`p = ${pTarget.toFixed(2)}`, boxX + 8, boxY + 16);
+            ctx.fillStyle = '#ff6b6b';
+            ctx.fillText(`Loss = ${curLoss.toFixed(3)}`, boxX + 8, boxY + 30);
+        }
+
+        // ==========================================
+        // MODULE 2.6 LOGIC (Code & Quiz)
+        // ==========================================
+        const codeSnippets = {
+            1: `import numpy as np
+
+def stable_softmax(logits, axis=-1):
+    """
+    数值稳定的 Softmax 实现
+    公式: Softmax(z)_i = exp(z_i - max(z)) / sum(exp(z_j - max(z)))
+    """
+    # 减去最大值，防止 exp(z) 产生 float32/float64 上溢为 Inf
+    max_logits = np.max(logits, axis=axis, keepdims=True)
+    exp_logits = np.exp(logits - max_logits)
+    return exp_logits / np.sum(exp_logits, axis=axis, keepdims=True)
+
+# 验证数值稳定性 (当 logits 包含极值时)
+z_large = np.array([1000.0, 1001.0, 1002.0])
+print("Stable Softmax 输出:", stable_softmax(z_large))
+# 输出: [0.09003057, 0.24472847, 0.66524096] (绝不会崩溃为 NaN!)`,
+
+            2: `import numpy as np
+
+def top_k_top_p_filtering(logits, top_k=0, top_p=1.0, filter_value=-float('Inf')):
+    """
+    结合 Top-K 与 Top-P (Nucleus) 采样的 Logits 过滤
+    """
+    logits = logits.copy()
+    
+    # 1. Top-K 截断
+    if top_k > 0:
+        top_k = min(top_k, logits.shape[-1])
+        indices_to_remove = logits < np.sort(logits)[-top_k]
+        logits[indices_to_remove] = filter_value
+        
+    # 2. Top-P (核采样) 截断
+    if top_p < 1.0:
+        sorted_indices = np.argsort(logits)[::-1]
+        sorted_logits = logits[sorted_indices]
+        
+        # 计算 Softmax 概率与累积分布
+        exp_l = np.exp(sorted_logits - np.max(sorted_logits))
+        sorted_probs = exp_l / np.sum(exp_l)
+        cumulative_probs = np.cumsum(sorted_probs)
+        
+        # 移除累积概率超过 top_p 的 Token (保留首个突破阈值的 Token)
+        sorted_indices_to_remove = cumulative_probs > top_p
+        sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].copy()
+        sorted_indices_to_remove[0] = False
+        
+        indices_to_remove = sorted_indices[sorted_indices_to_remove]
+        logits[indices_to_remove] = filter_value
+        
+    return logits`,
+
+            3: `import numpy as np
+
+def compute_cross_entropy_and_ppl(logits, target_index):
+    """
+    计算单个位置的交叉熵 Loss 与 困惑度 PPL
+    """
+    # 1. 计算稳定 Softmax 概率
+    exp_logits = np.exp(logits - np.max(logits))
+    probs = exp_logits / np.sum(exp_logits)
+    
+    # 2. 提取目标 Token 概率 p_target
+    p_target = probs[target_index]
+    
+    # 3. 计算交叉熵 Loss = -ln(p_target)
+    loss = -np.log(np.maximum(p_target, 1e-12))
+    
+    # 4. 计算困惑度 PPL = exp(Loss) = 1 / p_target
+    ppl = np.exp(loss)
+    
+    return probs, loss, ppl
+
+# 示例
+z = np.array([2.5, 4.0, 1.2, 0.3])
+probs, loss, ppl = compute_cross_entropy_and_ppl(z, target_index=1)
+print(f"目标概率 p_target: {probs[1]:.4f}")
+print(f"交叉熵 Loss: {loss:.4f}")
+print(f"困惑度 PPL: {ppl:.4f}")`
+        };
+
+        let activeCodeTab = 1;
+
+        function switchCodeTab(tabIndex) {
+            activeCodeTab = tabIndex;
+            for (let i = 1; i <= 3; i++) {
+                const btn = document.getElementById(`m26-code-tab-${i}`);
+                if (i === tabIndex) {
+                    btn.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-medium border bg-accentCyan/20 text-accentCyan border-accentCyan/40";
+                } else {
+                    btn.className = "px-3 py-1.5 rounded-lg text-xs font-mono font-medium border bg-darkBg text-textMuted border-cardBorder hover:text-textMain";
+                }
+            }
+            document.getElementById('m26-code-display').textContent = codeSnippets[tabIndex];
+        }
+
+        function copyCurrentCode() {
+            const code = codeSnippets[activeCodeTab];
+            const btnText = document.getElementById('m26-copy-btn-text');
+            
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(code);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = code;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+
+            btnText.textContent = "已复制！";
+            setTimeout(() => { btnText.textContent = "复制代码"; }, 2000);
+        }
+
+        // Quiz Questions & State
+        const quizData = [
+            {
+                id: 0,
+                question: "Softmax 数值稳定性中，减去 max(z) 的主要目的是什么？",
+                options: [
+                    "改变各 Token 的相对概率分配比例",
+                    "防止 e<sup>z<sub>i</sub></sup> 发生浮点数溢出为 Infinity",
+                    "降低未归一化 Logits 的平均绝对值",
+                    "减少神经网络反向传播计算的参数量"
+                ],
+                correct: 1,
+                explanation: "计算机 Float32 的最大上限约为 3.4×10<sup>38</sup> (e<sup>88.7</sup>)。通过平移变换 e<sup>z<sub>i</sub> − max(z)</sup>，指数项最大自变量变为 0，最大值恒为 1，彻底消除了 NaN 崩溃风险。"
+            },
+            {
+                id: 1,
+                question: "当采样温度 T &rarr; 0 时，Softmax 概率分布会发生什么变化？",
+                options: [
+                    "趋近于均匀分布 (Uniform Distribution)",
+                    "退化为独热分布 (One-hot / Argmax 确定性选择)",
+                    "转化为标准正态分布",
+                    "维持原始未调整的概率分布"
+                ],
+                correct: 1,
+                explanation: "当 T &rarr; 0 时，z<sub>i</sub> / T 之间的极小差距会被极大放大，最大 Logit 的指数项将远大于其他项，概率集中在概率最高的单个 Token 上（即 Argmax / 贪心选择）。"
+            },
+            {
+                id: 2,
+                question: "若模型对正确目标词的预测概率 p<sub>target</sub> = 0.25，则交叉熵 Loss 与 困惑度 PPL 分别是多少？",
+                options: [
+                    "Loss = 0.25, PPL = 4.0",
+                    "Loss ≈ 1.386, PPL = 4.0",
+                    "Loss ≈ 0.693, PPL = 2.0",
+                    "Loss = 1.0, PPL = 0.25"
+                ],
+                correct: 1,
+                explanation: "CE = −ln(p<sub>target</sub>) = −ln(0.25) = ln(4) ≈ 1.386。困惑度 PPL = e<sup>CE</sup> = 1 / p<sub>target</sub> = 1 / 0.25 = 4.0。直观含义是当前预测的困惑程度相当于在 4 个完全等概率的候选词中犹豫。"
+            },
+            {
+                id: 3,
+                question: "在 Top-P (核采样 / Nucleus Sampling) 中，若设定 P = 0.9，其截断候选词集的方式是？",
+                options: [
+                    "仅保留前 9% 的候选词",
+                    "按概率降序排列，选取累积概率刚好达到或超过 0.9 的最小 Token 集合",
+                    "随机剔除概率低于 0.9 的所有 Token",
+                    "截断固定保留前 9 个 Token"
+                ],
+                correct: 1,
+                explanation: "Top-P 采样动态选择按概率降序排列的 Token，直到其累积概率 ∑ p<sub>i</sub> ≥ P (如 0.9)，舍弃剩余的尾部 Token 并重新归一化。这能在候选词概率集中时缩小搜索空间，在概率平坦时保留多样性。"
+            }
+        ];
+
+        let quizUserAnswers = {};
+
+        function initQuiz() {
+            const container = document.getElementById('quiz-container');
+            container.innerHTML = '';
+
+            quizData.forEach((q, qIdx) => {
+                const card = document.createElement('div');
+                card.className = "bg-darkBg p-5 rounded-xl border border-cardBorder space-y-4";
+                card.id = `quiz-card-${qIdx}`;
+
+                let optionsHTML = '';
+                q.options.forEach((opt, optIdx) => {
+                    optionsHTML += `
+                        <button onclick="answerQuiz(${qIdx}, ${optIdx})" id="quiz-btn-${qIdx}-${optIdx}" class="w-full text-left p-3 rounded-lg border border-cardBorder bg-cardBg hover:border-accentCyan/50 text-xs text-textMain transition-all flex items-center justify-between">
+                            <span>${String.fromCharCode(65 + optIdx)}. ${opt}</span>
+                            <span class="quiz-icon font-mono font-bold"></span>
+                        </button>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <div class="text-sm font-bold text-textMain flex items-start gap-2">
+                        <span class="text-accentCyan font-mono">Q${qIdx + 1}.</span>
+                        <span>${q.question}</span>
+                    </div>
+                    <div class="space-y-2">
+                        ${optionsHTML}
+                    </div>
+                    <div id="quiz-exp-${qIdx}" class="hidden p-3 rounded-lg bg-cardBg border border-cardBorder text-xs text-textMuted space-y-1">
+                        <!-- Explanation dynamic -->
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function answerQuiz(qIdx, optIdx) {
+            quizUserAnswers[qIdx] = optIdx;
+            const q = quizData[qIdx];
+            const isCorrect = optIdx === q.correct;
+
+            // Highlight buttons
+            q.options.forEach((_, i) => {
+                const btn = document.getElementById(`quiz-btn-${qIdx}-${i}`);
+                btn.disabled = true;
+                if (i === q.correct) {
+                    btn.className = "w-full text-left p-3 rounded-lg border border-accentEmerald bg-accentEmerald/10 text-xs text-accentEmerald font-semibold flex items-center justify-between";
+                    btn.querySelector('.quiz-icon').textContent = "✓ 正确";
+                } else if (i === optIdx && !isCorrect) {
+                    btn.className = "w-full text-left p-3 rounded-lg border border-accentCoral bg-accentCoral/10 text-xs text-accentCoral font-semibold flex items-center justify-between";
+                    btn.querySelector('.quiz-icon').textContent = "✕ 错误";
+                } else {
+                    btn.className = "w-full text-left p-3 rounded-lg border border-cardBorder bg-cardBg/40 text-xs text-textMuted opacity-50 flex items-center justify-between";
+                }
+            });
+
+            // Show explanation
+            const expEl = document.getElementById(`quiz-exp-${qIdx}`);
+            expEl.classList.remove('hidden');
+            expEl.innerHTML = `
+                <div class="font-bold ${isCorrect ? 'text-accentEmerald' : 'text-accentCoral'}">
+                    ${isCorrect ? '🎉 检验正确！' : '💡 解题解析：'}
+                </div>
+                <div class="leading-relaxed text-textMain">${q.explanation}</div>
+            `;
+
+            // Update Score Badge
+            let score = 0;
+            Object.keys(quizUserAnswers).forEach(k => {
+                if (quizUserAnswers[k] === quizData[k].correct) score++;
+            });
+            document.getElementById('quiz-score-badge').textContent = `得分: ${score} / ${quizData.length}`;
+        }
+
+        // ==========================================
+        // WINDOW ONLOAD INITIALIZATION
+        // ==========================================
+        window.onload = function() {
+            initModule21();
+            initModule22();
+            initModule23();
+            initModule24();
+            initModule25();
+            switchCodeTab(1);
+            initQuiz();
+
+            // Scroll Active Nav Highlight
+            const sections = document.querySelectorAll('section[id]');
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            window.addEventListener('scroll', () => {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop - 100;
+                    if (window.scrollY >= sectionTop) {
+                        current = section.getAttribute('id');
+                    }
+                });
+
+                navLinks.forEach(link => {
+                    link.classList.remove('text-accentCyan', 'bg-cardBg', 'font-bold');
+                    if (link.getAttribute('href') === `#${current}`) {
+                        link.classList.add('text-accentCyan', 'bg-cardBg', 'font-bold');
+                    }
+                });
+            });
+        };
+    </script>
+</body>
+</html>
