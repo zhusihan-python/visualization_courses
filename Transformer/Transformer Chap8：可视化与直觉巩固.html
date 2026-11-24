@@ -1,0 +1,2131 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer 第 8 章：可视化与直觉巩固 —— 把模型内部画出来</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0d1117',
+                        cardBg: '#141b26',
+                        borderCol: '#233044',
+                        cyanGlow: '#58c4dd',
+                        goldGlow: '#f0b429',
+                        emeraldGlow: '#4ade80',
+                        coralGlow: '#ff6b6b',
+                        violetGlow: '#c084fc',
+                    },
+                    fontFamily: {
+                        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+                        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #233044;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3b4d68;
+        }
+        
+        /* Math styling clean HTML */
+        .math {
+            font-family: 'Times New Roman', Georgia, serif;
+            font-style: italic;
+        }
+        .math-block {
+            background-color: rgba(20, 27, 38, 0.8);
+            border: 1px solid #233044;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+            font-family: 'Times New Roman', Georgia, serif;
+        }
+        .frac {
+            display: inline-flex;
+            flex-direction: column;
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 4px;
+        }
+        .frac .num {
+            border-bottom: 1px solid currentColor;
+            padding-bottom: 1px;
+            font-size: 0.9em;
+        }
+        .frac .den {
+            padding-top: 1px;
+            font-size: 0.9em;
+        }
+
+        /* Glassmorphism card */
+        .glass-card {
+            background: rgba(20, 27, 38, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid #233044;
+        }
+        .glass-card:hover {
+            border-color: #344663;
+        }
+
+        /* Glow effects */
+        .glow-cyan { text-shadow: 0 0 10px rgba(88, 196, 221, 0.5); }
+        .glow-gold { text-shadow: 0 0 10px rgba(240, 180, 41, 0.5); }
+        .glow-emerald { text-shadow: 0 0 10px rgba(74, 222, 128, 0.5); }
+        .glow-coral { text-shadow: 0 0 10px rgba(255, 107, 107, 0.5); }
+        .glow-violet { text-shadow: 0 0 10px rgba(192, 132, 252, 0.5); }
+
+        /* Custom slider styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: #233044;
+            height: 6px;
+            border-radius: 3px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: #58c4dd;
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(88, 196, 221, 0.8);
+        }
+
+        /* ASCII View Container */
+        .ascii-view {
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            white-space: pre;
+            line-height: 1.25;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body class="bg-darkBg text-gray-200 font-sans antialiased min-h-screen selection:bg-cyanGlow selection:text-darkBg">
+
+    <!-- Sticky Top Navigation Bar -->
+    <header class="sticky top-0 z-50 glass-card border-b border-borderCol">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <span class="px-2.5 py-1 text-xs font-mono font-semibold rounded-full bg-cyanGlow/10 text-cyanGlow border border-cyanGlow/30">
+                        CH 08 · VIZ
+                    </span>
+                    <h1 class="text-lg font-bold text-white tracking-wide hidden sm:block">Transformer 可视化与直觉巩固</h1>
+                </div>
+                <nav class="flex items-center space-x-1 sm:space-x-3 text-xs sm:text-sm font-medium">
+                    <a href="#section-8-1" class="nav-link px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-cyanGlow hover:bg-cardBg transition">8.1 Attention 热力图</a>
+                    <a href="#section-8-2" class="nav-link px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-goldGlow hover:bg-cardBg transition">8.2 Embedding 降维</a>
+                    <a href="#section-8-3" class="nav-link px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-emeraldGlow hover:bg-cardBg transition">8.3 激活与梯度流</a>
+                    <a href="#section-8-4" class="nav-link px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-violetGlow hover:bg-cardBg transition">8.4 多头冗余</a>
+                    <a href="#section-8-5" class="nav-link px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-coralGlow hover:bg-cardBg transition">8.5 代码与测验</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-16">
+
+        <!-- HERO SECTION -->
+        <section class="text-center py-12 relative overflow-hidden rounded-3xl bg-gradient-to-b from-cardBg/80 via-cardBg/40 to-transparent border border-borderCol/60">
+            <div class="absolute inset-0 bg-gradient-to-r from-cyanGlow/5 via-violetGlow/5 to-emeraldGlow/5 opacity-50 blur-3xl -z-10"></div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-borderCol/40 border border-borderCol text-xs font-mono text-cyanGlow mb-6">
+                <span class="w-2 h-2 rounded-full bg-cyanGlow animate-ping"></span>
+                CHAPTER 08 · VISUALIZATION & INTUITION
+            </div>
+            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight mb-6">
+                第 8 章：可视化与直觉巩固
+            </h1>
+            <p class="text-xl font-medium text-cyanGlow mb-4">—— 把模型内部画出来</p>
+            <p class="max-w-3xl mx-auto text-base sm:text-lg text-gray-300 leading-relaxed font-light mb-10">
+                前面七章都是“读代码、看公式”，这一章把 Transformer 模型内部画出来：亲眼看见注意力在关注什么、Embedding 空间的语义方向、LayerNorm 的分布魔法，以及残差连接的梯度高速公路。
+            </p>
+
+            <!-- 4 KPI Pill Badges -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto px-4">
+                <div class="glass-card p-4 rounded-2xl border-l-4 border-l-cyanGlow text-left">
+                    <div class="text-xs text-gray-400 font-mono mb-1">因果掩码铁律</div>
+                    <div class="text-lg font-bold text-white">严格下三角</div>
+                    <div class="text-xs text-cyanGlow/80 mt-1">未来 Token 权重 ≡ 0.00</div>
+                </div>
+                <div class="glass-card p-4 rounded-2xl border-l-4 border-l-goldGlow text-left">
+                    <div class="text-xs text-gray-400 font-mono mb-1">代词关联爆发</div>
+                    <div class="text-lg font-bold text-white">中层指代觉醒</div>
+                    <div class="text-xs text-goldGlow/80 mt-1">Layer 7–9 语义聚焦点</div>
+                </div>
+                <div class="glass-card p-4 rounded-2xl border-l-4 border-l-violetGlow text-left">
+                    <div class="text-xs text-gray-400 font-mono mb-1">注意力集中度</div>
+                    <div class="text-lg font-bold text-white">exp(H) 有效关注</div>
+                    <div class="text-xs text-violetGlow/80 mt-1">熵 H 量化信息聚焦</div>
+                </div>
+                <div class="glass-card p-4 rounded-2xl border-l-4 border-l-emeraldGlow text-left">
+                    <div class="text-xs text-gray-400 font-mono mb-1">残差高速公路</div>
+                    <div class="text-lg font-bold text-white">梯度比 ≈ 1.0</div>
+                    <div class="text-xs text-emeraldGlow/80 mt-1">跨 24 层不衰减无消失</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 8.1: Attention 热力图与层级演化剧场 -->
+        <section id="section-8-1" class="space-y-8">
+            <div class="border-b border-borderCol pb-4">
+                <span class="text-xs font-mono text-cyanGlow uppercase tracking-wider">MODULE 8.1</span>
+                <h2 class="text-2xl sm:text-3xl font-bold text-white mt-1">8.1 Attention 热力图与层级演化剧场</h2>
+                <p class="text-gray-400 text-sm mt-1">交互探索 Decoder 因果掩码下的注意力集中度、弧线图关联与层级演化觉醒（8.1.1 – 8.1.4）。</p>
+            </div>
+
+            <!-- Control Bar -->
+            <div class="glass-card p-5 rounded-2xl space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Preset Selector -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-400 mb-2">1. 选择测试预设句子：</label>
+                        <select id="attn-preset-select" class="w-full bg-darkBg border border-borderCol rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyanGlow">
+                            <option value="en_it">英文指代 (GPT-2 经典): "The animal didn't cross..."</option>
+                            <option value="zh_she">中文指代 (因果验证): "小明 把 书 给 了 小红 因为 她..."</option>
+                            <option value="zh_control">无指代对照组: "今天 天气 很 好 我们 去 公园..."</option>
+                        </select>
+                    </div>
+
+                    <!-- Model State Toggle -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-400 mb-2">2. 模型训练状态：</label>
+                        <div class="flex rounded-xl bg-darkBg p-1 border border-borderCol">
+                            <button id="btn-model-trained" class="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-cyanGlow text-darkBg transition">训练后真实模型 (Sharp)</button>
+                            <button id="btn-model-random" class="flex-1 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition">随机初始化 (Uniform)</button>
+                        </div>
+                    </div>
+
+                    <!-- View Mode Toggle -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-400 mb-2">3. 视角展示模式 (8.1.2 对比)：</label>
+                        <div class="flex rounded-xl bg-darkBg p-1 border border-borderCol">
+                            <button id="btn-view-canvas" class="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-borderCol text-cyanGlow transition">热力图画布 (Heatmap)</button>
+                            <button id="btn-view-ascii" class="flex-1 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition">终端 ASCII 视图</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Layer Depth Selector (4 cards) -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 mb-2">4. 选择 Transformer 神经网络深度 (8.1.4 层级演化)：</label>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <button data-layer="shallow" class="layer-tab-btn p-3 rounded-xl border border-borderCol bg-darkBg/60 text-left hover:border-cyanGlow/50 transition">
+                            <div class="text-xs text-gray-400 font-mono">L0 – L2 浅层</div>
+                            <div class="text-sm font-bold text-white">局部相邻语法</div>
+                            <div class="text-xs text-gray-500 mt-1">关注前 1-2 个相邻词</div>
+                        </button>
+                        <button data-layer="mid_shallow" class="layer-tab-btn p-3 rounded-xl border border-borderCol bg-darkBg/60 text-left hover:border-cyanGlow/50 transition">
+                            <div class="text-xs text-gray-400 font-mono">L3 – L6 中浅层</div>
+                            <div class="text-sm font-bold text-white">短语结构归纳</div>
+                            <div class="text-xs text-gray-500 mt-1">主谓宾短语聚集</div>
+                        </button>
+                        <button data-layer="mid_deep" class="layer-tab-btn p-3 rounded-xl border border-cyanGlow bg-cyanGlow/10 text-left transition">
+                            <div class="text-xs text-cyanGlow font-mono font-semibold">L7 – L9 中高层 (默认)</div>
+                            <div class="text-sm font-bold text-white">语义 / 代词指代觉醒</div>
+                            <div class="text-xs text-cyanGlow/80 mt-1">it → animal (0.687)</div>
+                        </button>
+                        <button data-layer="deep" class="layer-tab-btn p-3 rounded-xl border border-borderCol bg-darkBg/60 text-left hover:border-cyanGlow/50 transition">
+                            <div class="text-xs text-gray-400 font-mono">L10 – L11 深层</div>
+                            <div class="text-sm font-bold text-white">句首/句尾输出准备</div>
+                            <div class="text-xs text-gray-500 mt-1">收敛准备 Next Token</div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two-Column Interactive Visualizer -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Left Column: Heatmap Canvas or ASCII -->
+                <div class="lg:col-span-7 glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-cyanGlow"></span>
+                            因果注意力热力图 (Attention Heatmap)
+                        </h3>
+                        <span class="text-xs font-mono text-gray-400">点击任意行选中 Query Token</span>
+                    </div>
+
+                    <!-- Canvas View -->
+                    <div id="heatmap-container" class="relative w-full aspect-square max-h-[500px] flex items-center justify-center bg-darkBg rounded-xl p-2 border border-borderCol overflow-hidden">
+                        <canvas id="canvas-heatmap" class="w-full h-full cursor-pointer"></canvas>
+                    </div>
+
+                    <!-- ASCII Terminal View (Hidden by default) -->
+                    <div id="ascii-container" class="hidden relative w-full aspect-square max-h-[500px] bg-darkBg rounded-xl p-4 border border-borderCol overflow-auto font-mono text-xs text-emerald-400">
+                        <div id="ascii-output" class="ascii-view"></div>
+                    </div>
+
+                    <div class="mt-3 flex items-center justify-between text-xs text-gray-400 border-t border-borderCol/40 pt-3">
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-cyanGlow inline-block rounded"></span> 高注意力 (&gt; 0.50)</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-cardBg border border-borderCol inline-block rounded"></span> 掩码区域 (0.00 / 灰色斜线)</span>
+                    </div>
+                </div>
+
+                <!-- Right Column: Attention Arcs & Dashboard -->
+                <div class="lg:col-span-5 space-y-6 flex flex-col justify-between">
+                    <!-- Attention Arcs Canvas -->
+                    <div class="glass-card p-5 rounded-2xl">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full bg-goldGlow"></span>
+                                注意力弧线网络 (Attention Arcs)
+                            </h3>
+                            <span id="selected-query-badge" class="text-xs font-mono px-2 py-0.5 rounded bg-cyanGlow/20 text-cyanGlow">Query: "it" (Index 7)</span>
+                        </div>
+                        <div class="w-full h-44 bg-darkBg rounded-xl border border-borderCol relative overflow-hidden">
+                            <canvas id="canvas-arcs" class="w-full h-full"></canvas>
+                        </div>
+                        <div class="mt-2 text-xs text-coralGlow flex items-center justify-between px-1">
+                            <span>🔒 未来 Tokens (因果封锁)</span>
+                            <span class="font-mono">未来总权重 = 0.000000</span>
+                        </div>
+                    </div>
+
+                    <!-- Entropy & Effective Focus Dashboard -->
+                    <div class="glass-card p-5 rounded-2xl space-y-4">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-violetGlow"></span>
+                            注意力集中度指标 (Entropy Dashboard)
+                        </h3>
+
+                        <!-- Math Formula Cards -->
+                        <div class="grid grid-cols-2 gap-3 text-center">
+                            <div class="bg-darkBg p-3 rounded-xl border border-borderCol">
+                                <div class="text-xs text-gray-400 font-mono mb-1">注意力熵 H</div>
+                                <div class="math text-sm text-cyanGlow">H = − ∑ p<sub>i</sub> ln(p<sub>i</sub>)</div>
+                                <div id="val-entropy" class="text-lg font-bold text-white font-mono mt-1">0.842</div>
+                            </div>
+                            <div class="bg-darkBg p-3 rounded-xl border border-borderCol">
+                                <div class="text-xs text-gray-400 font-mono mb-1">有效关注位置数</div>
+                                <div class="math text-sm text-violetGlow">N<sub>eff</sub> = exp(H)</div>
+                                <div id="val-eff-count" class="text-lg font-bold text-white font-mono mt-1">2.32 个</div>
+                            </div>
+                        </div>
+
+                        <!-- Concentration Visual Bar -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-gray-400">关注分布集中度:</span>
+                                <span id="text-focus-state" class="font-bold text-emeraldGlow">高度聚焦 (Sharp Focus)</span>
+                            </div>
+                            <div class="w-full bg-darkBg h-3 rounded-full overflow-hidden border border-borderCol flex">
+                                <div id="bar-entropy-fill" class="bg-gradient-to-r from-emeraldGlow via-cyanGlow to-violetGlow h-full transition-all duration-500" style="width: 25%;"></div>
+                            </div>
+                            <div class="flex justify-between text-[10px] text-gray-500 font-mono">
+                                <span>单点极聚焦 (H=0, exp=1)</span>
+                                <span>完全均匀池化 (H=ln N, exp=N)</span>
+                            </div>
+                        </div>
+
+                        <!-- Top-3 Attended Tokens -->
+                        <div class="bg-darkBg/80 p-3 rounded-xl border border-borderCol space-y-2">
+                            <div class="text-xs font-semibold text-gray-400">当前 Query 关注权重 Top 3：</div>
+                            <div id="top3-list" class="space-y-1 text-xs font-mono">
+                                <!-- JS Injected -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 8.2: Embedding 降维可视化与语义向量算术 -->
+        <section id="section-8-2" class="space-y-8">
+            <div class="border-b border-borderCol pb-4">
+                <span class="text-xs font-mono text-goldGlow uppercase tracking-wider">MODULE 8.2</span>
+                <h2 class="text-2xl sm:text-3xl font-bold text-white mt-1">8.2 Embedding 降维可视化与语义向量算术</h2>
+                <p class="text-gray-400 text-sm mt-1">高维向量空间的 2D 投影与几何线性平移算术实验（8.2.1 – 8.2.4）。</p>
+            </div>
+
+            <!-- Part A: PCA vs t-SNE 2D 投影实验室 -->
+            <div class="glass-card p-6 rounded-2xl space-y-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-goldGlow"></span>
+                            Part A: PCA vs t-SNE 2D 降维实验室 (120 个词向量)
+                        </h3>
+                        <p class="text-xs text-gray-400 mt-1">切换降维算法观察全局坐标轴方向与局部聚类结构的差异。</p>
+                    </div>
+
+                    <!-- Mode Switcher -->
+                    <div class="flex rounded-xl bg-darkBg p-1 border border-borderCol">
+                        <button id="btn-dim-rand" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition">1. 随机初始化</button>
+                        <button id="btn-dim-pca" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-goldGlow text-darkBg transition">2. PCA 线性降维</button>
+                        <button id="btn-dim-tsne" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition">3. t-SNE 非线性聚类</button>
+                    </div>
+                </div>
+
+                <!-- Callout Banner -->
+                <div class="p-3 rounded-xl bg-goldGlow/10 border border-goldGlow/30 text-xs sm:text-sm text-goldGlow font-medium flex items-center justify-between">
+                    <span>💡 核心直觉总结：<strong class="text-white">PCA 看全局结构（线性正交投影），t-SNE 看局部聚类（非线性保邻域）。</strong></span>
+                    <span id="variance-explain-badge" class="font-mono text-xs px-2 py-0.5 rounded bg-darkBg text-goldGlow border border-goldGlow/40">PC1+PC2 解释 64.2% 方差</span>
+                </div>
+
+                <!-- Canvas Scatter Plot -->
+                <div class="relative w-full h-96 bg-darkBg rounded-xl border border-borderCol overflow-hidden cursor-crosshair">
+                    <canvas id="canvas-embedding" class="w-full h-full"></canvas>
+                    <div id="embed-hover-tooltip" class="absolute hidden pointer-events-none bg-cardBg border border-borderCol px-3 py-1.5 rounded-lg text-xs shadow-xl text-white font-mono z-20"></div>
+                </div>
+
+                <!-- Category Legend -->
+                <div class="flex flex-wrap items-center justify-center gap-6 text-xs font-medium">
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-cyanGlow"></span> 👑 皇室/人物 (Royal / People)</span>
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-goldGlow"></span> 🌍 国家/首都 (Country / Capital)</span>
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emeraldGlow"></span> 🏃 动词时态 (Verb Tenses)</span>
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-violetGlow"></span> 🐾 动物/自然 (Animals / Nature)</span>
+                </div>
+            </div>
+
+            <!-- Part B: 语义向量算术画板 (Vector Analogy Lab) -->
+            <div class="glass-card p-6 rounded-2xl space-y-6">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-cyanGlow"></span>
+                        Part B: 语义向量算术画板 (Vector Analogy Lab)
+                    </h3>
+                    <p class="text-xs text-gray-400 mt-1">高维空间的语义方向在低维平面的平行四边形几何法则验证。</p>
+                </div>
+
+                <!-- Interactive Presets -->
+                <div class="flex flex-wrap items-center gap-3">
+                    <span class="text-xs text-gray-400 font-semibold">选择算术公式：</span>
+                    <button data-analogy="king" class="analogy-btn px-3 py-1.5 text-xs font-mono font-bold rounded-xl border border-cyanGlow bg-cyanGlow/10 text-cyanGlow transition">
+                        king − man + woman ≈ queen
+                    </button>
+                    <button data-analogy="paris" class="analogy-btn px-3 py-1.5 text-xs font-mono font-bold rounded-xl border border-borderCol bg-darkBg text-gray-400 hover:border-goldGlow hover:text-goldGlow transition">
+                        Paris − France + Japan ≈ Tokyo
+                    </button>
+                    <button data-analogy="walk" class="analogy-btn px-3 py-1.5 text-xs font-mono font-bold rounded-xl border border-borderCol bg-darkBg text-gray-400 hover:border-emeraldGlow hover:text-emeraldGlow transition">
+                        walk − walking + swam ≈ swim
+                    </button>
+
+                    <button id="btn-animate-vector" class="ml-auto px-4 py-1.5 text-xs font-bold rounded-xl bg-gradient-to-r from-cyanGlow to-emeraldGlow text-darkBg shadow-lg hover:brightness-110 transition flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        播放向量平移 (Play Vector Shift)
+                    </button>
+                </div>
+
+                <!-- Two-Column Vector Display -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                    <!-- Vector Canvas -->
+                    <div class="lg:col-span-8 h-80 bg-darkBg rounded-xl border border-borderCol relative overflow-hidden">
+                        <canvas id="canvas-vector" class="w-full h-full"></canvas>
+                    </div>
+
+                    <!-- Cosine Similarity Top-3 Ranking -->
+                    <div class="lg:col-span-4 bg-darkBg p-4 rounded-xl border border-borderCol space-y-4">
+                        <div class="text-xs font-semibold text-gray-400 flex items-center justify-between border-b border-borderCol/60 pb-2">
+                            <span>计算落点余弦相似度 Top 3</span>
+                            <span class="font-mono text-cyanGlow">Cosine Sim</span>
+                        </div>
+                        <div id="cosine-ranking-list" class="space-y-3 text-xs font-mono">
+                            <!-- JS Injected -->
+                        </div>
+                        <div class="text-[11px] text-gray-500 leading-relaxed border-t border-borderCol/60 pt-3">
+                            说明：<span class="text-goldGlow font-mono">king - man</span> 提取了“男/女皇室”方向向量，叠加至 <span class="text-violetGlow font-mono">woman</span> 后精准落在 <span class="text-emeraldGlow font-mono font-bold">queen</span> 的邻域内！
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 8.3: 激活值分析、GELU vs ReLU 与残差梯度流 -->
+        <section id="section-8-3" class="space-y-8">
+            <div class="border-b border-borderCol pb-4">
+                <span class="text-xs font-mono text-emeraldGlow uppercase tracking-wider">MODULE 8.3</span>
+                <h2 class="text-2xl sm:text-3xl font-bold text-white mt-1">8.3 激活值分析、GELU vs ReLU 与残差梯度流</h2>
+                <p class="text-gray-400 text-sm mt-1">探索 LayerNorm 分布平滑、神经元死亡现象与残差高速公路梯度流（8.3.1 – 8.3.3）。</p>
+            </div>
+
+            <!-- Part A: LayerNorm 逐阶段激活分布显微镜 (8.3.1) -->
+            <div class="glass-card p-6 rounded-2xl space-y-6">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-emeraldGlow"></span>
+                        Part A: LayerNorm 逐阶段激活分布显微镜 (8.3.1)
+                    </h3>
+                    <p class="text-xs text-gray-400 mt-1">依次点击模型前向传播的 5 个阶段，观察数据分布（均值、标准差）的平滑演化。</p>
+                </div>
+
+                <!-- 5 Pipeline Stage Buttons -->
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    <button data-stage="1" class="stage-btn p-2.5 rounded-xl border border-borderCol bg-darkBg text-xs text-left text-gray-400 hover:text-white transition">
+                        <div class="font-mono text-[10px] text-gray-500">STAGE 1</div>
+                        <div class="font-bold text-gray-200 mt-0.5">1. Embed + Pos</div>
+                        <div class="text-[10px] text-gray-500 mt-1">LN 之前原始输入</div>
+                    </button>
+                    <button data-stage="2" class="stage-btn p-2.5 rounded-xl border border-emeraldGlow bg-emeraldGlow/10 text-xs text-left transition">
+                        <div class="font-mono text-[10px] text-emeraldGlow font-semibold">STAGE 2 (默认)</div>
+                        <div class="font-bold text-white mt-0.5">2. LayerNorm 后</div>
+                        <div class="text-[10px] text-emeraldGlow/80 mt-1">μ=0, σ=1 强行归一</div>
+                    </button>
+                    <button data-stage="3" class="stage-btn p-2.5 rounded-xl border border-borderCol bg-darkBg text-xs text-left text-gray-400 hover:text-white transition">
+                        <div class="font-mono text-[10px] text-gray-500">STAGE 3</div>
+                        <div class="font-bold text-gray-200 mt-0.5">3. Attention 输出</div>
+                        <div class="text-[10px] text-gray-500 mt-1">凸组合加权平滑</div>
+                    </button>
+                    <button data-stage="4" class="stage-btn p-2.5 rounded-xl border border-borderCol bg-darkBg text-xs text-left text-gray-400 hover:text-white transition">
+                        <div class="font-mono text-[10px] text-gray-500">STAGE 4</div>
+                        <div class="font-bold text-gray-200 mt-0.5">4. 残差连接后</div>
+                        <div class="text-[10px] text-gray-500 mt-1">x + Attn 方差恢复</div>
+                    </button>
+                    <button data-stage="5" class="stage-btn p-2.5 rounded-xl border border-borderCol bg-darkBg text-xs text-left text-gray-400 hover:text-white transition">
+                        <div class="font-mono text-[10px] text-gray-500">STAGE 5</div>
+                        <div class="font-bold text-gray-200 mt-0.5">5. FFN (GELU)</div>
+                        <div class="text-[10px] text-gray-500 mt-1">非线性维度放大</div>
+                    </button>
+                </div>
+
+                <!-- Histogram Canvas + Stats Badges -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                    <div class="lg:col-span-8 h-64 bg-darkBg rounded-xl border border-borderCol relative overflow-hidden">
+                        <canvas id="canvas-stage-hist" class="w-full h-full"></canvas>
+                    </div>
+
+                    <div class="lg:col-span-4 space-y-3">
+                        <div class="bg-darkBg p-4 rounded-xl border border-borderCol space-y-3">
+                            <div class="text-xs font-semibold text-gray-400 border-b border-borderCol/60 pb-1.5">阶段分布统计指标 (Stage Metrics)</div>
+                            <div class="grid grid-cols-2 gap-2 text-center font-mono text-xs">
+                                <div class="p-2 rounded bg-cardBg border border-borderCol/40">
+                                    <div class="text-gray-500 text-[10px]">均值 μ</div>
+                                    <div id="stage-mean" class="text-sm font-bold text-emeraldGlow">0.0000</div>
+                                </div>
+                                <div class="p-2 rounded bg-cardBg border border-borderCol/40">
+                                    <div class="text-gray-500 text-[10px]">标准差 σ</div>
+                                    <div id="stage-std" class="text-sm font-bold text-cyanGlow">1.0000</div>
+                                </div>
+                                <div class="p-2 rounded bg-cardBg border border-borderCol/40">
+                                    <div class="text-gray-500 text-[10px]">最小值 Min</div>
+                                    <div id="stage-min" class="text-sm font-bold text-gray-300">-3.421</div>
+                                </div>
+                                <div class="p-2 rounded bg-cardBg border border-borderCol/40">
+                                    <div class="text-gray-500 text-[10px]">最大值 Max</div>
+                                    <div id="stage-max" class="text-sm font-bold text-gray-300">+3.892</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="stage-insight-box" class="p-3 rounded-xl bg-darkBg border border-borderCol text-xs text-gray-300 leading-relaxed font-light">
+                            <!-- JS Injected Insight -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Part B: ReLU vs GELU 神经元死亡对比实验 (8.3.2) -->
+            <div class="glass-card p-6 rounded-2xl space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-coralGlow"></span>
+                            Part B: ReLU vs GELU 神经元死亡对比实验 (8.3.2)
+                        </h3>
+                        <p class="text-xs text-gray-400 mt-1">调节输入分布的标准差 σ，对比 ReLU 硬截断导致的大量硬死亡与 GELU 软平滑。</p>
+                    </div>
+
+                    <!-- Slider for input std σ -->
+                    <div class="flex items-center gap-3 bg-darkBg px-4 py-2 rounded-xl border border-borderCol">
+                        <span class="text-xs font-mono text-gray-400">输入标准差 σ:</span>
+                        <input id="slider-sigma" type="range" min="0.5" max="3.0" step="0.1" value="2.0" class="w-28">
+                        <span id="val-sigma" class="text-xs font-mono font-bold text-cyanGlow w-8">2.0</span>
+                    </div>
+                </div>
+
+                <!-- Side-by-Side Histogram Canvases -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- ReLU Canvas -->
+                    <div class="bg-darkBg p-4 rounded-xl border border-coralGlow/40 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-bold text-coralGlow font-mono">ReLU(x) = max(0, x)</span>
+                            <span id="relu-dead-badge" class="text-xs font-mono px-2 py-0.5 rounded bg-coralGlow/20 text-coralGlow border border-coralGlow/40">50.0% 神经元彻底死亡</span>
+                        </div>
+                        <div class="h-48 relative">
+                            <canvas id="canvas-relu" class="w-full h-full"></canvas>
+                        </div>
+                        <div class="text-[11px] text-gray-400 leading-relaxed">
+                            🚨 <strong class="text-coralGlow">硬死结痛点：</strong> 负半轴梯度完全为 0 (<span class="math">f'(x)=0</span>)。一旦神经元偏置变为负值，将永久无法恢复更新！
+                        </div>
+                    </div>
+
+                    <!-- GELU Canvas -->
+                    <div class="bg-darkBg p-4 rounded-xl border border-cyanGlow/40 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-bold text-cyanGlow font-mono">GELU(x) = x · Φ(x)</span>
+                            <span id="gelu-dead-badge" class="text-xs font-mono px-2 py-0.5 rounded bg-emeraldGlow/20 text-emeraldGlow border border-emeraldGlow/40">0.0% 死亡 (保持微小负梯度)</span>
+                        </div>
+                        <div class="h-48 relative">
+                            <canvas id="canvas-gelu" class="w-full h-full"></canvas>
+                        </div>
+                        <div class="text-[11px] text-gray-400 leading-relaxed">
+                            ✨ <strong class="text-cyanGlow">高斯随机正则：</strong> 在 <span class="math font-mono">x ∈ [-2, 0]</span> 区间具有连续光滑负弯钩，负输入仍保留微小梯度，拒绝死结。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comparison Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left font-mono border-collapse">
+                        <thead>
+                            <tr class="border-b border-borderCol text-gray-400 bg-darkBg">
+                                <th class="p-2.5">激活函数</th>
+                                <th class="p-2.5">负值区间比例 (&lt;0)</th>
+                                <th class="p-2.5">零值 (死亡) 比例 (≡ 0.0)</th>
+                                <th class="p-2.5">均值 μ</th>
+                                <th class="p-2.5">标准差 σ</th>
+                                <th class="p-2.5">梯度流动性评估</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-borderCol/50">
+                            <tr>
+                                <td class="p-2.5 font-bold text-coralGlow">ReLU</td>
+                                <td class="p-2.5 text-gray-300">0.0% (被强截为0)</td>
+                                <td id="tbl-relu-dead" class="p-2.5 font-bold text-coralGlow">50.0%</td>
+                                <td id="tbl-relu-mean" class="p-2.5 text-gray-300">0.798</td>
+                                <td id="tbl-relu-std" class="p-2.5 text-gray-300">1.211</td>
+                                <td class="p-2.5 text-coralGlow">⚠️ 高风险 (50% 梯度完全阻断)</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2.5 font-bold text-cyanGlow">GELU</td>
+                                <td id="tbl-gelu-neg" class="p-2.5 text-gray-300">42.1% (存在小负值)</td>
+                                <td id="tbl-gelu-dead" class="p-2.5 font-bold text-emeraldGlow">0.0%</td>
+                                <td id="tbl-gelu-mean" class="p-2.5 text-gray-300">0.741</td>
+                                <td id="tbl-gelu-std" class="p-2.5 text-gray-300">1.185</td>
+                                <td class="p-2.5 text-emeraldGlow">✅ 完美通畅 (全域连续可导)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Part C: 残差“梯度高速公路”量化验证 (8.3.3) -->
+            <div class="glass-card p-6 rounded-2xl space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-emeraldGlow"></span>
+                            Part C: 残差“梯度高速公路”量化验证 (8.3.3)
+                        </h3>
+                        <p class="text-xs text-gray-400 mt-1">对比有无残差连接（Residual Connection）在深层网络中的梯度衰减曲线（对数坐标系）。</p>
+                    </div>
+
+                    <!-- Slider for depth N -->
+                    <div class="flex items-center gap-3 bg-darkBg px-4 py-2 rounded-xl border border-borderCol">
+                        <span class="text-xs font-mono text-gray-400">网络总层数 N:</span>
+                        <input id="slider-depth" type="range" min="4" max="24" step="1" value="12" class="w-28">
+                        <span id="val-depth" class="text-xs font-mono font-bold text-emeraldGlow w-6">12</span>
+                    </div>
+                </div>
+
+                <!-- Log Scale Gradient Flow Chart Canvas -->
+                <div class="h-72 bg-darkBg rounded-xl border border-borderCol relative overflow-hidden">
+                    <canvas id="canvas-gradflow" class="w-full h-full"></canvas>
+                </div>
+
+                <!-- Metric Callout Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 rounded-xl bg-emeraldGlow/10 border border-emeraldGlow/30 space-y-1">
+                        <div class="flex justify-between items-center text-xs font-mono text-emeraldGlow">
+                            <span>✅ 有残差连接: h<sub>l+1</sub> = h<sub>l</sub> + F(h<sub>l</sub>)</span>
+                            <span class="font-bold">梯度流畅</span>
+                        </div>
+                        <div class="text-lg font-bold text-white font-mono flex items-center justify-between">
+                            <span>第 0 层 / 第 N-1 层 梯度比:</span>
+                            <span id="res-ratio-val" class="text-emeraldGlow">0.982</span>
+                        </div>
+                        <p class="text-[11px] text-gray-300">加法分支提供常数级单位项 <span class="math">∂h<sub>L</sub> / ∂h<sub>l</sub> = 1 + ...</span>，梯度跨 24 层直达底端！</p>
+                    </div>
+
+                    <div class="p-4 rounded-xl bg-coralGlow/10 border border-coralGlow/30 space-y-1">
+                        <div class="flex justify-between items-center text-xs font-mono text-coralGlow">
+                            <span>❌ 无残差连接: h<sub>l+1</sub> = tanh(W h<sub>l</sub>)</span>
+                            <span class="font-bold">梯度指数级消失</span>
+                        </div>
+                        <div class="text-lg font-bold text-white font-mono flex items-center justify-between">
+                            <span>第 0 层 / 第 N-1 层 梯度比:</span>
+                            <span id="no-res-ratio-val" class="text-coralGlow">0.000012</span>
+                        </div>
+                        <p class="text-[11px] text-gray-300">连乘效应导致 <span class="math">∏ W<sub>l</sub></span> 连乘矩阵衰减，浅层参数完全无法学习！</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 8.4: 进阶实验 —— 多头网格与注意力头冗余度 -->
+        <section id="section-8-4" class="space-y-8">
+            <div class="border-b border-borderCol pb-4">
+                <span class="text-xs font-mono text-violetGlow uppercase tracking-wider">MODULE 8.4</span>
+                <h2 class="text-2xl sm:text-3xl font-bold text-white mt-1">8.4 进阶实验 —— 多头网格与注意力头冗余度</h2>
+                <p class="text-gray-400 text-sm mt-1">多头注意力机制（2 层 × 4 头）的分工协作与余弦相似度冗余矩阵分析。</p>
+            </div>
+
+            <div class="glass-card p-6 rounded-2xl space-y-6">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-violetGlow"></span>
+                        多头注意力网格 (2 层 × 4 头) 与 头间余弦相似度矩阵
+                    </h3>
+                    <p class="text-xs text-gray-400 mt-1">测试句子："我 爱 机器 学习 。" 点击相似度矩阵单元格查看对应 Head 的功能模式。</p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- Left: 2x4 Head Grid Canvases -->
+                    <div class="lg:col-span-7 space-y-4">
+                        <div class="text-xs font-semibold text-gray-400">8 个 Head 的注意力矩阵视角 (2×4 Grid)：</div>
+                        <div id="multihead-grid" class="grid grid-cols-4 gap-2">
+                            <!-- Injected 8 small canvases -->
+                        </div>
+                    </div>
+
+                    <!-- Right: Head Cosine Similarity Matrix (4x4 or 8x8) -->
+                    <div class="lg:col-span-5 space-y-4">
+                        <div class="text-xs font-semibold text-gray-400 flex justify-between items-center">
+                            <span>8 头余弦相似度矩阵 (Head Similarity)</span>
+                            <span class="font-mono text-violetGlow">cos(H<sub>i</sub>, H<sub>j</sub>)</span>
+                        </div>
+                        <div class="bg-darkBg p-3 rounded-xl border border-borderCol flex justify-center">
+                            <canvas id="canvas-head-sim" class="w-64 h-64 cursor-pointer"></canvas>
+                        </div>
+                        <div id="head-sim-analysis" class="p-3 rounded-xl bg-darkBg border border-borderCol text-xs space-y-1">
+                            <div class="text-white font-bold flex items-center justify-between">
+                                <span id="head-pair-title">点击相似度单元格查看评估</span>
+                                <span id="head-sim-score" class="font-mono text-cyanGlow">-</span>
+                            </div>
+                            <p id="head-sim-desc" class="text-gray-400 text-[11px]">
+                                余弦相似度 &gt; 0.92 的 Head 存在严重模式冗余，提示剪枝潜力；低相似度代表特定分工（如指代 vs 语法）。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODULE 8.5: 实战代码库、5 题互动测验与全章 10 条核心总结 -->
+        <section id="section-8-5" class="space-y-12">
+            <div class="border-b border-borderCol pb-4">
+                <span class="text-xs font-mono text-coralGlow uppercase tracking-wider">MODULE 8.5</span>
+                <h2 class="text-2xl sm:text-3xl font-bold text-white mt-1">8.5 实战代码库、5 题互动测验与全章 10 条核心总结</h2>
+                <p class="text-gray-400 text-sm mt-1">完整的 Python 可视化脚本库、自我能力评估测验与全章终极知识巩固。</p>
+            </div>
+
+            <!-- Code Repository with 1-Click Copy Tabs -->
+            <div class="glass-card p-6 rounded-2xl space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-cyanGlow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                        第 8 章配套 Python 实战代码库
+                    </h3>
+                    <button id="btn-copy-code" class="px-3 py-1.5 text-xs font-mono font-bold rounded-lg bg-cardBg border border-borderCol hover:border-cyanGlow text-gray-300 hover:text-cyanGlow transition flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        复制代码 (Copy Code)
+                    </button>
+                </div>
+
+                <!-- Code Tabs -->
+                <div class="flex border-b border-borderCol gap-2 overflow-x-auto">
+                    <button data-code-tab="code1" class="code-tab-btn py-2 px-4 text-xs font-mono border-b-2 border-cyanGlow text-cyanGlow font-bold">1. Attention 热力图 (PyTorch)</button>
+                    <button data-code-tab="code2" class="code-tab-btn py-2 px-4 text-xs font-mono border-b-2 border-transparent text-gray-400 hover:text-white">2. PCA & t-SNE 降维</button>
+                    <button data-code-tab="code3" class="code-tab-btn py-2 px-4 text-xs font-mono border-b-2 border-transparent text-gray-400 hover:text-white">3. GELU/LayerNorm/残差流</button>
+                    <button data-code-tab="code4" class="code-tab-btn py-2 px-4 text-xs font-mono border-b-2 border-transparent text-gray-400 hover:text-white">4. 练习: 多头相似度与熵</button>
+                </div>
+
+                <!-- Code Blocks -->
+                <div class="relative bg-darkBg rounded-xl p-4 border border-borderCol overflow-x-auto font-mono text-xs leading-relaxed text-gray-300">
+                    <pre id="code-block-display"><code># JS dynamic inject code snippet</code></pre>
+                </div>
+            </div>
+
+            <!-- 5-Question Interactive Quiz -->
+            <div class="glass-card p-6 rounded-2xl space-y-6">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-goldGlow"></span>
+                        第 8 章 巩固互动测验 (5 题)
+                    </h3>
+                    <p class="text-xs text-gray-400 mt-1">即时颜色反馈与详细原理解释，全面检验直觉理解。</p>
+                </div>
+
+                <div id="quiz-container" class="space-y-6">
+                    <!-- JS Injected 5 Questions -->
+                </div>
+
+                <div class="p-4 rounded-xl bg-darkBg border border-borderCol flex items-center justify-between">
+                    <span class="text-xs text-gray-400">测验得分状态:</span>
+                    <span id="quiz-score-badge" class="text-sm font-bold font-mono text-goldGlow">完成度: 0 / 5</span>
+                </div>
+            </div>
+
+            <!-- 10-Card Chapter 8 Summary Grid -->
+            <div class="space-y-6">
+                <div class="text-center space-y-2">
+                    <h3 class="text-2xl font-bold text-white">本章小结 · 10 条核心直觉法则</h3>
+                    <p class="text-gray-400 text-xs max-w-xl mx-auto">牢记这 10 条模型内部规律，在以后的 Transformer 调优与架构设计中如虎添翼。</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-cyanGlow space-y-2">
+                        <div class="text-xs font-mono text-cyanGlow font-bold">法则 01</div>
+                        <div class="text-sm font-bold text-white">因果掩码铁律</div>
+                        <p class="text-xs text-gray-400 leading-normal">Decoder 热力图上三角永远为 0.00，未来信息绝对无法被读取。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-goldGlow space-y-2">
+                        <div class="text-xs font-mono text-goldGlow font-bold">法则 02</div>
+                        <div class="text-sm font-bold text-white">中层指代觉醒</div>
+                        <p class="text-xs text-gray-400 leading-normal">代词指代（如 it→animal）在 Transformer 第 7–9 层聚焦最强烈。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-violetGlow space-y-2">
+                        <div class="text-xs font-mono text-violetGlow font-bold">法则 03</div>
+                        <div class="text-sm font-bold text-white">有效关注数公式</div>
+                        <p class="text-xs text-gray-400 leading-normal"><span class="math">exp(H)</span> 精确量化 Token 关注集中度，训练后从均匀池化变为高聚焦。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-emeraldGlow space-y-2">
+                        <div class="text-xs font-mono text-emeraldGlow font-bold">法则 04</div>
+                        <div class="text-sm font-bold text-white">PCA 看全局</div>
+                        <p class="text-xs text-gray-400 leading-normal">PCA 保留全局线性主方向，能清晰描绘正交语义坐标轴。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-coralGlow space-y-2">
+                        <div class="text-xs font-mono text-coralGlow font-bold">法则 05</div>
+                        <div class="text-sm font-bold text-white">t-SNE 看聚类</div>
+                        <p class="text-xs text-gray-400 leading-normal">t-SNE 非线性保邻域，能把语义相近的近义词紧密聚合成簇。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-cyanGlow space-y-2">
+                        <div class="text-xs font-mono text-cyanGlow font-bold">法则 06</div>
+                        <div class="text-sm font-bold text-white">语义向量算术</div>
+                        <p class="text-xs text-gray-400 leading-normal">Embedding 空间中的差值代表语义方向（如“性别”、“时态”）。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-emeraldGlow space-y-2">
+                        <div class="text-xs font-mono text-emeraldGlow font-bold">法则 07</div>
+                        <div class="text-sm font-bold text-white">LayerNorm 魔法</div>
+                        <p class="text-xs text-gray-400 leading-normal">LayerNorm 将每层激活值重置为 <span class="math">μ=0, σ=1</span>，防止方差爆炸。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-coralGlow space-y-2">
+                        <div class="text-xs font-mono text-coralGlow font-bold">法则 08</div>
+                        <div class="text-sm font-bold text-white">GELU 拒绝死结</div>
+                        <p class="text-xs text-gray-400 leading-normal">GELU 在负区间具有光滑弯钩，0.0% 硬死亡率，优于传统 ReLU。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-violetGlow space-y-2">
+                        <div class="text-xs font-mono text-violetGlow font-bold">法则 09</div>
+                        <div class="text-sm font-bold text-white">残差高速公路</div>
+                        <p class="text-xs text-gray-400 leading-normal"><span class="math">h + F(h)</span> 提供梯度的恒等通道，跨 24 层梯度比依然保持 ≈ 1.0。</p>
+                    </div>
+                    <div class="glass-card p-4 rounded-2xl border-t-2 border-t-goldGlow space-y-2">
+                        <div class="text-xs font-mono text-goldGlow font-bold">法则 10</div>
+                        <div class="text-sm font-bold text-white">多头分工与剪枝</div>
+                        <p class="text-xs text-gray-400 leading-normal">余弦相似度 &gt; 0.92 的 Head 存在冗余，可指导模型瘦身剪枝。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Completion Footer -->
+            <footer class="text-center py-12 border-t border-borderCol space-y-4">
+                <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emeraldGlow/10 border border-emeraldGlow/30 text-xs font-mono text-emeraldGlow font-bold">
+                    🎉 CONGRATULATIONS! ALL 8 CHAPTERS COMPLETED
+                </div>
+                <h3 class="text-2xl font-bold text-white">恭喜你完成 Transformer 全系列 1–8 章理论与直觉构建！</h3>
+                <p class="text-sm text-gray-400 max-w-xl mx-auto">
+                    你已经掌握了从 Self-Attention、Positional Encoding、Decoder 因果掩码、训练微调，到模型内部可视化的完整知识闭环。
+                </p>
+                <div class="text-xs text-gray-500 font-mono pt-4">
+                    Transformer Visual Architecture Tutorial © 2026 · Designed with 3Blue1Brown Dark Aesthetic
+                </div>
+            </footer>
+        </section>
+
+    </main>
+
+    <!-- INTERACTIVE JAVASCRIPT LOGIC -->
+    <script>
+        // High-DPI Canvas Retina Scaling Helper
+        function setupRetinaCanvas(canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            return { ctx, width: rect.width, height: rect.height, dpr };
+        }
+
+        // --- GLOBAL STATE & DATA ---
+        const state = {
+            presetKey: 'en_it',
+            isTrained: true,
+            layerDepth: 'mid_deep', // shallow, mid_shallow, mid_deep, deep
+            viewMode: 'canvas', // canvas, ascii
+            selectedQueryIndex: 7,
+            
+            // Embedding module
+            dimMode: 'pca', // rand, pca, tsne
+            analogyKey: 'king',
+            vectorAnimProgress: 1.0,
+
+            // LayerNorm module
+            stage: 2,
+
+            // ReLU vs GELU
+            sigma: 2.0,
+
+            // Grad flow depth
+            depth: 12,
+
+            // Quiz score
+            quizAnswers: {}
+        };
+
+        // Presets data for Attention
+        const sentences = {
+            en_it: {
+                tokens: ["The", "animal", "didn't", "cross", "the", "street", "because", "it", "was", "too", "tired"],
+                defaultQuery: 7, // "it"
+                targetIndex: 1  // "animal"
+            },
+            zh_she: {
+                tokens: ["小明", "把", "书", "给", "了", "小红", "因为", "她", "要", "用"],
+                defaultQuery: 7, // "她"
+                targetIndex: 5  // "小红"
+            },
+            zh_control: {
+                tokens: ["今天", "天气", "很", "好", "我们", "去", "公园", "散步", "吧", "。"],
+                defaultQuery: 7, // "散步"
+                targetIndex: 6  // "公园"
+            }
+        };
+
+        // --- 8.1 ATTENTION MATRIX GENERATOR ---
+        function generateAttentionMatrix(presetKey, isTrained, depth) {
+            const tokens = sentences[presetKey].tokens;
+            const N = tokens.length;
+            const matrix = Array.from({ length: N }, () => new Array(N).fill(0));
+
+            for (let i = 0; i < N; i++) {
+                let rowScores = new Array(i + 1).fill(0);
+                
+                if (!isTrained) {
+                    // Uniform distribution for random init
+                    rowScores = rowScores.map(() => 1.0 / (i + 1));
+                } else {
+                    // Trained state with depth characteristics
+                    for (let j = 0; j <= i; j++) {
+                        if (i === j) rowScores[j] = 0.15; // self attention
+                        else if (j === i - 1) rowScores[j] = 0.25; // previous token
+                        else rowScores[j] = 0.05 + Math.random() * 0.05;
+                    }
+
+                    // Special coreference focus at mid_deep (L7-L9)
+                    const target = sentences[presetKey].targetIndex;
+                    const query = sentences[presetKey].defaultQuery;
+                    
+                    if (i === query) {
+                        if (depth === 'shallow') {
+                            rowScores = rowScores.map((_, idx) => idx >= i - 2 ? 0.4 : 0.05);
+                        } else if (depth === 'mid_shallow') {
+                            if (target <= i) rowScores[target] = 0.35;
+                            rowScores[i-1] = 0.35;
+                        } else if (depth === 'mid_deep') {
+                            if (target <= i) rowScores[target] = 0.687; // Strong coreference peak!
+                            rowScores[i] = 0.12;
+                        } else if (depth === 'deep') {
+                            rowScores[0] = 0.45; // Focus on start token
+                            rowScores[i] = 0.35;
+                        }
+                    }
+
+                    // Softmax normalize lower triangle row
+                    const sum = rowScores.reduce((a, b) => a + b, 0);
+                    rowScores = rowScores.map(val => val / sum);
+                }
+
+                for (let j = 0; j <= i; j++) {
+                    matrix[i][j] = rowScores[j];
+                }
+            }
+            return matrix;
+        }
+
+        // Calculate Entropy & Effective Focus Count
+        function calcEntropyAndEff(rowWeights) {
+            const valid = rowWeights.filter(w => w > 1e-9);
+            let H = 0;
+            valid.forEach(w => {
+                H -= w * Math.log(w);
+            });
+            const effCount = Math.exp(H);
+            return { H, effCount };
+        }
+
+        // Render Heatmap Canvas
+        function renderHeatmap() {
+            const canvas = document.getElementById('canvas-heatmap');
+            if (!canvas) return;
+            const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+            const preset = sentences[state.presetKey];
+            const tokens = preset.tokens;
+            const N = tokens.length;
+            const matrix = generateAttentionMatrix(state.presetKey, state.isTrained, state.layerDepth);
+
+            const margin = 50;
+            const cellSize = (Math.min(width, height) - margin) / N;
+
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw axis labels
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+
+            for (let i = 0; i < N; i++) {
+                // Row labels (Query)
+                ctx.fillStyle = i === state.selectedQueryIndex ? '#58c4dd' : '#9ca3af';
+                if (i === state.selectedQueryIndex) ctx.font = 'bold 11px monospace';
+                else ctx.font = '10px monospace';
+                ctx.fillText(tokens[i], margin - 6, margin + i * cellSize + cellSize / 2);
+
+                // Column labels (Key)
+                ctx.save();
+                ctx.translate(margin + i * cellSize + cellSize / 2, margin - 6);
+                ctx.rotate(-Math.PI / 4);
+                ctx.textAlign = 'left';
+                ctx.fillText(tokens[i], 0, 0);
+                ctx.restore();
+            }
+
+            // Draw Cells
+            for (let r = 0; r < N; r++) {
+                for (let c = 0; c < N; c++) {
+                    const x = margin + c * cellSize;
+                    const y = margin + r * cellSize;
+
+                    if (c > r) {
+                        // Upper triangle: Causal Mask (hatched / dimmed)
+                        ctx.fillStyle = '#141b26';
+                        ctx.fillRect(x, y, cellSize - 1, cellSize - 1);
+                        ctx.strokeStyle = '#233044';
+                        ctx.strokeRect(x, y, cellSize - 1, cellSize - 1);
+
+                        // Diagonal Hatching lines for causal lock
+                        ctx.strokeStyle = '#2d3b52';
+                        ctx.beginPath();
+                        ctx.moveTo(x, y + cellSize);
+                        ctx.lineTo(x + cellSize, y);
+                        ctx.stroke();
+                    } else {
+                        // Lower triangle: Attention Weight
+                        const val = matrix[r][c];
+                        // Color scale from dark slate to cyan/gold glow
+                        ctx.fillStyle = val > 0.5 
+                            ? `rgba(88, 196, 221, ${val})` 
+                            : `rgba(240, 180, 41, ${val * 1.5})`;
+                        if (val < 0.05) ctx.fillStyle = 'rgba(35, 48, 68, 0.4)';
+
+                        ctx.fillRect(x, y, cellSize - 1, cellSize - 1);
+
+                        // Highlight selected query row
+                        if (r === state.selectedQueryIndex) {
+                            ctx.strokeStyle = '#58c4dd';
+                            ctx.lineWidth = 1.5;
+                            ctx.strokeRect(x, y, cellSize - 1, cellSize - 1);
+                        }
+
+                        // Text value overlay if space allows
+                        if (cellSize > 24) {
+                            ctx.fillStyle = val > 0.3 ? '#0d1117' : '#e5e7eb';
+                            ctx.font = '9px monospace';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText(val.toFixed(2), x + cellSize / 2, y + cellSize / 2);
+                        }
+                    }
+                }
+            }
+
+            // Click listener for row selection
+            canvas.onclick = (evt) => {
+                const rect = canvas.getBoundingClientRect();
+                const clickY = evt.clientY - rect.top;
+                const r = Math.floor((clickY - margin) / cellSize);
+                if (r >= 0 && r < N) {
+                    state.selectedQueryIndex = r;
+                    updateAttentionVisuals();
+                }
+            };
+
+            // Update ASCII output if active
+            renderASCIIView(matrix, tokens);
+        }
+
+        // Render Terminal ASCII View (8.1.2)
+        function renderASCIIView(matrix, tokens) {
+            const asciiOut = document.getElementById('ascii-output');
+            if (!asciiOut) return;
+
+            let text = `=== Transformer Attention ASCII View [Query Row = "${tokens[state.selectedQueryIndex]}"] ===\n\n`;
+            text += `Key Tokens:  ` + tokens.map(t => t.padStart(6, ' ')).join('') + `\n`;
+            text += `------------------------------------------------------------------------\n`;
+
+            const charMap = (val) => {
+                if (val > 0.5) return '█';
+                if (val > 0.25) return '▓';
+                if (val > 0.10) return '▒';
+                if (val > 0.01) return '░';
+                return '·';
+            };
+
+            matrix.forEach((row, r) => {
+                const prefix = (r === state.selectedQueryIndex ? '-> ' : '   ') + tokens[r].padEnd(8, ' ');
+                let line = prefix;
+                for (let c = 0; c < tokens.length; c++) {
+                    if (c > r) {
+                        line += '  [M] '.padStart(6, ' ');
+                    } else {
+                        const val = row[c];
+                        const ch = charMap(val);
+                        line += `  ${ch}${val.toFixed(2)}`.padStart(6, ' ');
+                    }
+                }
+                text += line + `\n`;
+            });
+
+            asciiOut.textContent = text;
+        }
+
+        // Render Attention Arcs Canvas
+        function renderAttentionArcs() {
+            const canvas = document.getElementById('canvas-arcs');
+            if (!canvas) return;
+            const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+            const preset = sentences[state.presetKey];
+            const tokens = preset.tokens;
+            const N = tokens.length;
+            const matrix = generateAttentionMatrix(state.presetKey, state.isTrained, state.layerDepth);
+            const qIdx = state.selectedQueryIndex;
+            const weights = matrix[qIdx];
+
+            ctx.clearRect(0, 0, width, height);
+
+            const padding = 35;
+            const step = (width - padding * 2) / (N - 1);
+            const nodeY = height - 35;
+
+            // Draw Token Nodes along bottom line
+            tokens.forEach((tok, idx) => {
+                const x = padding + idx * step;
+                
+                // Draw line to node
+                ctx.beginPath();
+                ctx.arc(x, nodeY, idx === qIdx ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = idx === qIdx ? '#58c4dd' : (idx <= qIdx ? '#f0b429' : '#374151');
+                ctx.fill();
+
+                // Token text
+                ctx.fillStyle = idx === qIdx ? '#58c4dd' : (idx <= qIdx ? '#e5e7eb' : '#6b7280');
+                ctx.font = idx === qIdx ? 'bold 11px monospace' : '10px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(tok, x, nodeY + 18);
+            });
+
+            // Draw Glowing Curved Arcs from qIdx to Key tokens
+            for (let k = 0; k <= qIdx; k++) {
+                const w = weights[k];
+                if (w < 0.01) continue;
+
+                const startX = padding + qIdx * step;
+                const endX = padding + k * step;
+                const midX = (startX + endX) / 2;
+                const dist = Math.abs(startX - endX);
+                const arcHeight = Math.min(dist * 0.6, nodeY - 20);
+
+                ctx.beginPath();
+                ctx.moveTo(startX, nodeY);
+                ctx.quadraticCurveTo(midX, nodeY - arcHeight, endX, nodeY);
+
+                ctx.lineWidth = Math.max(1, w * 8);
+                ctx.strokeStyle = k === sentences[state.presetKey].targetIndex && state.presetKey !== 'zh_control' 
+                    ? `rgba(88, 196, 221, ${Math.max(0.2, w)})` 
+                    : `rgba(240, 180, 41, ${Math.max(0.15, w)})`;
+                ctx.stroke();
+            }
+
+            // Draw Causal Lock Padlock for future tokens
+            if (qIdx < N - 1) {
+                const lockX = padding + (qIdx + 1) * step;
+                ctx.fillStyle = '#ff6b6b';
+                ctx.font = '12px sans-serif';
+                ctx.fillText('🔒', lockX, nodeY - 15);
+            }
+        }
+
+        // Update Dashboard Metrics & Top 3 List
+        function updateAttentionDashboard() {
+            const preset = sentences[state.presetKey];
+            const tokens = preset.tokens;
+            const matrix = generateAttentionMatrix(state.presetKey, state.isTrained, state.layerDepth);
+            const qIdx = state.selectedQueryIndex;
+            const weights = matrix[qIdx].slice(0, qIdx + 1);
+
+            const { H, effCount } = calcEntropyAndEff(weights);
+
+            document.getElementById('selected-query-badge').textContent = `Query: "${tokens[qIdx]}" (Index ${qIdx})`;
+            document.getElementById('val-entropy').textContent = H.toFixed(3);
+            document.getElementById('val-eff-count').textContent = effCount.toFixed(2) + ' 个';
+
+            // Entropy fill percentage
+            const maxEntropy = Math.log(qIdx + 1 || 1);
+            const pct = maxEntropy > 0 ? (1 - (H / maxEntropy)) * 100 : 100;
+            const barFill = document.getElementById('bar-entropy-fill');
+            if (barFill) barFill.style.width = `${Math.min(100, Math.max(5, pct))}%`;
+
+            const textState = document.getElementById('text-focus-state');
+            if (textState) {
+                if (H < 0.8) {
+                    textState.textContent = '单点高度聚焦 (Sharp Focus)';
+                    textState.className = 'font-bold text-emeraldGlow';
+                } else if (H < 1.5) {
+                    textState.textContent = '中度语义关联 (Moderate Focus)';
+                    textState.className = 'font-bold text-cyanGlow';
+                } else {
+                    textState.textContent = '接近均匀池化 (Uniform / Random)';
+                    textState.className = 'font-bold text-gray-400';
+                }
+            }
+
+            // Top 3 attended tokens
+            const indexed = weights.map((w, idx) => ({ token: tokens[idx], idx, weight: w }));
+            indexed.sort((a, b) => b.weight - a.weight);
+            const top3 = indexed.slice(0, 3);
+
+            const top3List = document.getElementById('top3-list');
+            if (top3List) {
+                top3List.innerHTML = top3.map((item, i) => `
+                    <div class="flex items-center justify-between bg-darkBg px-2.5 py-1 rounded border border-borderCol/50">
+                        <span class="text-gray-300">#${i+1} <strong class="text-white font-bold">${item.token}</strong> (idx ${item.idx})</span>
+                        <span class="text-cyanGlow font-bold">${(item.weight * 100).toFixed(1)}%</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateAttentionVisuals() {
+            renderHeatmap();
+            renderAttentionArcs();
+            updateAttentionDashboard();
+        }
+
+        // --- MODULE 8.2: EMBEDDING REDUCTION & ANALOGY ---
+        // 120 Synthetic Embedding Points Data in 4 Categories
+        const embedCategories = [
+            { name: '皇室/人物', color: '#58c4dd', words: ['king', 'queen', 'prince', 'princess', 'emperor', 'empress', 'monarch', 'lord', 'lady', 'duke', 'duchess', 'hero', 'man', 'woman', 'boy', 'girl', 'father', 'mother', 'brother', 'sister', 'uncle', 'aunt', 'kingly', 'queenly', 'royalty', 'ruler', 'throne', 'crown', 'palace', 'reign'] },
+            { name: '国家/首都', color: '#f0b429', words: ['France', 'Paris', 'Japan', 'Tokyo', 'China', 'Beijing', 'UK', 'London', 'Germany', 'Berlin', 'Italy', 'Rome', 'Spain', 'Madrid', 'Russia', 'Moscow', 'USA', 'Washington', 'Egypt', 'Cairo', 'Canada', 'Ottawa', 'Brazil', 'Brasilia', 'India', 'Delhi', 'Korea', 'Seoul', 'Europe', 'Asia'] },
+            { name: '动词/时态', color: '#4ade80', words: ['walk', 'walking', 'walked', 'run', 'running', 'ran', 'swim', 'swimming', 'swam', 'eat', 'eating', 'ate', 'fly', 'flying', 'flew', 'sing', 'singing', 'sang', 'write', 'writing', 'wrote', 'speak', 'speaking', 'spoke', 'go', 'going', 'went', 'jump', 'jumping', 'jumped'] },
+            { name: '动物/自然', color: '#c084fc', words: ['dog', 'cat', 'lion', 'tiger', 'wolf', 'bear', 'eagle', 'shark', 'whale', 'forest', 'river', 'ocean', 'mountain', 'lake', 'tree', 'flower', 'rain', 'snow', 'wind', 'sun', 'moon', 'star', 'sky', 'cloud', 'valley', 'desert', 'island', 'jungle', 'animal', 'beast'] }
+        ];
+
+        // Generate 2D Points for Rand, PCA, t-SNE
+        const pointData = [];
+        let pId = 0;
+
+        embedCategories.forEach((cat, cIdx) => {
+            // Category cluster centers for PCA vs t-SNE
+            const pcaCenter = [
+                (cIdx % 2 === 0 ? -1 : 1) * 0.45,
+                (cIdx < 2 ? -1 : 1) * 0.45
+            ];
+            const tsneCenter = [
+                Math.cos(cIdx * Math.PI / 2) * 0.7,
+                Math.sin(cIdx * Math.PI / 2) * 0.7
+            ];
+
+            cat.words.forEach((word, wIdx) => {
+                pointData.push({
+                    id: pId++,
+                    word,
+                    category: cat.name,
+                    color: cat.color,
+                    catIdx: cIdx,
+                    // Random mode
+                    randX: (Math.random() - 0.5) * 1.8,
+                    randY: (Math.random() - 0.5) * 1.8,
+                    // PCA mode (linear axis preservation)
+                    pcaX: pcaCenter[0] + (wIdx % 5 - 2) * 0.08 + (Math.random() - 0.5) * 0.05,
+                    pcaY: pcaCenter[1] + (Math.floor(wIdx / 5) - 2) * 0.08 + (Math.random() - 0.5) * 0.05,
+                    // t-SNE mode (tight non-linear clusters)
+                    tsneX: tsneCenter[0] + (Math.random() - 0.5) * 0.18,
+                    tsneY: tsneCenter[1] + (Math.random() - 0.5) * 0.18,
+                    // Current interpolated animated coords
+                    currX: 0,
+                    currY: 0
+                });
+            });
+        });
+
+        // Animated rendering of scatter plot
+        let embedAnimFrame = null;
+        function renderEmbeddingScatter() {
+            const canvas = document.getElementById('canvas-embedding');
+            if (!canvas) return;
+            const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const scale = Math.min(width, height) * 0.4;
+
+            // Draw PCA Coordinate Axes if PCA
+            if (state.dimMode === 'pca') {
+                ctx.strokeStyle = '#233044';
+                ctx.lineWidth = 1.5;
+                // PC1 Axis
+                ctx.beginPath();
+                ctx.moveTo(30, centerY);
+                ctx.lineTo(width - 30, centerY);
+                ctx.stroke();
+                // PC2 Axis
+                ctx.beginPath();
+                ctx.moveTo(centerX, 30);
+                ctx.lineTo(centerX, height - 30);
+                ctx.stroke();
+
+                ctx.fillStyle = '#f0b429';
+                ctx.font = '10px monospace';
+                ctx.fillText('PC1 (解释 42.1% 方差) →', width - 140, centerY - 8);
+                ctx.fillText('↑ PC2 (解释 22.1% 方差)', centerX + 8, 45);
+            }
+
+            // Lerp animation step
+            let isMoving = false;
+            pointData.forEach(p => {
+                let targetX = p.pcaX;
+                let targetY = p.pcaY;
+                if (state.dimMode === 'rand') { targetX = p.randX; targetY = p.randY; }
+                if (state.dimMode === 'tsne') { targetX = p.tsneX; targetY = p.tsneY; }
+
+                p.currX += (targetX - p.currX) * 0.12;
+                p.currY += (targetY - p.currY) * 0.12;
+
+                if (Math.abs(targetX - p.currX) > 0.001 || Math.abs(targetY - p.currY) > 0.001) {
+                    isMoving = true;
+                }
+
+                const px = centerX + p.currX * scale;
+                const py = centerY + p.currY * scale;
+
+                // Draw point
+                ctx.beginPath();
+                ctx.arc(px, py, 4, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.fill();
+
+                // Draw word label on first 3 words of each cluster
+                if (p.word === 'king' || p.word === 'queen' || p.word === 'Paris' || p.word === 'Tokyo' || p.word === 'walk' || p.word === 'swim' || p.word === 'dog' || p.word === 'lion') {
+                    ctx.fillStyle = '#e5e7eb';
+                    ctx.font = 'bold 10px monospace';
+                    ctx.fillText(p.word, px + 6, py + 3);
+                }
+            });
+
+            if (isMoving) {
+                embedAnimFrame = requestAnimationFrame(renderEmbeddingScatter);
+            }
+        }
+
+        // Vector Analogy Canvas (Part B)
+        const analogies = {
+            king: { base: 'king', sub: 'man', add: 'woman', target: 'queen', top3: [ { word: 'queen', sim: 0.9642 }, { word: 'princess', sim: 0.7815 }, { word: 'monarch', sim: 0.7104 } ] },
+            paris: { base: 'Paris', sub: 'France', add: 'Japan', target: 'Tokyo', top3: [ { word: 'Tokyo', sim: 0.9412 }, { word: 'Osaka', sim: 0.7931 }, { word: 'Kyoto', sim: 0.7250 } ] },
+            walk: { base: 'walk', sub: 'walking', add: 'swam', target: 'swim', top3: [ { word: 'swim', sim: 0.9288 }, { word: 'swimming', sim: 0.8105 }, { word: 'float', sim: 0.6942 } ] }
+        };
+
+        function renderVectorAnalogy() {
+            const canvas = document.getElementById('canvas-vector');
+            if (!canvas) return;
+            const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            const data = analogies[state.analogyKey];
+            const p = state.vectorAnimProgress; // 0.0 to 1.0
+
+            // 2D Parallelogram Points setup
+            const oX = width * 0.25;
+            const oY = height * 0.7;
+
+            // Base vector (king)
+            const kingX = oX + 80;
+            const kingY = oY - 140;
+
+            // Shift vector (woman - man)
+            const shiftX = 140;
+            const shiftY = 30;
+
+            // Target landing (queen)
+            const queenX = kingX + shiftX * p;
+            const queenY = kingY + shiftY * p;
+
+            // Draw Grid lines
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < width; x += 30) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+            }
+            for (let y = 0; y < height; y += 30) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+            }
+
+            // Vector Helper Arrow function
+            const drawArrow = (fromX, fromY, toX, toY, color, label, isDashed = false) => {
+                ctx.save();
+                ctx.strokeStyle = color;
+                ctx.fillStyle = color;
+                ctx.lineWidth = 2.5;
+                if (isDashed) ctx.setLineDash([5, 5]);
+
+                ctx.beginPath();
+                ctx.moveTo(fromX, fromY);
+                ctx.lineTo(toX, toY);
+                ctx.stroke();
+
+                // Arrow head
+                const angle = Math.atan2(toY - fromY, toX - fromX);
+                ctx.beginPath();
+                ctx.moveTo(toX, toY);
+                ctx.lineTo(toX - 10 * Math.cos(angle - Math.PI / 6), toY - 10 * Math.sin(angle - Math.PI / 6));
+                ctx.lineTo(toX - 10 * Math.cos(angle + Math.PI / 6), toY - 10 * Math.sin(angle + Math.PI / 6));
+                ctx.closePath();
+                ctx.fill();
+
+                if (label) {
+                    ctx.font = 'bold 12px monospace';
+                    ctx.fillText(label, toX + 8, toY - 4);
+                }
+                ctx.restore();
+            };
+
+            // 1. Draw base vector king
+            drawArrow(oX, oY, kingX, kingY, '#f0b429', data.base);
+
+            // 2. Draw origin shift vector (woman - man)
+            drawArrow(oX, oY, oX + shiftX, oY + shiftY, '#c084fc', `(${data.add} − ${data.sub})`);
+
+            // 3. Draw parallel shift vector from king to queen
+            drawArrow(kingX, kingY, queenX, queenY, '#58c4dd', p >= 1 ? `≈ ${data.target}` : '平移中...', true);
+
+            // Draw target point glow
+            ctx.beginPath();
+            ctx.arc(queenX, queenY, p >= 1 ? 8 : 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#4ade80';
+            ctx.fill();
+
+            // Update Top 3 Cosine Ranking List
+            const rankList = document.getElementById('cosine-ranking-list');
+            if (rankList) {
+                rankList.innerHTML = data.top3.map((item, idx) => `
+                    <div class="flex items-center justify-between p-2 rounded bg-cardBg border border-borderCol/50">
+                        <span class="text-gray-200">#${idx+1} <strong class="${idx === 0 ? 'text-emeraldGlow' : 'text-gray-400'}">${item.word}</strong></span>
+                        <span class="font-bold ${idx === 0 ? 'text-emeraldGlow' : 'text-gray-400'}">${item.sim.toFixed(4)}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // --- MODULE 8.3: ACTIVATIONS, GELU VS RELU & RESIDUAL GRADIENT ---
+        const stageData = {
+            1: { name: '1. Embed + Pos (LN 前)', mean: 0.002, std: 0.027, min: -0.091, max: 0.088, insight: '💡 STAGE 1 说明：原始输入 Embedding 叠加位置编码后，数值分布范围狭窄（σ ≈ 0.027），不同维度间方差起伏剧烈。' },
+            2: { name: '2. LayerNorm 之后', mean: 0.000, std: 1.000, min: -3.421, max: 3.892, insight: '✨ STAGE 2 说明：LayerNorm 魔法生效！对每个 Token 的通道维度重置为 μ=0, σ=1 标准正态分布，彻底解决数值爆炸/消失。' },
+            3: { name: '3. Attention 输出', mean: 0.001, std: 0.095, min: -0.320, max: 0.312, insight: '🌀 STAGE 3 说明：Attention 输出是 Value 向量的凸组合（加权平均）。根据大数定律，平均操作天然具有平滑压缩效应（σ 从 1.0 降至 0.095）。' },
+            4: { name: '4. 残差连接后 (x + Attn)', mean: 0.001, std: 1.004, min: -3.450, max: 3.910, insight: '🛣️ STAGE 4 说明：主干输入 x 与 Attn 输出做加法相加 (Residual Add)，稳健维持了数据的标准方差（σ ≈ 1.0），梯度得以无障碍反向传播。' },
+            5: { name: '5. FFN 输出 (GELU 后)', mean: 0.741, std: 1.185, min: -0.170, max: 4.820, insight: '⚡ STAGE 5 说明：GELU 激活函数将维度放大 4 倍后再压缩。负区间保留连续光滑小负值弯钩（min = -0.170），正区间线性放大。' }
+        };
+
+        function renderStageHistogram() {
+            const canvas = document.getElementById('canvas-stage-hist');
+            if (!canvas) return;
+            const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            const st = stageData[state.stage];
+            document.getElementById('stage-mean').textContent = st.mean.toFixed(4);
+            document.getElementById('stage-std').textContent = st.std.toFixed(4);
+            document.getElementById('stage-min').textContent = st.min.toFixed(3);
+            document.getElementById('stage-max').textContent = st.max.toFixed(3);
+            document.getElementById('stage-insight-box').innerHTML = st.insight;
+
+            // Generate Gaussian-like histogram bins
+            const bins = 30;
+            const binWidth = width / bins;
+            const mean = st.mean;
+            const std = st.std;
+
+            ctx.fillStyle = '#4ade80';
+            for (let i = 0; i < bins; i++) {
+                const xVal = -3 + (i / bins) * 6;
+                const prob = (1 / (std * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((xVal - mean) / std, 2));
+                const barHeight = prob * height * 0.7;
+
+                const x = i * binWidth;
+                const y = height - barHeight;
+
+                ctx.fillStyle = 'rgba(74, 222, 128, 0.6)';
+                ctx.fillRect(x + 1, y, binWidth - 2, barHeight);
+                ctx.strokeStyle = '#4ade80';
+                ctx.strokeRect(x + 1, y, binWidth - 2, barHeight);
+            }
+
+            // Gaussian Envelope Line Overlay
+            ctx.beginPath();
+            ctx.strokeStyle = '#58c4dd';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < width; i++) {
+                const xVal = -3 + (i / width) * 6;
+                const prob = (1 / (std * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((xVal - mean) / std, 2));
+                const y = height - prob * height * 0.7;
+                if (i === 0) ctx.moveTo(i, y);
+                else ctx.lineTo(i, y);
+            }
+            ctx.stroke();
+        }
+
+        // Part B: ReLU vs GELU Histograms
+        function renderReLUvsGELU() {
+            const sigma = parseFloat(state.sigma);
+            document.getElementById('val-sigma').textContent = sigma.toFixed(1);
+
+            // Simulation math stats
+            const samples = 2000;
+            let reluZeroCount = 0, reluSum = 0, reluSqSum = 0;
+            let geluNegCount = 0, geluSum = 0, geluSqSum = 0;
+
+            const reluData = [];
+            const geluData = [];
+
+            for (let i = 0; i < samples; i++) {
+                // Box-Muller Gaussian sample
+                const u1 = Math.random(), u2 = Math.random();
+                const x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * sigma;
+
+                // ReLU
+                const rVal = Math.max(0, x);
+                if (rVal === 0) reluZeroCount++;
+                reluSum += rVal;
+                reluSqSum += rVal * rVal;
+                reluData.push(rVal);
+
+                // GELU approximation x * sigmoid(1.702 * x)
+                const gVal = x * (1 / (1 + Math.exp(-1.702 * x)));
+                if (gVal < 0) geluNegCount++;
+                geluSum += gVal;
+                geluSqSum += gVal * gVal;
+                geluData.push(gVal);
+            }
+
+            const reluDeadPct = (reluZeroCount / samples) * 100;
+            const reluMean = reluSum / samples;
+            const reluStd = Math.sqrt(reluSqSum / samples - reluMean * reluMean);
+
+            const geluNegPct = (geluNegCount / samples) * 100;
+            const geluMean = geluSum / samples;
+            const geluStd = Math.sqrt(geluSqSum / samples - geluMean * geluMean);
+
+            // Update DOM tables
+            document.getElementById('relu-dead-badge').textContent = `${reluDeadPct.toFixed(1)}% 神经元硬性死亡`;
+            document.getElementById('tbl-relu-dead').textContent = `${reluDeadPct.toFixed(1)}%`;
+            document.getElementById('tbl-relu-mean').textContent = reluMean.toFixed(3);
+            document.getElementById('tbl-relu-std').textContent = reluStd.toFixed(3);
+
+            document.getElementById('tbl-gelu-neg').textContent = `${geluNegPct.toFixed(1)}% (平滑弯钩)`;
+            document.getElementById('tbl-gelu-mean').textContent = geluMean.toFixed(3);
+            document.getElementById('tbl-gelu-std').textContent = geluStd.toFixed(3);
+
+            // Draw ReLU Canvas
+            const reluCanvas = document.getElementById('canvas-relu');
+            if (reluCanvas) {
+                const { ctx, width, height } = setupRetinaCanvas(reluCanvas);
+                ctx.clearRect(0, 0, width, height);
+
+                // Draw curve
+                ctx.strokeStyle = '#ff6b6b';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                for (let x = 0; x < width; x++) {
+                    const xVal = -4 + (x / width) * 8;
+                    const yVal = Math.max(0, xVal);
+                    const y = height - 20 - (yVal / 4) * (height - 40);
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Draw spike at 0
+                ctx.fillStyle = 'rgba(255, 107, 107, 0.4)';
+                ctx.fillRect(width / 2 - 15, 20, 30, height - 40);
+                ctx.fillStyle = '#ff6b6b';
+                ctx.font = 'bold 11px font-mono';
+                ctx.fillText(`🚨 x<=0 处 50% 尖刺`, width / 2 - 50, 35);
+            }
+
+            // Draw GELU Canvas
+            const geluCanvas = document.getElementById('canvas-gelu');
+            if (geluCanvas) {
+                const { ctx, width, height } = setupRetinaCanvas(geluCanvas);
+                ctx.clearRect(0, 0, width, height);
+
+                // Draw GELU curve with smooth negative hook
+                ctx.strokeStyle = '#58c4dd';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                for (let x = 0; x < width; x++) {
+                    const xVal = -4 + (x / width) * 8;
+                    const yVal = xVal * (1 / (1 + Math.exp(-1.702 * xVal)));
+                    const y = height - 20 - (yVal / 4) * (height - 40);
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Highlight negative hook
+                ctx.fillStyle = '#4ade80';
+                ctx.font = 'bold 11px font-mono';
+                ctx.fillText(`✨ 负弯钩区间 x∈[-2,0] 保留小梯度`, 20, height - 30);
+            }
+        }
+
+        // Part C: Log Scale Gradient Flow
+        function renderGradFlow() {
+            const canvas = document.getElementById('canvas-gradflow');
+            if (!canvas) return;
+            const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+            const depth = parseInt(state.depth);
+            document.getElementById('val-depth').textContent = depth;
+
+            ctx.clearRect(0, 0, width, height);
+
+            const paddingLeft = 60;
+            const paddingBottom = 40;
+            const plotW = width - paddingLeft - 20;
+            const plotH = height - paddingBottom - 20;
+
+            // Draw Y-axis (Log Scale: 1e-6 to 1.0)
+            ctx.strokeStyle = '#233044';
+            ctx.lineWidth = 1;
+            for (let pow = 0; pow >= -6; pow--) {
+                const normY = Math.abs(pow) / 6;
+                const y = 20 + normY * plotH;
+
+                ctx.beginPath();
+                ctx.moveTo(paddingLeft, y);
+                ctx.lineTo(width - 20, y);
+                ctx.stroke();
+
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '10px monospace';
+                ctx.textAlign = 'right';
+                ctx.fillText(`1e${pow}`, paddingLeft - 8, y + 3);
+            }
+
+            // X-axis Layer Labels
+            const stepX = plotW / (depth - 1);
+            for (let l = 0; l < depth; l++) {
+                const x = paddingLeft + l * stepX;
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '10px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(`L${l}`, x, height - 15);
+            }
+
+            // 1. With Residual (Emerald Line) - Grad ratio ~0.98^l
+            ctx.beginPath();
+            ctx.strokeStyle = '#4ade80';
+            ctx.lineWidth = 3;
+
+            const resVals = [];
+            for (let l = 0; l < depth; l++) {
+                const val = Math.pow(0.985, depth - 1 - l);
+                resVals.push(val);
+                const logVal = Math.log10(val);
+                const normY = Math.abs(logVal) / 6;
+                const x = paddingLeft + l * stepX;
+                const y = 20 + normY * plotH;
+
+                if (l === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // 2. Without Residual (Coral Line) - Grad ratio ~0.4^l
+            ctx.beginPath();
+            ctx.strokeStyle = '#ff6b6b';
+            ctx.lineWidth = 3;
+
+            const noResVals = [];
+            for (let l = 0; l < depth; l++) {
+                const val = Math.pow(0.35, depth - 1 - l);
+                noResVals.push(val);
+                const logVal = Math.max(-6, Math.log10(val));
+                const normY = Math.abs(logVal) / 6;
+                const x = paddingLeft + l * stepX;
+                const y = 20 + normY * plotH;
+
+                if (l === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Update ratios in DOM
+            const resRatio = resVals[0] / resVals[depth - 1];
+            const noResRatio = noResVals[0] / noResVals[depth - 1];
+
+            document.getElementById('res-ratio-val').textContent = resRatio.toFixed(3);
+            document.getElementById('no-res-ratio-val').textContent = noResRatio < 1e-4 ? noResRatio.toExponential(2) : noResRatio.toFixed(6);
+        }
+
+        // --- MODULE 8.4: MULTI-HEAD GRID & SIMILARITY ---
+        function renderMultiHeadGrid() {
+            const gridContainer = document.getElementById('multihead-grid');
+            if (!gridContainer) return;
+            gridContainer.innerHTML = '';
+
+            for (let l = 0; l < 2; l++) {
+                for (let h = 0; h < 4; h++) {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'bg-darkBg p-2 rounded-xl border border-borderCol text-center space-y-1';
+                    wrap.innerHTML = `
+                        <div class="text-[10px] font-mono text-gray-400">L${l} H${h}</div>
+                        <canvas id="canvas-head-L${l}H${h}" class="w-full aspect-square rounded bg-cardBg"></canvas>
+                    `;
+                    gridContainer.appendChild(wrap);
+
+                    setTimeout(() => {
+                        const cvs = document.getElementById(`canvas-head-L${l}H${h}`);
+                        if (cvs) {
+                            const { ctx, width, height } = setupRetinaCanvas(cvs);
+                            ctx.fillStyle = (l === 1 && h === 2) ? 'rgba(88, 196, 221, 0.8)' : 'rgba(240, 180, 41, 0.4)';
+                            ctx.fillRect(0, 0, width, height);
+                        }
+                    }, 50);
+                }
+            }
+
+            renderHeadSimilarityMatrix();
+        }
+
+        function renderHeadSimilarityMatrix() {
+            const canvas = document.getElementById('canvas-head-sim');
+            if (!canvas) return;
+            const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+
+            const nHeads = 8;
+            const cellSize = width / nHeads;
+
+            // Generate synthetic similarity matrix
+            for (let i = 0; i < nHeads; i++) {
+                for (let j = 0; j < nHeads; j++) {
+                    let sim = i === j ? 1.0 : (0.3 + Math.random() * 0.4);
+                    // Force H0 & H1 high redundancy
+                    if ((i === 0 && j === 1) || (i === 1 && j === 0)) sim = 0.945;
+
+                    ctx.fillStyle = `rgba(192, 132, 252, ${sim})`;
+                    ctx.fillRect(j * cellSize, i * cellSize, cellSize - 1, cellSize - 1);
+                }
+            }
+
+            canvas.onclick = (evt) => {
+                const rect = canvas.getBoundingClientRect();
+                const i = Math.floor((evt.clientY - rect.top) / (rect.height / nHeads));
+                const j = Math.floor((evt.clientX - rect.left) / (rect.width / nHeads));
+
+                const title = document.getElementById('head-pair-title');
+                const score = document.getElementById('head-sim-score');
+                const desc = document.getElementById('head-sim-desc');
+
+                const simVal = (i === j ? 1.0 : (i+j === 1 ? 0.945 : 0.421)).toFixed(3);
+
+                title.textContent = `Head H${i} vs Head H${j}`;
+                score.textContent = `cos = ${simVal}`;
+
+                if (parseFloat(simVal) > 0.90) {
+                    desc.textContent = `🚨 高度冗余 Warning：这两个 Head 的注意力分配特征极大重合 (>0.90)，属于剪枝冗余 Candidate！`;
+                    desc.className = 'text-coralGlow text-[11px] font-bold';
+                } else {
+                    desc.textContent = `✅ 独立分工 Fine：低相似度表明两个 Head 分别独立关注不同语法/指代结构（如一个看位置，一个看语义）。`;
+                    desc.className = 'text-emeraldGlow text-[11px]';
+                }
+            };
+        }
+
+        // --- MODULE 8.5: CODE REPOSITORY & QUIZ ---
+        const codeSnippets = {
+            code1: `# 1. Transformer Attention Heatmap & ASCII Printer (PyTorch)
+import torch
+import torch.nn.functional as F
+import math
+
+def compute_attention_heatmap(Q, K, mask=None):
+    # Q, K: [batch_size, n_heads, seq_len, d_k]
+    d_k = Q.size(-1)
+    scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(d_k)
+    
+    if mask is not None:
+        scores = scores.masked_fill(mask == 0, -1e9)
+        
+    attn_weights = F.softmax(scores, dim=-1)
+    return attn_weights
+
+# Causal Lower Triangular Mask
+seq_len = 10
+causal_mask = torch.tril(torch.ones(seq_len, seq_len))
+print("Causal Mask (Strict Lower Triangular):")
+print(causal_mask)`,
+
+            code2: `# 2. Embedding PCA vs t-SNE 2D Projection (NumPy & Sklearn)
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+# 120 Synthetic 64D Word Vectors
+np.random.seed(42)
+embeddings = np.random.randn(120, 64)
+
+# PCA 2D Projection (Preserves Global Axes)
+pca = PCA(n_components=2)
+pca_2d = pca.fit_transform(embeddings)
+print(f"PCA Variance Ratio: PC1={pca.explained_variance_ratio_[0]:.3f}, PC2={pca.explained_variance_ratio_[1]:.3f}")
+
+# t-SNE 2D Projection (Preserves Local Clusters)
+tsne = TSNE(n_components=2, perplexity=15, random_state=42)
+tsne_2d = tsne.fit_transform(embeddings)
+print("t-SNE 2D Projection Shape:", tsne_2d.shape)`,
+
+            code3: `# 3. LayerNorm Stats, GELU vs ReLU & Residual Grad Flow
+import torch
+import torch.nn as nn
+
+# LayerNorm Reset Standard Normal
+x = torch.randn(32, 128, 768) * 5.0 + 10.0 # High variance input
+ln = nn.LayerNorm(768)
+out_ln = ln(x)
+print(f"LayerNorm Output -> Mean: {out_ln.mean().item():.4f}, Std: {out_ln.std().item():.4f}")
+
+# GELU Activation (Smooth Negative Hook)
+gelu = nn.GELU()
+sample_inputs = torch.tensor([-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0])
+print("GELU Outputs:", gelu(sample_inputs))`,
+
+            code4: `# 4. Multi-Head Attention Cosine Similarity & Entropy
+import torch
+import torch.nn.functional as F
+
+def calc_head_similarity(head_attn_1, head_attn_2):
+    # Vectorize [seq_len, seq_len] heatmaps
+    v1 = head_attn_1.flatten()
+    v2 = head_attn_2.flatten()
+    cos_sim = F.cosine_similarity(v1.unsqueeze(0), v2.unsqueeze(0))
+    return cos_sim.item()
+
+def calc_attention_entropy(attn_weights):
+    # H = - sum(p * log(p))
+    eps = 1e-9
+    entropy = -torch.sum(attn_weights * torch.log(attn_weights + eps), dim=-1)
+    eff_count = torch.exp(entropy)
+    return entropy, eff_count`
+        };
+
+        function setupCodeTabs() {
+            const display = document.getElementById('code-block-display');
+            display.textContent = codeSnippets.code1;
+
+            document.querySelectorAll('.code-tab-btn').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.code-tab-btn').forEach(b => {
+                        b.className = 'code-tab-btn py-2 px-4 text-xs font-mono border-b-2 border-transparent text-gray-400 hover:text-white';
+                    });
+                    btn.className = 'code-tab-btn py-2 px-4 text-xs font-mono border-b-2 border-cyanGlow text-cyanGlow font-bold';
+                    const tabKey = btn.getAttribute('data-code-tab');
+                    display.textContent = codeSnippets[tabKey];
+                };
+            });
+
+            // 1-Click Copy
+            document.getElementById('btn-copy-code').onclick = () => {
+                const text = display.textContent;
+                const dummy = document.createElement('textarea');
+                document.body.appendChild(dummy);
+                dummy.value = text;
+                dummy.select();
+                document.execCommand('copy');
+                document.body.removeChild(dummy);
+
+                const btn = document.getElementById('btn-copy-code');
+                btn.textContent = '✅ 已复制！(Copied)';
+                setTimeout(() => {
+                    btn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> 复制代码 (Copy Code)`;
+                }, 2000);
+            };
+        }
+
+        // Quiz Questions Data
+        const quizQuestions = [
+            {
+                q: "1. Decoder-only 注意力热力图永远是严格下三角的根本原因是？",
+                options: [
+                    "A. 模型训练收敛后学到的随机特征",
+                    "B. 因果掩码 (Causal Mask) 在 Softmax 前强制将上三角置为 -∞",
+                    "C. LayerNorm 将上三角数据归一化为 0",
+                    "D. 位置编码 (Positional Encoding) 裁切掉了未来词"
+                ],
+                correct: 1,
+                exp: "正确答案是 B！Decoder 架构必须防止未来 Token 泄漏，因此在前向传播计算 Attention Score 时，硬性通过掩码矩阵 (Upper Triangle = -∞) 封锁未来位置。"
+            },
+            {
+                q: "2. 真实大模型（如 GPT-2）的代词指代关系（如 it → animal）通常在哪些神经网络层最强？",
+                options: [
+                    "A. L0–L2 浅层 (语法局部层)",
+                    "B. L7–L9 中高层 (语义指代觉醒层)",
+                    "C. 仅在 Embedding 层",
+                    "D. 最后一层 Softmax"
+                ],
+                correct: 1,
+                exp: "正确答案是 B！可视化表明，浅层主要关注相邻词的语法搭配，中高层（L7–L9）注意力头成功构建深层长距离代词指代关系。"
+            },
+            {
+                q: "3. 若某 Token 的注意力分布熵 H = 2.3026，其有效关注位置数 exp(H) 约为？",
+                options: [
+                    "A. 1.0 个",
+                    "B. 5.0 个",
+                    "C. 10.0 个",
+                    "D. 100.0 个"
+                ],
+                correct: 2,
+                exp: "正确答案是 C！因为 exp(2.3026) ≈ 10.0。注意力熵 H 正比于分布的平坦度，exp(H) 直接指示模型在平均关注多少个位置。"
+            },
+            {
+                q: "4. 想观察 Embedding 的局部语义近义词聚类 vs 全局正交坐标轴，分别优先用？",
+                options: [
+                    "A. PCA 看局部聚类，t-SNE 看全局结构",
+                    "B. t-SNE 看局部聚类，PCA 看全局结构",
+                    "C. 两者完全相同",
+                    "D. 无法通过降维观察"
+                ],
+                correct: 1,
+                exp: "正确答案是 B！PCA 是线性正交投影，完美保留全局主要方差轴；t-SNE 是非线性降维，能强行拉开距离，展示紧密的局部语义簇。"
+            },
+            {
+                q: "5. 对比 LayerNorm 后的输出与 Attention 输出，为何 Attention 输出的标准差 std 往往明显更小？",
+                options: [
+                    "A. Attention 输出是 Value 向量的凸组合（加权平均），具有天然平滑效应",
+                    "B. Attention 删除了全部负数",
+                    "C. Attention 乘以了 0.01",
+                    "D. LayerNorm 增加了随机噪声"
+                ],
+                correct: 0,
+                exp: "正确答案是 A！加权平均 Sum(w_i * v_i) 是一种凸组合操作，根据统计学方差合成法则，多次独立向量的加权平均会使总方差/标准差明显收缩。"
+            }
+        ];
+
+        function setupQuiz() {
+            const container = document.getElementById('quiz-container');
+            if (!container) return;
+
+            container.innerHTML = quizQuestions.map((item, qIdx) => `
+                <div class="bg-darkBg p-5 rounded-xl border border-borderCol space-y-3">
+                    <div class="text-sm font-bold text-white">${item.q}</div>
+                    <div class="space-y-2">
+                        ${item.options.map((opt, oIdx) => `
+                            <button data-q="${qIdx}" data-o="${oIdx}" class="quiz-opt-btn w-full text-left p-3 rounded-lg border border-borderCol/60 bg-cardBg text-xs text-gray-300 hover:border-cyanGlow/50 transition">
+                                ${opt}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div id="quiz-exp-${qIdx}" class="hidden p-3 rounded-lg bg-cardBg border border-borderCol text-xs leading-relaxed"></div>
+                </div>
+            `).join('');
+
+            document.querySelectorAll('.quiz-opt-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const qIdx = parseInt(btn.getAttribute('data-q'));
+                    const oIdx = parseInt(btn.getAttribute('data-o'));
+                    const qData = quizQuestions[qIdx];
+
+                    state.quizAnswers[qIdx] = oIdx;
+
+                    const expBox = document.getElementById(`quiz-exp-${qIdx}`);
+                    expBox.classList.remove('hidden');
+
+                    if (oIdx === qData.correct) {
+                        btn.className = 'quiz-opt-btn w-full text-left p-3 rounded-lg border border-emeraldGlow bg-emeraldGlow/10 text-xs text-emeraldGlow font-bold';
+                        expBox.innerHTML = `<span class="text-emeraldGlow font-bold">✅ 回答正确！</span> ${qData.exp}`;
+                        expBox.className = 'p-3 rounded-lg bg-emeraldGlow/10 border border-emeraldGlow/30 text-xs text-gray-200 leading-relaxed';
+                    } else {
+                        btn.className = 'quiz-opt-btn w-full text-left p-3 rounded-lg border border-coralGlow bg-coralGlow/10 text-xs text-coralGlow font-bold';
+                        expBox.innerHTML = `<span class="text-coralGlow font-bold">❌ 回答错误。</span> ${qData.exp}`;
+                        expBox.className = 'p-3 rounded-lg bg-coralGlow/10 border border-coralGlow/30 text-xs text-gray-200 leading-relaxed';
+                    }
+
+                    // Update Score Badge
+                    const count = Object.keys(state.quizAnswers).length;
+                    document.getElementById('quiz-score-badge').textContent = `完成度: ${count} / 5`;
+                };
+            });
+        }
+
+        // --- GLOBAL EVENT LISTENERS & INITIALIZATION ---
+        window.addEventListener('DOMContentLoaded', () => {
+            // Preset selector
+            document.getElementById('attn-preset-select').onchange = (e) => {
+                state.presetKey = e.target.value;
+                state.selectedQueryIndex = sentences[state.presetKey].defaultQuery;
+                updateAttentionVisuals();
+            };
+
+            // Model state toggle
+            document.getElementById('btn-model-trained').onclick = () => {
+                state.isTrained = true;
+                document.getElementById('btn-model-trained').className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg bg-cyanGlow text-darkBg transition';
+                document.getElementById('btn-model-random').className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition';
+                updateAttentionVisuals();
+            };
+            document.getElementById('btn-model-random').onclick = () => {
+                state.isTrained = false;
+                document.getElementById('btn-model-random').className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg bg-cyanGlow text-darkBg transition';
+                document.getElementById('btn-model-trained').className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition';
+                updateAttentionVisuals();
+            };
+
+            // View mode toggle
+            document.getElementById('btn-view-canvas').onclick = () => {
+                state.viewMode = 'canvas';
+                document.getElementById('heatmap-container').classList.remove('hidden');
+                document.getElementById('ascii-container').classList.add('hidden');
+                document.getElementById('btn-view-canvas').className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg bg-borderCol text-cyanGlow transition';
+                document.getElementById('btn-view-ascii').className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition';
+            };
+            document.getElementById('btn-view-ascii').onclick = () => {
+                state.viewMode = 'ascii';
+                document.getElementById('heatmap-container').classList.add('hidden');
+                document.getElementById('ascii-container').classList.remove('hidden');
+                document.getElementById('btn-view-ascii').className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg bg-borderCol text-cyanGlow transition';
+                document.getElementById('btn-view-canvas').className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition';
+                updateAttentionVisuals();
+            };
+
+            // Layer Depth Tabs
+            document.querySelectorAll('.layer-tab-btn').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.layer-tab-btn').forEach(b => {
+                        b.className = 'layer-tab-btn p-3 rounded-xl border border-borderCol bg-darkBg/60 text-left hover:border-cyanGlow/50 transition';
+                    });
+                    btn.className = 'layer-tab-btn p-3 rounded-xl border border-cyanGlow bg-cyanGlow/10 text-left transition';
+                    state.layerDepth = btn.getAttribute('data-layer');
+                    updateAttentionVisuals();
+                };
+            });
+
+            // Embedding Dim Mode Switcher
+            document.getElementById('btn-dim-rand').onclick = () => {
+                state.dimMode = 'rand';
+                renderEmbeddingScatter();
+            };
+            document.getElementById('btn-dim-pca').onclick = () => {
+                state.dimMode = 'pca';
+                renderEmbeddingScatter();
+            };
+            document.getElementById('btn-dim-tsne').onclick = () => {
+                state.dimMode = 'tsne';
+                renderEmbeddingScatter();
+            };
+
+            // Vector Analogy Presets
+            document.querySelectorAll('.analogy-btn').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.analogy-btn').forEach(b => {
+                        b.className = 'analogy-btn px-3 py-1.5 text-xs font-mono font-bold rounded-xl border border-borderCol bg-darkBg text-gray-400 hover:border-goldGlow transition';
+                    });
+                    btn.className = 'analogy-btn px-3 py-1.5 text-xs font-mono font-bold rounded-xl border border-cyanGlow bg-cyanGlow/10 text-cyanGlow transition';
+                    state.analogyKey = btn.getAttribute('data-analogy');
+                    state.vectorAnimProgress = 1.0;
+                    renderVectorAnalogy();
+                };
+            });
+
+            // Animate Vector Translation
+            document.getElementById('btn-animate-vector').onclick = () => {
+                let p = 0.0;
+                const anim = () => {
+                    p += 0.03;
+                    state.vectorAnimProgress = Math.min(1.0, p);
+                    renderVectorAnalogy();
+                    if (p < 1.0) requestAnimationFrame(anim);
+                };
+                anim();
+            };
+
+            // Stage Pipeline Buttons
+            document.querySelectorAll('.stage-btn').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.stage-btn').forEach(b => {
+                        b.className = 'stage-btn p-2.5 rounded-xl border border-borderCol bg-darkBg text-xs text-left text-gray-400 hover:text-white transition';
+                    });
+                    btn.className = 'stage-btn p-2.5 rounded-xl border border-emeraldGlow bg-emeraldGlow/10 text-xs text-left transition';
+                    state.stage = parseInt(btn.getAttribute('data-stage'));
+                    renderStageHistogram();
+                };
+            });
+
+            // Sliders
+            document.getElementById('slider-sigma').oninput = (e) => {
+                state.sigma = e.target.value;
+                renderReLUvsGELU();
+            };
+            document.getElementById('slider-depth').oninput = (e) => {
+                state.depth = e.target.value;
+                renderGradFlow();
+            };
+
+            // Initialize all canvases
+            updateAttentionVisuals();
+            renderEmbeddingScatter();
+            renderVectorAnalogy();
+            renderStageHistogram();
+            renderReLUvsGELU();
+            renderGradFlow();
+            renderMultiHeadGrid();
+            setupCodeTabs();
+            setupQuiz();
+
+            // Resize listener for Retina Canvases
+            window.onresize = () => {
+                updateAttentionVisuals();
+                renderEmbeddingScatter();
+                renderVectorAnalogy();
+                renderStageHistogram();
+                renderReLUvsGELU();
+                renderGradFlow();
+                renderHeadSimilarityMatrix();
+            };
+        });
+    </script>
+</body>
+</html>

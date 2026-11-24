@@ -1,0 +1,2002 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 9 章：第一个 LLM 应用 —— 对话、流式输出、结构化校验与成本统计</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Custom Tailwind Config for 3Blue1Brown Dark Math Palette -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0d1117',
+            cardSlate: '#141b26',
+            cardHover: '#1c2636',
+            borderSubtle: '#233044',
+            accentCyan: '#58c4dd',
+            accentGold: '#f0b429',
+            accentEmerald: '#4ade80',
+            accentCoral: '#ff6b6b',
+            accentViolet: '#c084fc',
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+            sans: ['Inter', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #233044;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #58c4dd;
+    }
+    
+    /* Code block highlighting aesthetics */
+    .code-glow {
+      box-shadow: 0 0 15px rgba(88, 196, 221, 0.08);
+    }
+    
+    /* Math typography styling */
+    .math {
+      font-family: 'JetBrains Mono', monospace;
+      color: #f0b429;
+      background: rgba(240, 180, 41, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 4px;
+    }
+    .frac .num { border-bottom: 1px solid #f0b429; padding-bottom: 1px; }
+    .frac .den { padding-top: 1px; }
+
+    /* Pulse animation for active simulation steps */
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+    .active-glow {
+      animation: pulseGlow 2s infinite ease-in-out;
+    }
+
+    /* Terminal blinking cursor */
+    .term-cursor::after {
+      content: '▋';
+      display: inline-block;
+      margin-left: 2px;
+      animation: blink 1s infinite;
+      color: #58c4dd;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+  </style>
+</head>
+<body class="bg-bgDark text-slate-200 font-sans antialiased min-h-screen flex flex-col selection:bg-accentCyan/30 selection:text-accentCyan">
+
+  <!-- Sticky Top Navigation Bar -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur-md border-b border-borderSubtle">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <span class="w-3 h-3 rounded-full bg-accentCyan animate-ping"></span>
+        <span class="font-mono text-sm tracking-wider uppercase text-accentCyan font-bold">LLM Tutorial · Ch9</span>
+        <span class="text-slate-500">|</span>
+        <span class="text-xs sm:text-sm font-medium text-slate-300 truncate max-w-[200px] sm:max-w-none">第一个 LLM 应用工程骨架</span>
+      </div>
+      <nav class="hidden md:flex items-center space-x-1 text-xs font-mono">
+        <a href="#m91" class="nav-link px-3 py-1.5 rounded-md hover:bg-cardHover hover:text-accentCyan transition text-slate-400">9.1 API全景</a>
+        <a href="#m92" class="nav-link px-3 py-1.5 rounded-md hover:bg-cardHover hover:text-accentCyan transition text-slate-400">9.2 无状态多轮</a>
+        <a href="#m93" class="nav-link px-3 py-1.5 rounded-md hover:bg-cardHover hover:text-accentCyan transition text-slate-400">9.3 Prompt诊所</a>
+        <a href="#m94" class="nav-link px-3 py-1.5 rounded-md hover:bg-cardHover hover:text-accentCyan transition text-slate-400">9.4 Pydantic校验</a>
+        <a href="#m95" class="nav-link px-3 py-1.5 rounded-md hover:bg-cardHover hover:text-accentCyan transition text-slate-400">9.5 流式SSE与计费</a>
+        <a href="#m96" class="nav-link px-3 py-1.5 rounded-md hover:bg-cardHover hover:text-accentCyan transition text-slate-400">9.6 实战沙盒与RAG</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-16">
+
+    <!-- HERO SECTION -->
+    <section class="relative overflow-hidden bg-cardSlate border border-borderSubtle rounded-2xl p-6 sm:p-10 shadow-2xl">
+      <div class="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 bg-accentCyan/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute bottom-0 left-1/3 -mb-12 w-80 h-80 bg-accentViolet/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="relative z-10 space-y-6">
+        <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-accentCyan/10 border border-accentCyan/30 text-accentCyan text-xs font-mono font-semibold">
+          <span>🚀 LLM 应用开发 · 第 9 章</span>
+        </div>
+
+        <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
+          第一个 LLM 应用：<br>
+          <span class="text-transparent bg-clip-text bg-gradient-to-r from-accentCyan via-accentGold to-accentViolet">从 HTTP API 到完整生产级工程骨架</span>
+        </h1>
+
+        <p class="text-slate-300 text-base sm:text-lg max-w-3xl leading-relaxed">
+          掌握大型语言模型（LLM）调用的底层逻辑：从解决无状态对话的历史 Memory 膨胀问题，到实现 SSE 流式打字机效果、利用 Function Calling 与 Pydantic 打造不可破的高可靠结构化校验防线，以及精准的 Token 成本统计与路由控费机制。
+        </p>
+
+        <!-- 4 KPI Pill Badges -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+          <div class="bg-bgDark/80 border border-borderSubtle p-3 rounded-xl flex flex-col">
+            <span class="text-xs text-slate-400 font-mono">协议覆盖率</span>
+            <span class="text-sm sm:text-base font-bold text-accentCyan">OpenAI 统一 80%+ 模型</span>
+          </div>
+          <div class="bg-bgDark/80 border border-borderSubtle p-3 rounded-xl flex flex-col">
+            <span class="text-xs text-slate-400 font-mono">对话成本复杂度</span>
+            <span class="text-sm sm:text-base font-bold text-accentCoral">无状态多轮 O(N²) 膨胀</span>
+          </div>
+          <div class="bg-bgDark/80 border border-borderSubtle p-3 rounded-xl flex flex-col">
+            <span class="text-xs text-slate-400 font-mono">类型安全</span>
+            <span class="text-sm sm:text-base font-bold text-accentEmerald">Function Call + Pydantic</span>
+          </div>
+          <div class="bg-bgDark/80 border border-borderSubtle p-3 rounded-xl flex flex-col">
+            <span class="text-xs text-slate-400 font-mono">流式 Chunk 陷阱</span>
+            <span class="text-sm sm:text-base font-bold text-accentGold">SSE 末帧 choices=[] 提取</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 9.1 -->
+    <section id="m91" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-borderSubtle pb-4">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-accentCyan/20 text-accentCyan text-sm font-mono">9.1</span>
+          模型 API 全景与协议统一实验室
+        </h2>
+        <p class="text-slate-400 text-sm mt-1">目前大模型市场厂商众多，但 OpenAI Chat Completions 规范已成为行业“事实标准（De Facto Standard）”。</p>
+      </div>
+
+      <!-- Provider Interactive Tabs -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-6">
+        <div class="flex flex-wrap gap-2 border-b border-borderSubtle pb-4" id="provider-tabs">
+          <!-- Populated by JS -->
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Inspector Card -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 space-y-3 font-mono text-xs">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400 font-semibold" id="prov-name">Provider Endpoint</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-accentEmerald/20 text-accentEmerald" id="prov-compat">OpenAI Compatible</span>
+            </div>
+            <div class="space-y-2 text-slate-300">
+              <p><span class="text-slate-500">Base URL:</span> <span class="text-accentCyan" id="prov-url">https://api.openai.com/v1</span></p>
+              <p><span class="text-slate-500">Auth Header:</span> <span class="text-accentGold" id="prov-auth">Authorization: Bearer $OPENAI_API_KEY</span></p>
+              <p><span class="text-slate-500">Message Protocol:</span> <span class="text-accentViolet" id="prov-req">messages: [{role, content}]</span></p>
+              <p><span class="text-slate-500">Model Example:</span> <span class="text-slate-200" id="prov-model">gpt-4o-mini</span></p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-borderSubtle text-slate-400 text-xs font-sans leading-relaxed" id="prov-desc">
+              适配说明描述...
+            </div>
+          </div>
+
+          <!-- Code Diff Inspector -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 font-mono text-xs overflow-x-auto">
+            <div class="text-slate-400 mb-2 font-semibold flex justify-between">
+              <span>Python SDK Client 初始化适配</span>
+              <span class="text-accentCyan">zero-vendor-lockin</span>
+            </div>
+            <pre class="text-slate-300 leading-relaxed"><code id="prov-code"># 代码同步切换演示</code></pre>
+          </div>
+        </div>
+
+        <!-- Protocol Architecture Diagram -->
+        <div class="border border-borderSubtle bg-bgDark/50 rounded-xl p-4">
+          <h4 class="text-xs font-mono font-bold text-accentCyan mb-3 uppercase tracking-wider">架构解耦：ChatProvider (Protocol) 依赖倒置</h4>
+          <div class="flex flex-col md:flex-row items-center justify-between gap-4 text-center text-xs">
+            <div class="w-full md:w-1/4 p-3 bg-cardSlate border border-borderSubtle rounded-lg text-slate-200">
+              <span class="text-accentGold font-bold">业务应用层 (App Logic)</span>
+              <p class="text-[11px] text-slate-400 mt-1">仅与抽象 Protocol 对接</p>
+            </div>
+            <div class="text-accentCyan font-bold">➔ imports ➔</div>
+            <div class="w-full md:w-1/3 p-3 bg-accentCyan/10 border border-accentCyan/30 rounded-lg text-accentCyan font-mono">
+              <span class="font-bold">ChatProvider(Protocol)</span>
+              <div class="text-[10px] text-slate-300 mt-1">chat(messages, **kwargs) -> Response</div>
+            </div>
+            <div class="text-accentCyan font-bold">➔ implements ➔</div>
+            <div class="w-full md:w-1/3 grid grid-cols-2 gap-2 text-[10px]">
+              <div class="p-2 bg-cardSlate border border-borderSubtle rounded">OpenAIAdapter</div>
+              <div class="p-2 bg-cardSlate border border-borderSubtle rounded">DeepSeekAdapter</div>
+              <div class="p-2 bg-cardSlate border border-borderSubtle rounded">ClaudeAdapter</div>
+              <div class="p-2 bg-cardSlate border border-borderSubtle rounded">OllamaLocalAdapter</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 9.2 -->
+    <section id="m92" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-borderSubtle pb-4">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-accentCyan/20 text-accentCyan text-sm font-mono">9.2</span>
+          Chat Completions API：无状态多轮膨胀与参数实验室
+        </h2>
+        <p class="text-slate-400 text-sm mt-1">理解 LLM 的无状态（Stateless）本质：模型没有内建记忆，每一轮对话都依赖客户端全量上报历史上下文，导致 Token 呈 <span class="math">O(N^2)</span> 级二次方暴涨。</p>
+      </div>
+
+      <!-- PART A: Stateless Token Explosion Lab -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-6">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-borderSubtle pb-4">
+          <div>
+            <h3 class="text-base font-bold text-white">Part A: 无状态多轮 Token 暴涨实验</h3>
+            <p class="text-xs text-slate-400 mt-1">证明“模型不记状态，客户端每轮都在为历史重复付费”</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button id="btn-add-turn" class="px-3 py-1.5 bg-accentCyan/20 hover:bg-accentCyan/30 border border-accentCyan/40 text-accentCyan text-xs rounded-lg transition font-medium">
+              + 发送下一轮对话 (+1 Turn)
+            </button>
+            <button id="btn-reset-turn" class="px-3 py-1.5 bg-cardHover border border-borderSubtle text-slate-300 text-xs rounded-lg transition hover:text-white">
+              重置对话
+            </button>
+            <label class="inline-flex items-center cursor-pointer text-xs text-slate-300 ml-2">
+              <input type="checkbox" id="toggle-trim" class="sr-only peer">
+              <div class="relative w-9 h-5 bg-bgDark peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accentEmerald"></div>
+              <span class="ms-2 font-mono text-accentEmerald">trim_messages (keep_last=4)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Left: Active Messages Array Inspector -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 space-y-3 font-mono text-xs flex flex-col">
+            <div class="flex justify-between items-center text-slate-400 border-b border-borderSubtle pb-2">
+              <span>当前客户端发送的 payload.messages (<span id="msg-count-val" class="text-accentCyan">1</span> 条)</span>
+              <span class="text-accentGold font-bold" id="turn-stat-val">Turn 1</span>
+            </div>
+            <div class="space-y-2 flex-grow overflow-y-auto max-h-[280px]" id="messages-inspector">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Right: High-DPI Canvas Token Growth Chart -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 flex flex-col justify-between">
+            <div class="flex justify-between items-center text-xs font-mono mb-2">
+              <span class="text-slate-300">Token 消耗对比 (单轮输入 vs 累计计费)</span>
+              <span class="text-accentCoral font-bold" id="cumulative-token-val">累计计费: 60 Tokens</span>
+            </div>
+            <div class="relative w-full h-[220px]">
+              <canvas id="canvas-token-growth" class="w-full h-full block"></canvas>
+            </div>
+            <div class="flex justify-center gap-6 mt-3 text-[11px] font-mono">
+              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-accentCoral"></span> 无截断累计 Token O(N²)</span>
+              <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-accentEmerald"></span> 开启截断线性 Token O(N)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PART B: Temperature & Max Tokens Lab -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-6">
+        <div>
+          <h3 class="text-base font-bold text-white">Part B: Temperature & max_tokens (finish_reason) 实验室</h3>
+          <p class="text-xs text-slate-400 mt-1">Temperature 调控 Softmax 概率分布平滑度；max_tokens 控制强制截断与结束状态标记</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Temperature Simulator -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 space-y-4">
+            <div class="flex justify-between items-center text-xs font-mono">
+              <span class="text-slate-300 font-bold">temperature: <span id="temp-val" class="text-accentGold font-bold">0.7</span></span>
+              <span class="text-slate-400 text-[11px]" id="temp-desc">默认对话平衡状态</span>
+            </div>
+
+            <input type="range" id="slider-temp" min="0.0" max="2.0" step="0.1" value="0.7" class="w-full accent-accentGold cursor-pointer">
+
+            <!-- Presets -->
+            <div class="flex flex-wrap gap-1.5 text-[11px]">
+              <button class="btn-temp-preset px-2 py-1 bg-cardSlate hover:bg-cardHover border border-borderSubtle rounded text-slate-300" data-val="0.0">0.0 确定/分类</button>
+              <button class="btn-temp-preset px-2 py-1 bg-cardSlate hover:bg-cardHover border border-borderSubtle rounded text-slate-300" data-val="0.3">0.3 问答/总结</button>
+              <button class="btn-temp-preset px-2 py-1 bg-cardSlate hover:bg-cardHover border border-borderSubtle rounded text-slate-300" data-val="0.7">0.7 默认对话</button>
+              <button class="btn-temp-preset px-2 py-1 bg-cardSlate hover:bg-cardHover border border-borderSubtle rounded text-slate-300" data-val="1.2">1.2 创意发散</button>
+              <button class="btn-temp-preset px-2 py-1 bg-cardSlate hover:bg-cardHover border border-borderSubtle rounded text-slate-300" data-val="2.0">2.0 失控胡说</button>
+            </div>
+
+            <!-- Probability Distribution Canvas -->
+            <div class="pt-2">
+              <span class="text-[11px] font-mono text-slate-400">Top-5 Token Sampling Softmax 概率分布：</span>
+              <div class="relative w-full h-[120px] mt-2">
+                <canvas id="canvas-prob" class="w-full h-full block"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Max Tokens Simulator -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 space-y-4 flex flex-col justify-between">
+            <div class="space-y-3">
+              <div class="flex justify-between items-center text-xs font-mono">
+                <span class="text-slate-300 font-bold">max_tokens: <span id="maxtokens-val" class="text-accentCyan font-bold">60</span></span>
+                <span class="text-slate-400 text-[11px]">控制最大生成 Token 数</span>
+              </div>
+              <input type="range" id="slider-maxtokens" min="10" max="120" step="10" value="60" class="w-full accent-accentCyan cursor-pointer">
+
+              <!-- Tabs for finish_reason inspection -->
+              <div class="flex gap-2 border-b border-borderSubtle pb-2 text-xs font-mono">
+                <button class="btn-finish-tab px-2 py-1 rounded bg-accentCyan/20 text-accentCyan border border-accentCyan/30" data-reason="simulated">动态生成模拟</button>
+                <button class="btn-finish-tab px-2 py-1 rounded bg-cardSlate text-slate-400 hover:text-slate-200" data-reason="tool_calls">finish_reason: "tool_calls"</button>
+                <button class="btn-finish-tab px-2 py-1 rounded bg-cardSlate text-slate-400 hover:text-slate-200" data-reason="content_filter">finish_reason: "content_filter"</button>
+              </div>
+            </div>
+
+            <!-- Response JSON Viewer -->
+            <div class="bg-[#090d13] p-3 rounded-md font-mono text-[11px] text-slate-300 overflow-x-auto space-y-1 border border-borderSubtle">
+              <div><span class="text-slate-500">model:</span> <span class="text-accentEmerald">"gpt-4o-mini-2024-07-18"</span></div>
+              <div><span class="text-slate-500">choices[0].message.content:</span></div>
+              <div class="pl-3 text-slate-200 bg-cardSlate/50 p-2 rounded my-1 font-sans border border-borderSubtle/50 min-h-[48px]" id="simulated-content">
+                "Python 中的 asyncio 是用于编写并发代码的库..."
+              </div>
+              <div class="flex items-center justify-between">
+                <div><span class="text-slate-500">choices[0].finish_reason:</span> <span class="px-1.5 py-0.5 rounded font-bold" id="finish-reason-badge">"stop"</span></div>
+                <div class="text-[10px] text-slate-500" id="usage-brief">usage: {prompt_tokens: 25, completion_tokens: 60}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 9.3 -->
+    <section id="m93" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-borderSubtle pb-4">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-accentCyan/20 text-accentCyan text-sm font-mono">9.3</span>
+          Prompt 工程基础：四要素、Few-Shot 与避坑诊所
+        </h2>
+        <p class="text-slate-400 text-sm mt-1">Prompt 是控制 LLM 输出最直接的杠杆。结构化 System Prompt、Few-Shot 示例与正向明确约束是生产环境必备技能。</p>
+      </div>
+
+      <!-- Comparator + FewShot -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Interactive System Prompt Comparator -->
+        <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-4 flex flex-col justify-between">
+          <div>
+            <h3 class="text-base font-bold text-white mb-2">1. System Prompt 四要素结构化对比</h3>
+            <div class="flex gap-2 border-b border-borderSubtle pb-3 text-xs font-mono">
+              <button class="btn-prompt-style px-2.5 py-1.5 rounded bg-accentCoral/20 text-accentCoral border border-accentCoral/30" data-style="bad">模糊写法</button>
+              <button class="btn-prompt-style px-2.5 py-1.5 rounded bg-cardSlate text-slate-400 hover:text-slate-200" data-style="standard">四要素规范写法</button>
+              <button class="btn-prompt-style px-2.5 py-1.5 rounded bg-cardSlate text-slate-400 hover:text-slate-200" data-style="checklist">Checklist 检查清单</button>
+            </div>
+          </div>
+
+          <div class="bg-bgDark p-3 rounded-lg font-mono text-xs space-y-2 border border-borderSubtle min-h-[160px]" id="prompt-structure-view">
+            <!-- Populated by JS -->
+          </div>
+
+          <div class="bg-bgDark/80 p-3 rounded-lg border border-borderSubtle text-xs font-sans space-y-1">
+            <span class="text-slate-400 font-mono text-[10px] uppercase">模拟模型输出稳定性评估：</span>
+            <p class="text-slate-200 font-medium" id="prompt-response-demo">输出包含大量无意义客套话，JSON格式偶发失效。</p>
+          </div>
+        </div>
+
+        <!-- Interactive Few-Shot Classifier Lab -->
+        <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-4 flex flex-col justify-between">
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <h3 class="text-base font-bold text-white">2. Few-Shot 示例分类防线</h3>
+              <div class="flex items-center gap-2 text-xs font-mono">
+                <span class="text-slate-400">模式:</span>
+                <button id="btn-fewshot-toggle" class="px-2 py-1 bg-accentViolet/20 text-accentViolet border border-accentViolet/30 rounded font-bold">3-Shot 格式锁定</button>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400">快速分类工单 (`bug` / `feature` / `question`)</p>
+          </div>
+
+          <!-- Presets -->
+          <div class="space-y-2">
+            <label class="text-xs text-slate-300 font-mono">测试输入样本：</label>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <button class="btn-fewshot-input px-2.5 py-1 bg-bgDark hover:bg-cardHover border border-borderSubtle rounded text-slate-300" data-text="登录后一直转圈加载不出来，控制台报错500">"登录后一直转圈加载不出来"</button>
+              <button class="btn-fewshot-input px-2.5 py-1 bg-bgDark hover:bg-cardHover border border-borderSubtle rounded text-slate-300" data-text="希望支持导出 PDF 报表功能">"希望支持导出 PDF"</button>
+              <button class="btn-fewshot-input px-2.5 py-1 bg-bgDark hover:bg-cardHover border border-borderSubtle rounded text-slate-300" data-text="请问 API 接口默认超时时间是多少秒？">"接口默认超时是多少"</button>
+            </div>
+          </div>
+
+          <!-- Result Inspector -->
+          <div class="bg-bgDark p-3 rounded-lg font-mono text-xs space-y-2 border border-borderSubtle">
+            <div class="flex justify-between text-slate-400 text-[11px]">
+              <span>few_shot_prompt_status</span>
+              <span id="fewshot-shot-badge" class="text-accentEmerald">3 Examples Injected</span>
+            </div>
+            <pre class="text-accentGold text-[11px] overflow-x-auto" id="fewshot-result-json">{ "category": "bug", "confidence": 0.98, "reason": "500异常与界面卡死匹配软件缺陷特征" }</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 Common Prompt Pitfalls Clinic -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-4">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <span>🩺</span> 5 大常见 Prompt 错误诊所（点击查看后果与修正策略）
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-3" id="pitfalls-grid">
+          <!-- Populated by JS -->
+        </div>
+        <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 text-xs font-mono space-y-2" id="pitfall-detail">
+          <span class="text-accentCoral font-bold">点击上方错误类型卡片进行深度解析</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 9.4 -->
+    <section id="m94" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-borderSubtle pb-4">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-accentCyan/20 text-accentCyan text-sm font-mono">9.4</span>
+          结构化输出三档进阶与 Pydantic 校验防线
+        </h2>
+        <p class="text-slate-400 text-sm mt-1">模型本质是概率 Token 生成器，直接要求输出 JSON 存在高风险。生产环境必须建立以 Function Calling + Pydantic 为核心的双重解析防线。</p>
+      </div>
+
+      <!-- 3-Tier Interactive Selector -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-6">
+        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-borderSubtle pb-4">
+          <div class="flex gap-2 font-mono text-xs">
+            <button class="tier-btn px-3 py-2 rounded-lg bg-cardHover text-slate-400 border border-borderSubtle" data-tier="1">Tier 1: Prompt JSON (最不可靠)</button>
+            <button class="tier-btn px-3 py-2 rounded-lg bg-cardHover text-slate-400 border border-borderSubtle" data-tier="2">Tier 2: JSON Mode (保证合法JSON)</button>
+            <button class="tier-btn px-3 py-2 rounded-lg bg-accentCyan/20 text-accentCyan border border-accentCyan/40 font-bold" data-tier="3">Tier 3: Function Call + Pydantic (生产推荐)</button>
+          </div>
+          <span class="text-xs font-mono text-accentGold" id="tier-badge">当前模式：Tier 3 生产推荐级</span>
+        </div>
+
+        <!-- Tier Dynamic Inspector Panel -->
+        <div id="tier-panel-content" class="space-y-4">
+          <!-- Dynamic JS Injection -->
+        </div>
+
+        <!-- Live Sentiment Payload Tester against Pydantic Rules -->
+        <div class="border border-borderSubtle bg-bgDark rounded-xl p-4 space-y-4">
+          <div class="flex justify-between items-center">
+            <h4 class="text-xs font-mono font-bold text-accentCyan uppercase tracking-wider">Pydantic 校验防线实测 (SentimentPayload Model)</h4>
+            <span class="text-[11px] font-mono text-slate-400">Rules: label ∈ ['positive','negative','neutral'], 0 <= confidence <= 1</span>
+          </div>
+
+          <div class="flex flex-wrap gap-2 text-xs">
+            <button class="btn-test-payload px-3 py-1.5 bg-accentEmerald/20 text-accentEmerald border border-accentEmerald/30 rounded-lg hover:bg-accentEmerald/30 transition" data-type="valid">
+              ✅ 正常 JSON Payload
+            </button>
+            <button class="btn-test-payload px-3 py-1.5 bg-accentCoral/20 text-accentCoral border border-accentCoral/30 rounded-lg hover:bg-accentCoral/30 transition" data-type="bad-enum">
+              ❌ 非法枚举 label='mixed'
+            </button>
+            <button class="btn-test-payload px-3 py-1.5 bg-accentCoral/20 text-accentCoral border border-accentCoral/30 rounded-lg hover:bg-accentCoral/30 transition" data-type="bad-range">
+              ❌ 置信度越界 confidence=1.5
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+            <div class="bg-cardSlate p-3 rounded-lg border border-borderSubtle">
+              <span class="text-slate-400 text-[11px] block mb-1">Raw Tool Call Arguments String:</span>
+              <pre class="text-slate-200 overflow-x-auto text-[11px]" id="payload-raw-json">{ "label": "positive", "confidence": 0.95, "summary": "用户对新界面非常满意" }</pre>
+            </div>
+            <div class="bg-cardSlate p-3 rounded-lg border border-borderSubtle flex flex-col justify-between" id="payload-validation-result">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Comparison Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs font-sans border-collapse">
+            <thead>
+              <tr class="border-b border-borderSubtle text-slate-400 font-mono">
+                <th class="py-2 px-3">方案 Tier</th>
+                <th class="py-2 px-3">JSON 语法合规率</th>
+                <th class="py-2 px-3">Schema 字段强约束</th>
+                <th class="py-2 px-3">类型与枚举校验</th>
+                <th class="py-2 px-3">适用场景</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-borderSubtle text-slate-300">
+              <tr>
+                <td class="py-2 px-3 font-mono text-accentCoral">Tier 1: Pure Prompt</td>
+                <td class="py-2 px-3">~70% (易带 markdown/客套话)</td>
+                <td class="py-2 px-3">❌ 无保证</td>
+                <td class="py-2 px-3">❌ 无保证</td>
+                <td class="py-2 px-3">仅限 Demo / 简单实验</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-mono text-accentGold">Tier 2: JSON Mode</td>
+                <td class="py-2 px-3">100% (保证可解析)</td>
+                <td class="py-2 px-3">⚠️ 依赖 Prompt 指导</td>
+                <td class="py-2 px-3">⚠️ 易出现类型混淆</td>
+                <td class="py-2 px-3">轻量化结构化提取</td>
+              </tr>
+              <tr class="bg-accentCyan/5">
+                <td class="py-2 px-3 font-mono text-accentCyan font-bold">Tier 3: Function Call + Pydantic</td>
+                <td class="py-2 px-3 font-bold text-accentEmerald">100% (API 级约束)</td>
+                <td class="py-2 px-3 font-bold text-accentEmerald">✅ 严格按 Schema 填充</td>
+                <td class="py-2 px-3 font-bold text-accentEmerald">✅ Pydantic 客户端强类型校验</td>
+                <td class="py-2 px-3 font-bold text-white">生产级高可靠 API 交付</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="p-3 bg-accentCyan/10 border border-accentCyan/30 rounded-lg text-xs text-slate-200">
+          <span class="text-accentCyan font-bold font-mono">核心法则：</span> 模型输出在工程层面永远是“不可信输入（Untrusted Input）”。任何进入核心业务逻辑的数据，客户端必须使用 Pydantic 进行第二次强类型反序列化校验。
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 9.5 -->
+    <section id="m95" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-borderSubtle pb-4">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-accentCyan/20 text-accentCyan text-sm font-mono">9.5</span>
+          流式 SSE 输出、Token 计费与省钱三招
+        </h2>
+        <p class="text-slate-400 text-sm mt-1">HTTP Chunked SSE 流式响应是改善 LLM 交互首字延迟（TTFT）的标准方案。同时必须精确捕捉末帧的 <span class="math">usage</span> 数据并实施控费策略。</p>
+      </div>
+
+      <!-- PART A: SSE Streaming Frame Anatomy Theater -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-6">
+        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-borderSubtle pb-4">
+          <div>
+            <h3 class="text-base font-bold text-white">Part A: SSE 流式 Frame 拆解与防空指针剖析</h3>
+            <p class="text-xs text-slate-400 mt-1">观察真实流式传输中的 <span class="math">data: {...}</span> 帧与末帧 <span class="math">choices: []</span> 提取 <span class="math">usage</span></p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button id="btn-run-sse" class="px-3 py-1.5 bg-accentCyan hover:bg-accentCyan/80 text-bgDark font-bold text-xs rounded-lg transition shadow-md">
+              ▶ 模拟流式请求 (stream=True)
+            </button>
+            <button id="btn-step-sse" class="px-3 py-1.5 bg-cardHover border border-borderSubtle text-slate-300 text-xs rounded-lg transition hover:text-white">
+              单步步进 ➔
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Left: Stream Response Screen -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 space-y-3 font-mono text-xs flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center text-slate-400 border-b border-borderSubtle pb-2">
+                <span>终端打字机效果 (UI Canvas)</span>
+                <span class="text-accentEmerald" id="sse-status">Ready</span>
+              </div>
+              <div class="mt-3 p-3 bg-cardSlate/80 rounded border border-borderSubtle/50 text-slate-200 min-h-[120px] font-sans text-sm leading-relaxed term-cursor" id="sse-typewriter">
+                点击上方按钮开始模拟流式传输...
+              </div>
+            </div>
+
+            <!-- Accumulated Usage Brief -->
+            <div class="p-3 bg-[#090d13] rounded border border-borderSubtle flex justify-between items-center text-[11px]">
+              <span class="text-slate-400">Captured Stream Usage:</span>
+              <span class="text-accentGold font-bold" id="sse-captured-usage">prompt: 10 | completion: 0 | total: 0</span>
+            </div>
+          </div>
+
+          <!-- Right: Raw SSE Chunks Inspector -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 font-mono text-xs flex flex-col justify-between">
+            <div class="flex justify-between items-center text-slate-400 border-b border-borderSubtle pb-2">
+              <span>原始 SSE 报文 (data: Chunk)</span>
+              <span class="text-accentViolet">include_usage=True</span>
+            </div>
+            <div class="space-y-1.5 my-2 max-h-[220px] overflow-y-auto" id="sse-chunks-log">
+              <!-- Dynamically populated -->
+            </div>
+            <div class="p-2 bg-accentCoral/10 border border-accentCoral/30 rounded text-[11px] text-slate-300">
+              <span class="text-accentCoral font-bold">⚠️ 防防御性编程陷阱：</span> 最后一个 usage 帧的 <span class="math">choices</span> 为空数组 <span class="math">[]</span>。若直接访问 <span class="math">chunk.choices[0].delta</span> 将抛出 <span class="math">IndexError</span>！代码中必须加条件判断：<span class="math">if chunk.choices:</span>。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PART B: Cost Estimator & 3 Tricks -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-6">
+        <div>
+          <h3 class="text-base font-bold text-white">Part B: Token 成本估算器与生产省钱三招</h3>
+          <p class="text-xs text-slate-400 mt-1">Output Token 价格通常是 Input Token 的 3~4 倍。优化上下文与模型路由是降本关键。</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Control Panel -->
+          <div class="bg-bgDark border border-borderSubtle rounded-lg p-4 space-y-4">
+            <div class="space-y-1">
+              <label class="text-xs font-mono text-slate-300">选择基准模型：</label>
+              <select id="cost-model-select" class="w-full bg-cardSlate border border-borderSubtle rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono">
+                <option value="gpt-4o-mini">gpt-4o-mini ($0.15 / $0.60 per 1M)</option>
+                <option value="gpt-4o">gpt-4o ($2.50 / $10.00 per 1M)</option>
+                <option value="deepseek-chat">deepseek-chat ($0.14 / $0.28 per 1M)</option>
+              </select>
+            </div>
+
+            <div class="space-y-3 text-xs font-mono">
+              <div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Prompt Tokens (输入):</span>
+                  <span class="text-accentCyan font-bold" id="cost-prompt-val">2,000</span>
+                </div>
+                <input type="range" id="slider-cost-prompt" min="200" max="10000" step="200" value="2000" class="w-full accent-accentCyan cursor-pointer">
+              </div>
+
+              <div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Completion Tokens (输出):</span>
+                  <span class="text-accentGold font-bold" id="cost-completion-val">500</span>
+                </div>
+                <input type="range" id="slider-cost-completion" min="50" max="4000" step="50" value="500" class="w-full accent-accentGold cursor-pointer">
+              </div>
+            </div>
+
+            <!-- Toggles for 3 Cost-Saving Strategies -->
+            <div class="pt-2 border-t border-borderSubtle space-y-2 text-xs font-mono">
+              <span class="text-slate-400 text-[11px] font-bold uppercase">省钱策略叠加切换：</span>
+
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-slate-300">① 截断历史 (trim_messages)</span>
+                <input type="checkbox" id="trick-trim" class="accent-accentEmerald">
+              </label>
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-slate-300">② 便宜模型路由 Router</span>
+                <input type="checkbox" id="trick-router" class="accent-accentEmerald">
+              </label>
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-slate-300">③ Prompt Cache (命中 50%)</span>
+                <input type="checkbox" id="trick-cache" class="accent-accentEmerald">
+              </label>
+            </div>
+          </div>
+
+          <!-- Chart & Cost Breakdown -->
+          <div class="lg:col-span-2 bg-bgDark border border-borderSubtle rounded-lg p-4 flex flex-col justify-between">
+            <div class="flex justify-between items-center text-xs font-mono mb-2">
+              <span class="text-slate-300 font-bold">单次请求费用估算对比</span>
+              <span class="text-accentEmerald font-bold text-sm" id="cost-calculated-total">$0.000600 USD</span>
+            </div>
+
+            <div class="relative w-full h-[180px]">
+              <canvas id="canvas-cost-bar" class="w-full h-full block"></canvas>
+            </div>
+
+            <!-- Cost Saving Summary -->
+            <div class="grid grid-cols-3 gap-2 mt-3 text-center text-[11px] font-mono">
+              <div class="p-2 bg-cardSlate rounded border border-borderSubtle">
+                <span class="text-slate-400 block">原始预估</span>
+                <span class="text-slate-200 font-bold" id="cost-orig">$0.000600</span>
+              </div>
+              <div class="p-2 bg-cardSlate rounded border border-borderSubtle">
+                <span class="text-slate-400 block">优化后预估</span>
+                <span class="text-accentEmerald font-bold" id="cost-opt">$0.000600</span>
+              </div>
+              <div class="p-2 bg-cardSlate rounded border border-borderSubtle">
+                <span class="text-slate-400 block">累计降本幅度</span>
+                <span class="text-accentGold font-bold" id="cost-saved-percent">0.0%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 9.6 -->
+    <section id="m96" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-borderSubtle pb-4">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-accentCyan/20 text-accentCyan text-sm font-mono">9.6</span>
+          实战沙盒、1~9 章 RAG 全景、代码库与互动测验
+        </h2>
+        <p class="text-slate-400 text-sm mt-1">体验完整的 CLI Chatbot 模拟运行环境，查看全套生产级工程代码与 1~9 章完整的 RAG 系统架构串联图。</p>
+      </div>
+
+      <!-- Terminal CLI Chatbot Simulator -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-borderSubtle pb-3">
+          <div class="flex items-center space-x-2">
+            <span class="w-3 h-3 rounded-full bg-accentCoral"></span>
+            <span class="w-3 h-3 rounded-full bg-accentGold"></span>
+            <span class="w-3 h-3 rounded-full bg-accentEmerald"></span>
+            <span class="font-mono text-xs text-slate-400 ml-2">python playground_ch9.py --mock</span>
+          </div>
+          <div class="flex gap-2 text-xs font-mono">
+            <button class="cmd-pill px-2 py-0.5 bg-bgDark border border-borderSubtle rounded hover:text-accentCyan" data-cmd="/help">/help</button>
+            <button class="cmd-pill px-2 py-0.5 bg-bgDark border border-borderSubtle rounded hover:text-accentCyan" data-cmd="/stats">/stats</button>
+            <button class="cmd-pill px-2 py-0.5 bg-bgDark border border-borderSubtle rounded hover:text-accentCyan" data-cmd="/history">/history</button>
+            <button class="cmd-pill px-2 py-0.5 bg-bgDark border border-borderSubtle rounded hover:text-accentCyan" data-cmd="/save">/save</button>
+            <button class="cmd-pill px-2 py-0.5 bg-bgDark border border-borderSubtle rounded hover:text-accentCyan" data-cmd="/clear">/clear</button>
+          </div>
+        </div>
+
+        <!-- Terminal Output Area -->
+        <div class="bg-[#070a0f] p-4 rounded-lg font-mono text-xs space-y-3 min-h-[220px] max-h-[320px] overflow-y-auto border border-borderSubtle/60" id="term-output">
+          <div class="text-accentCyan">🤖 Playground Ch9 Terminal CLI Initialized (Mock Transport Active).</div>
+          <div class="text-slate-400">Type a message or use quick commands like /stats, /save, /history.</div>
+        </div>
+
+        <!-- Terminal Input Controls -->
+        <form id="term-form" class="flex gap-2">
+          <input type="text" id="term-input" placeholder="输入对话或命令 (例如: 请解释 Python asyncio 的优势...)" class="flex-grow bg-bgDark border border-borderSubtle rounded-lg px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-accentCyan">
+          <button type="submit" class="px-4 py-2 bg-accentCyan text-bgDark font-bold text-xs rounded-lg hover:bg-accentCyan/80 transition">发送</button>
+        </form>
+
+        <!-- Live Status Bar -->
+        <div class="flex justify-between items-center text-[11px] font-mono text-slate-400 bg-bgDark/50 p-2 rounded border border-borderSubtle/40">
+          <span>UsageTracker: <span id="term-tracker-val" class="text-accentGold">Total: 0 tokens ($0.0000)</span></span>
+          <span>History Window: <span id="term-history-val" class="text-accentEmerald">1 / 4 msgs (Trim Active)</span></span>
+        </div>
+      </div>
+
+      <!-- 6 Engineering Design Points Cards -->
+      <div class="space-y-3">
+        <h3 class="text-base font-bold text-white font-mono">6 大生产级工程设计要点</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div class="bg-cardSlate border border-borderSubtle p-3 rounded-lg text-xs space-y-1">
+            <span class="text-accentCyan font-mono font-bold">1. asyncio.to_thread 异步化</span>
+            <p class="text-slate-400">同步 SDK 调用不可阻塞 FastAPI/Streamlit 主事件循环，统一包进线程池。</p>
+          </div>
+          <div class="bg-cardSlate border border-borderSubtle p-3 rounded-lg text-xs space-y-1">
+            <span class="text-accentEmerald font-mono font-bold">2. 请求前历史截断 (Trim First)</span>
+            <p class="text-slate-400">在 payload 组装的最早期即执行 trim_messages，确保不超时上报无用长文。</p>
+          </div>
+          <div class="bg-cardSlate border border-borderSubtle border border-borderSubtle p-3 rounded-lg text-xs space-y-1">
+            <span class="text-accentGold font-mono font-bold">3. 末帧 Usage 防空指针</span>
+            <p class="text-slate-400">处理 choices: [] 空数组帧，避免 chunk.choices[0] 触发 IndexError 崩塌。</p>
+          </div>
+          <div class="bg-cardSlate border border-borderSubtle p-3 rounded-lg text-xs space-y-1">
+            <span class="text-accentCoral font-mono font-bold">4. 异常分级与重试捕获</span>
+            <p class="text-slate-400">细分 RateLimitError (429)、APIConnectionError 与 AuthenticationError (401)。</p>
+          </div>
+          <div class="bg-cardSlate border border-borderSubtle p-3 rounded-lg text-xs space-y-1">
+            <span class="text-accentViolet font-mono font-bold">5. 模版化 Pricing 计费表</span>
+            <p class="text-slate-400">维护模型单价字典，实现每次请求自动累计 Prompt 与 Completion 美金开销。</p>
+          </div>
+          <div class="bg-cardSlate border border-borderSubtle p-3 rounded-lg text-xs space-y-1">
+            <span class="text-accentCyan font-mono font-bold">6. 离线 MockTransport 单元测试</span>
+            <p class="text-slate-400">通过 httpx.MockTransport 拦截网络请求，零 Token 消耗完成 CI/CD 自动化测试。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1~9 章 RAG 全景架构图 (Clickable Nodes) -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-4">
+        <h3 class="text-base font-bold text-white flex items-center justify-between">
+          <span>第 1~9 章串联：生产级 RAG 系统完整骨架图</span>
+          <span class="text-xs font-mono text-accentCyan">Click node to inspect chapter connection</span>
+        </h3>
+
+        <div class="grid grid-cols-3 sm:grid-cols-9 gap-2 text-center text-xs font-mono" id="rag-map-nodes">
+          <!-- Populated by JS -->
+        </div>
+
+        <div class="bg-bgDark p-3 rounded-lg text-xs font-mono border border-borderSubtle text-slate-300" id="rag-node-detail">
+          <span class="text-accentGold font-bold">点击上方 1~9 章节点，查看各章节在完整应用骨架中的职能配合。</span>
+        </div>
+      </div>
+
+      <!-- Tabbed Python Code Repository -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-borderSubtle pb-3">
+          <h3 class="text-base font-bold text-white font-mono">第 9 章生产级代码库</h3>
+          <div class="flex items-center gap-2">
+            <div class="flex gap-1 font-mono text-xs">
+              <button class="code-tab-btn px-2.5 py-1 rounded bg-accentCyan/20 text-accentCyan border border-accentCyan/30" data-file="structured">structured_tool.py</button>
+              <button class="code-tab-btn px-2.5 py-1 rounded bg-cardHover text-slate-400 border border-borderSubtle" data-file="stream">stream_usage.py</button>
+              <button class="code-tab-btn px-2.5 py-1 rounded bg-cardHover text-slate-400 border border-borderSubtle" data-file="playground">playground_ch9.py</button>
+            </div>
+            <button id="btn-copy-code" class="px-3 py-1 bg-bgDark border border-borderSubtle text-xs text-accentCyan hover:text-white rounded transition font-mono">
+              📋 一键复制
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-bgDark p-4 rounded-lg font-mono text-xs text-slate-300 overflow-x-auto code-glow max-h-[360px]">
+          <pre><code id="code-repo-display"># 正在加载代码...</code></pre>
+        </div>
+      </div>
+
+      <!-- 5-Question Interactive Multiple-Choice Quiz -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-6">
+        <div class="border-b border-borderSubtle pb-3">
+          <h3 class="text-base font-bold text-white font-mono flex items-center gap-2">
+            <span>📝</span> 第 9 章 核心概念互动测验 (5 题)
+          </h3>
+          <p class="text-xs text-slate-400 mt-1">检验你对无状态多轮、finish_reason、Function Calling 解析与 SSE 末帧提取的理解</p>
+        </div>
+
+        <div class="space-y-6" id="quiz-container">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- 13-Point Chapter Summary Grid -->
+      <div class="bg-cardSlate border border-borderSubtle rounded-xl p-5 space-y-4">
+        <h3 class="text-base font-bold text-white font-mono border-b border-borderSubtle pb-3">第 9 章 知识要点速览 13 格</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentCyan font-bold block">1. 协议统一</span>通用 ChatCompletions</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentCoral font-bold block">2. 无状态本质</span>客户端全量上报 history</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentGold font-bold block">3. O(N²) 暴涨</span>历史未截断的二次方付费</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentEmerald font-bold block">4. trim_messages</span>保留系统词与最新 K 轮</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentViolet font-bold block">5. Temperature</span> Softmax 概率分布平滑</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentCyan font-bold block">6. finish_reason</span> stop / length / tool_calls</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentGold font-bold block">7. Prompt 四要素</span>身份 + 任务 + 约束 + 边界</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentEmerald font-bold block">8. Few-Shot 锁死</span>用 3-Shot 锁定极简 JSON</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentCoral font-bold block">9. Tier 3 校验</span>Func Call + Pydantic 校验</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentCyan font-bold block">10. SSE Chunk</span> stream=True 打字机效果</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentGold font-bold block">11. choices: [] 帧</span>末帧Usage防空指针捕获</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle"><span class="text-accentEmerald font-bold block">12. Output 4x 贵</span>输出 Token 费用远高于输入</div>
+          <div class="p-2.5 bg-bgDark rounded border border-borderSubtle font-bold text-center col-span-2 sm:col-span-1 bg-accentCyan/10 text-accentCyan border-accentCyan/30">
+            13. 生产级哲学<br>模型输出永远是不可信输入
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="border-t border-borderSubtle py-6 bg-cardSlate mt-12">
+    <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 font-mono">
+      LLM 应用开发系列教程 · 第 9 章：第一个 LLM 应用 —— 对话、流式输出、结构化校验与成本统计
+    </div>
+  </footer>
+
+  <!-- MAIN JAVASCRIPT SIMULATIONS & LOGIC -->
+  <script>
+    // High-DPI Canvas Helper
+    function setupRetinaCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width: rect.width, height: rect.height };
+    }
+
+    // --- MODULE 9.1 DATA & CONTROLLER ---
+    const providersData = {
+      openai: {
+        name: "OpenAI (标准官方)",
+        url: "https://api.openai.com/v1",
+        auth: "Authorization: Bearer $OPENAI_API_KEY",
+        req: "messages: [{role, content}]",
+        model: "gpt-4o-mini",
+        compat: "原生标准",
+        desc: "ChatCompletions 规范的鼻祖。其它大多数提供商通过完全兼容 OpenAI 的 RESTful 结构实现一键无缝接入。",
+        code: `from openai import OpenAI\n\nclient = OpenAI(api_key="sk-...")\nresponse = client.chat.completions.create(\n    model="gpt-4o-mini",\n    messages=[{"role": "user", "content": "Hello!"}]\n)`
+      },
+      deepseek: {
+        name: "DeepSeek (深度求索)",
+        url: "https://api.deepseek.com/v1",
+        auth: "Authorization: Bearer $DEEPSEEK_API_KEY",
+        req: "messages: [{role, content}]",
+        model: "deepseek-chat",
+        compat: "100% OpenAI 兼容",
+        desc: "完全兼容 OpenAI SDK！仅需在初始化 OpenAI Client 时修改 base_url 与 model 名称，代码逻辑 0 改动。",
+        code: `from openai import OpenAI\n\nclient = OpenAI(\n    api_key="sk-deepseek-...",\n    base_url="https://api.deepseek.com/v1"\n)\nresponse = client.chat.completions.create(\n    model="deepseek-chat",\n    messages=[{"role": "user", "content": "你好！"}]\n)`
+      },
+      tongyi: {
+        name: "通义 / 智谱 / Moonshot",
+        url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        auth: "Authorization: Bearer $DASHSCOPE_API_KEY",
+        req: "messages: [{role, content}]",
+        model: "qwen-max / glm-4 / moonshot-v1-8k",
+        compat: "兼容模式 (Compatible Mode)",
+        desc: "国内主流云厂商均提供了兼容 Mode Endpoint，使用官方 openai 库直接连接即可接入生态。",
+        code: `from openai import OpenAI\n\nclient = OpenAI(\n    api_key="sk-dashscope-...",\n    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"\n)\nresponse = client.chat.completions.create(\n    model="qwen-max",\n    messages=[{"role": "user", "content": "你好通义！"}]\n)`
+      },
+      claude: {
+        name: "Anthropic Claude",
+        url: "https://api.anthropic.com/v1/messages",
+        auth: "x-api-key: $ANTHROPIC_API_KEY",
+        req: "system + messages: [{role, content}]",
+        model: "claude-3-5-sonnet-20241022",
+        compat: "专属 SDK 协议",
+        desc: "System Prompt 独立作为顶层参数传递，且无 completions 端点，格式微调但逻辑一致。",
+        code: `import anthropic\n\nclient = anthropic.Anthropic(api_key="sk-ant-...")\nresponse = client.messages.create(\n    model="claude-3-5-sonnet-20241022",\n    max_tokens=1024,\n    system="你是一名专业工程师。",\n    messages=[{"role": "user", "content": "Hello Claude"}]\n)`
+      },
+      gemini: {
+        name: "Google Gemini",
+        url: "https://generativelanguage.googleapis.com/v1beta",
+        auth: "Header or URL param key=$GEMINI_API_KEY",
+        req: "contents: [{role, parts: [{text}]}]",
+        model: "gemini-1.5-flash",
+        compat: "Google Native Protocol",
+        desc: "使用 contents 和 parts 数据结构。官方提供了 google-generativeai SDK 进行封装。",
+        code: `import google.generativeai as genai\n\ngenai.configure(api_key="AIzaSy...")\nmodel = genai.GenerativeModel("gemini-1.5-flash")\nresponse = model.generate_content("Hello Gemini")`
+      },
+      ollama: {
+        name: "Ollama (本地私有化)",
+        url: "http://localhost:11434/v1",
+        auth: "Authorization: Bearer ollama (任意填充)",
+        req: "messages: [{role, content}]",
+        model: "llama3.2:latest / qwen2.5:7b",
+        compat: "本地 OpenAI 兼容代理",
+        desc: "Ollama 内置了 /v1 OpenAI 兼容层，本地零成本开发调试的首选！",
+        code: `from openai import OpenAI\n\nclient = OpenAI(\n    base_url="http://localhost:11434/v1",\n    api_key="ollama" # 必须传非空字符串\n)\nresponse = client.chat.completions.create(\n    model="qwen2.5:7b",\n    messages=[{"role": "user", "content": "本地测试"}]\n)`
+      }
+    };
+
+    function initModule91() {
+      const tabsContainer = document.getElementById('provider-tabs');
+      tabsContainer.innerHTML = '';
+      
+      Object.keys(providersData).forEach((key, idx) => {
+        const p = providersData[key];
+        const btn = document.createElement('button');
+        btn.className = `px-3 py-1.5 text-xs font-mono rounded-lg border transition ${idx === 0 ? 'bg-accentCyan/20 text-accentCyan border-accentCyan/40 font-bold' : 'bg-bgDark text-slate-400 border-borderSubtle hover:text-slate-200'}`;
+        btn.innerText = p.name;
+        btn.onclick = () => selectProvider(key, btn);
+        tabsContainer.appendChild(btn);
+      });
+
+      selectProvider('openai', tabsContainer.children[0]);
+    }
+
+    function selectProvider(key, btnEl) {
+      const p = providersData[key];
+      document.querySelectorAll('#provider-tabs button').forEach(b => {
+        b.className = 'px-3 py-1.5 text-xs font-mono rounded-lg border border-borderSubtle bg-bgDark text-slate-400 hover:text-slate-200 transition';
+      });
+      btnEl.className = 'px-3 py-1.5 text-xs font-mono rounded-lg border border-accentCyan/40 bg-accentCyan/20 text-accentCyan font-bold transition';
+
+      document.getElementById('prov-name').innerText = p.name;
+      document.getElementById('prov-compat').innerText = p.compat;
+      document.getElementById('prov-url').innerText = p.url;
+      document.getElementById('prov-auth').innerText = p.auth;
+      document.getElementById('prov-req').innerText = p.req;
+      document.getElementById('prov-model').innerText = p.model;
+      document.getElementById('prov-desc').innerText = p.desc;
+      document.getElementById('prov-code').innerText = p.code;
+    }
+
+    // --- MODULE 9.2 DATA & CONTROLLER ---
+    let turnsHistory = [];
+    let isTrimActive = false;
+
+    const baseQuestions = [
+      { user: "你好，我想开发一个 Python 爬虫应用。", assistant: "你好！开发 Python 爬虫通常建议使用 requests 或 httpx 结合 BeautifulSoup4，若是异步高并发场景，可选择 aiohttp 或 Playwright。" },
+      { user: "请问如果遇到反爬验证码该怎么处理？", assistant: "面对验证码，常见的策略包括：1. 降低请求频率并使用代理 IP 池；2. 使用 Selenium/Playwright 模拟真实浏览器行为；3. 对接打码平台或使用 OCR 模型（如 EasyOCR）。" },
+      { user: "能给我一份简易的 Playwright 异步代码示例吗？", assistant: "当然可以！示例：\nimport asyncio\nfrom playwright.async_api import async_playwright\n\nasync def main():\n    async with async_playwright() as p:\n        browser = await p.chromium.launch()\n        page = await browser.new_page()\n        await page.goto('https://example.com')\n        print(await page.title())" },
+      { user: "好的，那如果我想把爬取的数据保存到 PostgreSQL 呢？", assistant: "你可以使用 asyncpg 或 SQLAlchemy 2.0 (AsyncSession)。首先创建连接池，然后在解析提取数据后执行 async with pool.acquire() 批量插入数据库。" },
+      { user: "如何防止插入时主键冲突？", assistant: "在 PostgreSQL 中，可以使用 ON CONFLICT (id) DO UPDATE 设置 upsert 语法，或者 DO NOTHING 自动忽略已存在的重复记录。" }
+    ];
+
+    function initModule92PartA() {
+      turnsHistory = [baseQuestions[0]];
+      document.getElementById('btn-add-turn').onclick = () => {
+        if (turnsHistory.length < baseQuestions.length) {
+          turnsHistory.push(baseQuestions[turnsHistory.length]);
+          renderModule92A();
+        }
+      };
+      document.getElementById('btn-reset-turn').onclick = () => {
+        turnsHistory = [baseQuestions[0]];
+        renderModule92A();
+      };
+      document.getElementById('toggle-trim').onchange = (e) => {
+        isTrimActive = e.target.checked;
+        renderModule92A();
+      };
+
+      renderModule92A();
+    }
+
+    function renderModule92A() {
+      const countVal = document.getElementById('msg-count-val');
+      const turnStat = document.getElementById('turn-stat-val');
+      const inspector = document.getElementById('messages-inspector');
+
+      // System message + user/assistant pairs
+      let rawMessages = [{ role: "system", content: "你是一个专业的 Python 技术顾问。" }];
+      turnsHistory.forEach(t => {
+        rawMessages.push({ role: "user", content: t.user });
+        rawMessages.push({ role: "assistant", content: t.assistant });
+      });
+
+      // Apply Trim if enabled
+      let sentMessages = [...rawMessages];
+      if (isTrimActive && sentMessages.length > 5) {
+        // keep system (index 0) + last 4 messages
+        const systemMsg = sentMessages[0];
+        const tail = sentMessages.slice(-4);
+        sentMessages = [systemMsg, ...tail];
+      }
+
+      countVal.innerText = `${sentMessages.length} 条`;
+      turnStat.innerText = `Turn ${turnsHistory.length}`;
+
+      inspector.innerHTML = '';
+      sentMessages.forEach((m, idx) => {
+        const div = document.createElement('div');
+        div.className = "p-2 rounded bg-cardSlate border border-borderSubtle text-[11px] leading-snug";
+        let roleBadge = '';
+        if (m.role === 'system') roleBadge = '<span class="text-accentGold font-bold">[system]</span>';
+        else if (m.role === 'user') roleBadge = '<span class="text-accentCyan font-bold">[user]</span>';
+        else roleBadge = '<span class="text-accentEmerald font-bold">[assistant]</span>';
+
+        div.innerHTML = `${roleBadge} <span class="text-slate-300">${m.content.length > 50 ? m.content.substring(0, 50) + '...' : m.content}</span>`;
+        inspector.appendChild(div);
+      });
+
+      // Render Chart
+      drawTokenGrowthChart(turnsHistory.length, isTrimActive);
+    }
+
+    function drawTokenGrowthChart(turnCount, trimmed) {
+      const canvas = document.getElementById('canvas-token-growth');
+      if (!canvas) return;
+      const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Grid
+      ctx.strokeStyle = '#233044';
+      ctx.lineWidth = 1;
+      for (let y = 30; y < height - 20; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(30, y);
+        ctx.lineTo(width - 10, y);
+        ctx.stroke();
+      }
+
+      const turns = [1, 2, 3, 4, 5];
+      // Untrimmed cumulative token progression
+      const untrimmedCumulative = [60, 180, 380, 680, 1100];
+      // Trimmed cumulative token progression
+      const trimmedCumulative = [60, 180, 320, 460, 600];
+
+      const maxVal = 1200;
+      const startX = 40;
+      const endX = width - 20;
+      const startY = height - 30;
+      const endY = 20;
+
+      const getX = (t) => startX + ((t - 1) / 4) * (endX - startX);
+      const getY = (val) => startY - (val / maxVal) * (startY - endY);
+
+      // Draw Untrimmed Line (Coral)
+      ctx.beginPath();
+      ctx.strokeStyle = '#ff6b6b';
+      ctx.lineWidth = 3;
+      turns.forEach((t, i) => {
+        if (t <= turnCount) {
+          const x = getX(t);
+          const y = getY(untrimmedCumulative[i]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+
+      // Draw Trimmed Line (Emerald)
+      if (trimmed) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 4]);
+        turns.forEach((t, i) => {
+          if (t <= turnCount) {
+            const x = getX(t);
+            const y = getY(trimmedCumulative[i]);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Draw Points
+      turns.forEach((t, i) => {
+        if (t <= turnCount) {
+          const x = getX(t);
+          const y1 = getY(untrimmedCumulative[i]);
+          ctx.fillStyle = '#ff6b6b';
+          ctx.beginPath();
+          ctx.arc(x, y1, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (trimmed) {
+            const y2 = getY(trimmedCumulative[i]);
+            ctx.fillStyle = '#4ade80';
+            ctx.beginPath();
+            ctx.arc(x, y2, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // X Axis labels
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '10px JetBrains Mono';
+          ctx.fillText(`T${t}`, x - 6, height - 10);
+        }
+      });
+
+      const currentCumulative = trimmed ? trimmedCumulative[turnCount - 1] : untrimmedCumulative[turnCount - 1];
+      document.getElementById('cumulative-token-val').innerText = `累计计费: ${currentCumulative} Tokens`;
+    }
+
+    // --- MODULE 9.2 PART B ---
+    function initModule92PartB() {
+      const sliderTemp = document.getElementById('slider-temp');
+      const tempVal = document.getElementById('temp-val');
+      const tempDesc = document.getElementById('temp-desc');
+
+      const sliderMax = document.getElementById('slider-maxtokens');
+      const maxVal = document.getElementById('maxtokens-val');
+
+      sliderTemp.oninput = (e) => {
+        const v = parseFloat(e.target.value);
+        tempVal.innerText = v.toFixed(1);
+        updateTempDesc(v);
+        drawProbabilityChart(v);
+      };
+
+      document.querySelectorAll('.btn-temp-preset').forEach(btn => {
+        btn.onclick = () => {
+          const v = parseFloat(btn.getAttribute('data-val'));
+          sliderTemp.value = v;
+          tempVal.innerText = v.toFixed(1);
+          updateTempDesc(v);
+          drawProbabilityChart(v);
+        };
+      });
+
+      sliderMax.oninput = (e) => {
+        const v = parseInt(e.target.value);
+        maxVal.innerText = v;
+        updateSimulatedResponse();
+      };
+
+      document.querySelectorAll('.btn-finish-tab').forEach(btn => {
+        btn.onclick = () => {
+          document.querySelectorAll('.btn-finish-tab').forEach(b => {
+            b.className = 'btn-finish-tab px-2 py-1 rounded bg-cardSlate text-slate-400 hover:text-slate-200';
+          });
+          btn.className = 'btn-finish-tab px-2 py-1 rounded bg-accentCyan/20 text-accentCyan border border-accentCyan/30';
+          const reason = btn.getAttribute('data-reason');
+          renderSpecialFinishReason(reason);
+        };
+      });
+
+      drawProbabilityChart(0.7);
+      updateSimulatedResponse();
+    }
+
+    function updateTempDesc(v) {
+      const descEl = document.getElementById('temp-desc');
+      if (v === 0.0) descEl.innerText = "绝对确定 (Greedy Argmax / 适合提取分类)";
+      else if (v <= 0.3) descEl.innerText = "低随机性 (适合严谨问答与代码生成)";
+      else if (v <= 0.8) descEl.innerText = "默认对话 (平衡创造力与准确度)";
+      else if (v <= 1.5) descEl.innerText = "高创造力 (适合写诗头脑风暴)";
+      else descEl.innerText = "极高随机性 (Softmax 趋于均匀，易胡言乱语)";
+    }
+
+    function drawProbabilityChart(temp) {
+      const canvas = document.getElementById('canvas-prob');
+      if (!canvas) return;
+      const { ctx, width, height } = setupRetinaCanvas(canvas);
+      ctx.clearRect(0, 0, width, height);
+
+      // Raw logits for Top-5 candidate tokens
+      const logits = [4.5, 3.2, 2.1, 1.0, 0.2];
+      const tokens = ["asyncio", "threading", "multiprocessing", "concurrent", "twisted"];
+
+      let probs = [];
+      if (temp === 0) {
+        probs = [1.0, 0.0, 0.0, 0.0, 0.0];
+      } else {
+        const expLogits = logits.map(l => Math.exp(l / temp));
+        const sumExp = expLogits.reduce((a, b) => a + b, 0);
+        probs = expLogits.map(e => e / sumExp);
+      }
+
+      const barWidth = (width - 40) / 5;
+      probs.forEach((p, i) => {
+        const x = 20 + i * barWidth;
+        const barH = p * (height - 35);
+        const y = height - 20 - barH;
+
+        ctx.fillStyle = i === 0 ? '#f0b429' : '#58c4dd';
+        ctx.fillRect(x + 5, y, barWidth - 10, barH);
+
+        // Percentage text
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = '9px JetBrains Mono';
+        ctx.fillText(`${(p * 100).toFixed(1)}%`, x + 6, y - 4);
+
+        // Token Label
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(tokens[i].substring(0, 7), x + 4, height - 6);
+      });
+    }
+
+    function updateSimulatedResponse() {
+      const maxT = parseInt(document.getElementById('slider-maxtokens').value);
+      const contentEl = document.getElementById('simulated-content');
+      const badgeEl = document.getElementById('finish-reason-badge');
+      const usageEl = document.getElementById('usage-brief');
+
+      const fullText = "Python 中的 asyncio 是用于编写单线程并发代码的库。它使用 async/await 语法，非常适合处理 I/O 密集型任务，例如网络爬虫与高并发 Web 服务。";
+
+      // Approx 1 char = 0.6 token
+      const numChars = Math.min(fullText.length, Math.floor(maxT * 0.9));
+      const textSnippet = fullText.substring(0, numChars);
+
+      if (numChars < fullText.length) {
+        contentEl.innerText = `"${textSnippet}..." [被截断]`;
+        badgeEl.innerText = '"length"';
+        badgeEl.className = "px-1.5 py-0.5 rounded font-bold bg-accentCoral/20 text-accentCoral border border-accentCoral/30";
+      } else {
+        contentEl.innerText = `"${fullText}"`;
+        badgeEl.innerText = '"stop"';
+        badgeEl.className = "px-1.5 py-0.5 rounded font-bold bg-accentEmerald/20 text-accentEmerald border border-accentEmerald/30";
+      }
+      usageEl.innerText = `usage: {prompt_tokens: 25, completion_tokens: ${maxT}}`;
+    }
+
+    function renderSpecialFinishReason(reason) {
+      const contentEl = document.getElementById('simulated-content');
+      const badgeEl = document.getElementById('finish-reason-badge');
+
+      if (reason === 'simulated') {
+        updateSimulatedResponse();
+      } else if (reason === 'tool_calls') {
+        contentEl.innerText = 'null (message.tool_calls 包含 JSON 结构: [{"name": "get_weather", "arguments": "{\\"city\\": \\"Beijing\\"}"}])';
+        badgeEl.innerText = '"tool_calls"';
+        badgeEl.className = "px-1.5 py-0.5 rounded font-bold bg-accentViolet/20 text-accentViolet border border-accentViolet/30";
+      } else if (reason === 'content_filter') {
+        contentEl.innerText = '[回复因触发 OpenAI 安全策略内容过滤机制而被系统主动拦截]';
+        badgeEl.innerText = '"content_filter"';
+        badgeEl.className = "px-1.5 py-0.5 rounded font-bold bg-accentCoral/20 text-accentCoral border border-accentCoral/30";
+      }
+    }
+
+    // --- MODULE 9.3 ---
+    const promptStyles = {
+      bad: {
+        text: `你是一个助手。帮我分类工单。`,
+        demo: `模糊 Prompt 导致输出非常散漫：\n"好的！收到您的工单了。看描述登录失败应该属于软件 Bug 缺陷问题，希望对您有所帮助！"`,
+        eval: `❌ 无输出格式约束，包含了多余的自然语言，前端无法硬解析。`
+      },
+      standard: {
+        text: `# 身份 (Role)\n你是一个工单自动分类器。\n\n# 任务 (Task)\n请分析用户输入的描述，判断分类类别。\n\n# 约束 (Constraints)\n分类仅限 ['bug', 'feature', 'question'] 三者之一，且仅输出标准 JSON。\n\n# 边界 (Boundaries)\n若信息不足，默认分类为 'question'，置信度设为 0.5。`,
+        demo: `{\n  "category": "bug",\n  "confidence": 0.95,\n  "reason": "登录500报错属于缺陷"\n}`,
+        eval: `✅ 具有明确的身份、约束与边界，输出干净的结构化 JSON。`
+      },
+      checklist: {
+        text: `# Task: 工单分类\n生成前请逐项检查：\n- [ ] 是否仅使用了 ['bug', 'feature', 'question'] 中的标签？\n- [ ] 是否去除了 Markdown \`\`\` 包装？\n- [ ] 字段名是否完全匹配 category, confidence？`,
+        demo: `{"category": "feature", "confidence": 0.98}`,
+        eval: `✅ Checklist 触发 LLM 的 Self-Consistency 机制，显著降低格式逃逸概率。`
+      }
+    };
+
+    const pitfallsData = [
+      {
+        title: "1. 规则太多 (10+)",
+        cons: "模型出现 Attention 稀释，忽略后半段规则",
+        fix: "精简至 3-5 条核心规则，或拆分为 Multi-step Pipeline"
+      },
+      {
+        title: "2. 纯否定句表达",
+        cons: "'不要输出 Markdown' 反向强化了 Markdown Token 语义",
+        fix: "正向明确定义：'请仅输出 JSON 字符串'"
+      },
+      {
+        title: "3. 格式模糊",
+        cons: "使用 '输出一个好看的 JSON' 等主观词汇",
+        fix: "提供精确的 JSON Schema 或 3-Shot 示例"
+      },
+      {
+        title: "4. 没说输出什么",
+        cons: "模型混入客套话，如 '好的，为您生成的答案如下：'",
+        fix: "明确边界：'只输出 JSON，不要任何引言和总结'"
+      },
+      {
+        title: "5. 一条 Prompt 干多件事",
+        cons: "同时完成翻译+分类+打分+生成回复，准确率断崖下降",
+        fix: "解耦为多个 Chain / Tool 单一职责任务"
+      }
+    ];
+
+    function initModule93() {
+      // System Prompt Comparator Buttons
+      document.querySelectorAll('.btn-prompt-style').forEach(btn => {
+        btn.onclick = () => {
+          document.querySelectorAll('.btn-prompt-style').forEach(b => {
+            b.className = 'btn-prompt-style px-2.5 py-1.5 rounded bg-cardSlate text-slate-400 hover:text-slate-200';
+          });
+          btn.className = 'btn-prompt-style px-2.5 py-1.5 rounded bg-accentCyan/20 text-accentCyan border border-accentCyan/30';
+          const style = btn.getAttribute('data-style');
+          renderPromptStyle(style);
+        };
+      });
+
+      renderPromptStyle('bad');
+
+      // Few Shot Toggle
+      let isFewShot = true;
+      const fewShotBtn = document.getElementById('btn-fewshot-toggle');
+      fewShotBtn.onclick = () => {
+        isFewShot = !isFewShot;
+        fewShotBtn.innerText = isFewShot ? "3-Shot 格式锁定" : "0-Shot 格式逃逸";
+        fewShotBtn.className = isFewShot ? "px-2 py-1 bg-accentViolet/20 text-accentViolet border border-accentViolet/30 rounded font-bold" : "px-2 py-1 bg-accentCoral/20 text-accentCoral border border-accentCoral/30 rounded font-bold";
+        document.getElementById('fewshot-shot-badge').innerText = isFewShot ? "3 Examples Injected" : "0 Examples (Zero-Shot)";
+        updateFewshotResult();
+      };
+
+      document.querySelectorAll('.btn-fewshot-input').forEach(b => {
+        b.onclick = () => {
+          updateFewshotResult(b.getAttribute('data-text'));
+        };
+      });
+
+      // Pitfalls Grid
+      const pGrid = document.getElementById('pitfalls-grid');
+      pGrid.innerHTML = '';
+      pitfallsData.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = "p-3 bg-bgDark border border-borderSubtle rounded-lg cursor-pointer hover:border-accentCyan transition text-xs space-y-1";
+        div.innerHTML = `<span class="text-accentGold font-bold font-mono block">${item.title}</span><p class="text-[11px] text-slate-400 line-clamp-2">${item.cons}</p>`;
+        div.onclick = () => {
+          document.getElementById('pitfall-detail').innerHTML = `
+            <div class="flex justify-between items-center text-accentCoral font-bold mb-1">
+              <span>陷阱场景：${item.title}</span>
+              <span class="text-accentGold">修正方案</span>
+            </div>
+            <div><span class="text-slate-400">后果：</span><span class="text-slate-200">${item.cons}</span></div>
+            <div><span class="text-slate-400">正向修正策略：</span><span class="text-accentEmerald font-bold">${item.fix}</span></div>
+          `;
+        };
+        pGrid.appendChild(div);
+      });
+    }
+
+    function renderPromptStyle(style) {
+      const data = promptStyles[style];
+      const view = document.getElementById('prompt-structure-view');
+      const demo = document.getElementById('prompt-response-demo');
+
+      view.innerHTML = `<pre class="text-slate-200 whitespace-pre-wrap">${data.text}</pre>`;
+      demo.innerText = data.demo;
+    }
+
+    function updateFewshotResult(customText) {
+      const isFewShot = document.getElementById('fewshot-shot-badge').innerText.includes("3");
+      const resEl = document.getElementById('fewshot-result-json');
+
+      if (!isFewShot) {
+        resEl.innerText = `为您查询到了！这个工单类别应该是 bug 缺陷，置信度约 90%，建议转交给后端运维组。`;
+        resEl.className = "text-accentCoral text-[11px] overflow-x-auto font-sans";
+      } else {
+        resEl.innerText = `{\n  "category": "bug",\n  "confidence": 0.98,\n  "reason": "${customText || '故障描述匹配软件缺陷特征'}"\n}`;
+        resEl.className = "text-accentGold text-[11px] overflow-x-auto font-mono";
+      }
+    }
+
+    // --- MODULE 9.4 ---
+    const tierContents = {
+      "1": {
+        title: "Tier 1: Pure Prompt JSON (最不可靠)",
+        desc: "仅靠自然语言指示模型输出 JSON。模型极易附带客套话或 Markdown 包裹块。",
+        faults: true,
+        code: `# Tier 1 错误处理噩梦
+try:
+    data = json.loads(response.choices[0].message.content)
+except json.JSONDecodeError:
+    # 频繁进入此分支！解析失败
+    data = re.search(r'\\{.*\\}', response.content)`
+      },
+      "2": {
+        title: "Tier 2: JSON Mode (保证合法语法)",
+        desc: "设置 response_format={'type': 'json_object'}。OpenAI API 强制语法合规，但无法校验字段缺失与数据类型。",
+        faults: false,
+        code: `response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    response_format={"type": "json_object"}, # 保证能 json.loads()
+    messages=[...]
+)`
+      },
+      "3": {
+        title: "Tier 3: Function Calling + Pydantic (生产级强校验)",
+        desc: "将 Pydantic 数据模型转成工具函数 Schema 提交给模型，客户端二次校验。",
+        faults: false,
+        code: `class Sentiment(BaseModel):
+    label: Literal["positive", "negative", "neutral"]
+    confidence: float = Field(ge=0.0, le=1.0)
+
+# 双重解析防线：
+raw_args = response.choices[0].message.tool_calls[0].function.arguments
+obj = Sentiment.model_validate_json(raw_args) # 类型安全对象`
+      }
+    };
+
+    function initModule94() {
+      document.querySelectorAll('.tier-btn').forEach(btn => {
+        btn.onclick = () => {
+          document.querySelectorAll('.tier-btn').forEach(b => {
+            b.className = 'tier-btn px-3 py-2 rounded-lg bg-cardHover text-slate-400 border border-borderSubtle';
+          });
+          btn.className = 'tier-btn px-3 py-2 rounded-lg bg-accentCyan/20 text-accentCyan border border-accentCyan/40 font-bold';
+          const tier = btn.getAttribute('data-tier');
+          renderTierPanel(tier);
+        };
+      });
+
+      renderTierPanel("3");
+
+      document.querySelectorAll('.btn-test-payload').forEach(b => {
+        b.onclick = () => {
+          const type = b.getAttribute('data-type');
+          testPydanticPayload(type);
+        };
+      });
+
+      testPydanticPayload('valid');
+    }
+
+    function renderTierPanel(tier) {
+      const data = tierContents[tier];
+      document.getElementById('tier-badge').innerText = `当前模式：${data.title}`;
+
+      const container = document.getElementById('tier-panel-content');
+      container.innerHTML = `
+        <div class="bg-bgDark p-4 rounded-lg border border-borderSubtle space-y-3 font-mono text-xs">
+          <div class="flex justify-between text-slate-300">
+            <span class="font-bold text-accentCyan">${data.title}</span>
+            ${data.faults ? '<span class="text-accentCoral font-bold">⚠️ 容易触发 5 大解析故障</span>' : ''}
+          </div>
+          <p class="text-slate-400 font-sans">${data.desc}</p>
+          <pre class="bg-[#090d13] p-3 rounded text-accentGold overflow-x-auto"><code>${data.code}</code></pre>
+        </div>
+      `;
+
+      if (data.faults) {
+        const faultBtns = document.createElement('div');
+        faultBtns.className = "flex flex-wrap gap-2 text-xs font-mono pt-2";
+        faultBtns.innerHTML = `
+          <span class="text-slate-400 w-full block">故障注入测试 (Click to test failure):</span>
+          <button class="px-2 py-1 bg-accentCoral/20 text-accentCoral rounded border border-accentCoral/30" onclick="injectFault('prefix')">加开场白</button>
+          <button class="px-2 py-1 bg-accentCoral/20 text-accentCoral rounded border border-accentCoral/30" onclick="injectFault('markdown')">包 Markdown 代码块</button>
+          <button class="px-2 py-1 bg-accentCoral/20 text-accentCoral rounded border border-accentCoral/30" onclick="injectFault('badfield')">字段名写错 (sentiment)</button>
+          <button class="px-2 py-1 bg-accentCoral/20 text-accentCoral rounded border border-accentCoral/30" onclick="injectFault('badtype')">类型不对 ("0.9")</button>
+          <button class="px-2 py-1 bg-accentCoral/20 text-accentCoral rounded border border-accentCoral/30" onclick="injectFault('badenum')">枚举乱写 ("mixed")</button>
+        `;
+        container.appendChild(faultBtns);
+      }
+    }
+
+    window.injectFault = function(type) {
+      let mockStr = '';
+      if (type === 'prefix') mockStr = '好的，为您提取的 JSON 如下：{"label": "positive"}';
+      else if (type === 'markdown') mockStr = '```json\n{"label": "positive"}\n```';
+      else if (type === 'badfield') mockStr = '{"sentiment_result": "positive"}';
+      else if (type === 'badtype') mockStr = '{"label": "positive", "confidence": "很棒"}';
+      else if (type === 'badenum') mockStr = '{"label": "mixed_feeling"}';
+
+      alert(`[Tier 1 故障模拟]\n模型原始返回:\n${mockStr}\n\n后果: json.loads() 抛出 JSONDecodeError 或业务逻辑缺失 Key。`);
+    };
+
+    function testPydanticPayload(type) {
+      const rawEl = document.getElementById('payload-raw-json');
+      const resEl = document.getElementById('payload-validation-result');
+
+      if (type === 'valid') {
+        const payload = { label: "positive", confidence: 0.95, summary: "用户对新界面非常满意" };
+        rawEl.innerText = JSON.stringify(payload, null, 2);
+        resEl.innerHTML = `
+          <span class="text-accentEmerald font-bold block mb-1">✅ Pydantic Model Validation Success!</span>
+          <div class="text-[11px] text-slate-300">
+            <div>label: <span class="text-accentEmerald">'positive'</span></div>
+            <div>confidence: <span class="text-accentGold">0.95</span></div>
+            <div>status: <span class="text-slate-400">Typed Object Instance</span></div>
+          </div>
+        `;
+      } else if (type === 'bad-enum') {
+        const payload = { label: "mixed", confidence: 0.8, summary: "既高兴又难过" };
+        rawEl.innerText = JSON.stringify(payload, null, 2);
+        resEl.innerHTML = `
+          <span class="text-accentCoral font-bold block mb-1">❌ ValidationError Intercepted!</span>
+          <pre class="text-[10px] text-accentCoral overflow-x-auto">1 validation error for SentimentPayload\nlabel\n  Input should be 'positive', 'negative' or 'neutral' [type=literal_error]</pre>
+        `;
+      } else if (type === 'bad-range') {
+        const payload = { label: "positive", confidence: 1.5, summary: "超满分" };
+        rawEl.innerText = JSON.stringify(payload, null, 2);
+        resEl.innerHTML = `
+          <span class="text-accentCoral font-bold block mb-1">❌ ValidationError Intercepted!</span>
+          <pre class="text-[10px] text-accentCoral overflow-x-auto">1 validation error for SentimentPayload\nconfidence\n  Input should be less than or equal to 1.0 [type=less_than_equal]</pre>
+        `;
+      }
+    }
+
+    // --- MODULE 9.5 DATA & CONTROLLER ---
+    const sseFrames = [
+      { choices: [{ delta: { role: "assistant" } }], usage: null, text: "" },
+      { choices: [{ delta: { content: "向量" } }], usage: null, text: "向量" },
+      { choices: [{ delta: { content: "化" } }], usage: null, text: "化" },
+      { choices: [{ delta: { content: "是" } }], usage: null, text: "是" },
+      { choices: [{ delta: { content: "数组" } }], usage: null, text: "数组" },
+      { choices: [{ delta: { content: "运算。" } }], usage: null, text: "运算。" },
+      { choices: [], usage: { prompt_tokens: 10, completion_tokens: 6, total_tokens: 16 }, text: "" },
+      { special: "[DONE]" }
+    ];
+
+    let sseIndex = 0;
+    let sseTimer = null;
+
+    function initModule95() {
+      document.getElementById('btn-run-sse').onclick = () => {
+        resetSSE();
+        sseTimer = setInterval(() => {
+          if (!stepSSE()) {
+            clearInterval(sseTimer);
+          }
+        }, 600);
+      };
+
+      document.getElementById('btn-step-sse').onclick = () => {
+        stepSSE();
+      };
+
+      // Cost Estimator Sliders
+      const mSelect = document.getElementById('cost-model-select');
+      const pSlider = document.getElementById('slider-cost-prompt');
+      const cSlider = document.getElementById('slider-cost-completion');
+
+      mSelect.onchange = updateCostCalculation;
+      pSlider.oninput = updateCostCalculation;
+      cSlider.oninput = updateCostCalculation;
+
+      document.getElementById('trick-trim').onchange = updateCostCalculation;
+      document.getElementById('trick-router').onchange = updateCostCalculation;
+      document.getElementById('trick-cache').onchange = updateCostCalculation;
+
+      updateCostCalculation();
+    }
+
+    function resetSSE() {
+      if (sseTimer) clearInterval(sseTimer);
+      sseIndex = 0;
+      document.getElementById('sse-typewriter').innerText = '';
+      document.getElementById('sse-chunks-log').innerHTML = '';
+      document.getElementById('sse-status').innerText = "Streaming...";
+      document.getElementById('sse-captured-usage').innerText = "prompt: 10 | completion: 0 | total: 0";
+    }
+
+    function stepSSE() {
+      if (sseIndex >= sseFrames.length) {
+        document.getElementById('sse-status').innerText = "Completed [DONE]";
+        return false;
+      }
+
+      const frame = sseFrames[sseIndex];
+      const logContainer = document.getElementById('sse-chunks-log');
+      const typewriter = document.getElementById('sse-typewriter');
+      const usageBrief = document.getElementById('sse-captured-usage');
+
+      const item = document.createElement('div');
+      item.className = "p-1.5 rounded bg-cardSlate border border-borderSubtle text-[10px] leading-tight";
+
+      if (frame.special) {
+        item.innerHTML = `<span class="text-accentCoral font-bold">data: [DONE]</span>`;
+      } else if (frame.choices.length === 0 && frame.usage) {
+        item.innerHTML = `<span class="text-accentGold font-bold">data: {"choices": [], "usage": {"total": 16}}</span> <span class="text-accentCoral font-bold">← 特殊末帧</span>`;
+        usageBrief.innerText = `prompt: ${frame.usage.prompt_tokens} | completion: ${frame.usage.completion_tokens} | total: ${frame.usage.total_tokens}`;
+      } else {
+        const delta = frame.choices[0].delta.content || '';
+        item.innerHTML = `<span class="text-accentCyan font-bold">data: {"delta": {"content": "${delta}"}}</span>`;
+        typewriter.innerText += frame.text;
+      }
+
+      logContainer.appendChild(item);
+      logContainer.scrollTop = logContainer.scrollHeight;
+
+      sseIndex++;
+      return true;
+    }
+
+    function updateCostCalculation() {
+      const model = document.getElementById('cost-model-select').value;
+      const promptTok = parseInt(document.getElementById('slider-cost-prompt').value);
+      const compTok = parseInt(document.getElementById('slider-cost-completion').value);
+
+      document.getElementById('cost-prompt-val').innerText = promptTok.toLocaleString();
+      document.getElementById('cost-completion-val').innerText = compTok.toLocaleString();
+
+      // Prices per 1M tokens
+      let pPrice = 0.15, cPrice = 0.60; // default gpt-4o-mini
+      if (model === 'gpt-4o') { pPrice = 2.50; cPrice = 10.00; }
+      else if (model === 'deepseek-chat') { pPrice = 0.14; cPrice = 0.28; }
+
+      const origCost = (promptTok / 1000000) * pPrice + (compTok / 1000000) * cPrice;
+
+      // Apply Cost Saving Tricks
+      let optPrompt = promptTok;
+      let optComp = compTok;
+      let effectivePPrice = pPrice;
+
+      if (document.getElementById('trick-trim').checked) {
+        optPrompt = Math.floor(optPrompt * 0.4); // 60% reduction in history
+      }
+      if (document.getElementById('trick-router').checked) {
+        // Switch to cheaper model equivalent rate
+        effectivePPrice = effectivePPrice * 0.2;
+      }
+      if (document.getElementById('trick-cache').checked) {
+        optPrompt = Math.floor(optPrompt * 0.5); // 50% cached
+      }
+
+      const optCost = (optPrompt / 1000000) * effectivePPrice + (optComp / 1000000) * cPrice;
+      const savedPercent = ((1 - (optCost / origCost)) * 100).toFixed(1);
+
+      document.getElementById('cost-calculated-total').innerText = `$${optCost.toFixed(6)} USD`;
+      document.getElementById('cost-orig').innerText = `$${origCost.toFixed(6)}`;
+      document.getElementById('cost-opt').innerText = `$${optCost.toFixed(6)}`;
+      document.getElementById('cost-saved-percent').innerText = `${savedPercent}%`;
+
+      drawCostChart(origCost, optCost);
+    }
+
+    function drawCostChart(origCost, optCost) {
+      const canvas = document.getElementById('canvas-cost-bar');
+      if (!canvas) return;
+      const { ctx, width, height } = setupRetinaCanvas(canvas);
+      ctx.clearRect(0, 0, width, height);
+
+      const maxCost = Math.max(origCost, optCost, 0.00001);
+      const barWidth = 80;
+
+      // Orig Bar
+      const h1 = (origCost / maxCost) * (height - 50);
+      ctx.fillStyle = '#ff6b6b';
+      ctx.fillRect(width / 3 - barWidth / 2, height - 30 - h1, barWidth, h1);
+
+      // Opt Bar
+      const h2 = (optCost / maxCost) * (height - 50);
+      ctx.fillStyle = '#4ade80';
+      ctx.fillRect((2 * width) / 3 - barWidth / 2, height - 30 - h2, barWidth, h2);
+
+      // Labels
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '11px JetBrains Mono';
+      ctx.fillText("优化前", width / 3 - 18, height - 10);
+      ctx.fillText("优化后", (2 * width) / 3 - 18, height - 10);
+    }
+
+    // --- MODULE 9.6 DATA & CONTROLLER ---
+    const ragNodes = [
+      { ch: "Ch1", name: "环境搭建", desc: "Python 异步环境与 API 秘钥安全隔离" },
+      { ch: "Ch2", name: "文本分块", desc: "RecursiveCharacterTextSplitter 结构化切片" },
+      { ch: "Ch3", name: "Embedding", desc: "将 Chunk 映射为高维连续向量" },
+      { ch: "Ch4", name: "向量检索", desc: "NumPy 余弦相似度近邻比对" },
+      { ch: "Ch5", name: "重排 Rerank", desc: "Cross-Encoder精排打分筛选 Top-K" },
+      { ch: "Ch6", name: "Prompt工程", desc: "注入 Context 上下文并绑定四要素规约" },
+      { ch: "Ch7", name: "流式SSE", desc: "Chunked 打字机效果提升首字响应体验" },
+      { ch: "Ch8", name: "结构校验", desc: "Function Calling + Pydantic 双重类型拦截" },
+      { ch: "Ch9", name: "工程骨架", desc: "整合多轮对话、trim截断、Usage计费与路由" }
+    ];
+
+    const codeFiles = {
+      structured: `# structured_tool.py - Tier 3 Function Calling + Pydantic 生产级结构化输出
+
+from typing import Literal
+from pydantic import BaseModel, Field
+from openai import OpenAI
+
+# 1. 定义 Pydantic 模型
+class SentimentResult(BaseModel):
+    label: Literal["positive", "negative", "neutral"] = Field(description="情感极性分类")
+    confidence: float = Field(ge=0.0, le=1.0, description="置信度 0~1")
+    summary: str = Field(description="一句话原因总结")
+
+# 2. 生成 Function Definition
+TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "submit_sentiment",
+        "description": "提交文本情感分析校验结果",
+        "parameters": SentimentResult.model_json_schema()
+    }
+}
+
+def analyze_sentiment(text: str) -> SentimentResult:
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": text}],
+        tools=[TOOL_SCHEMA],
+        tool_choice={"type": "function", "function": {"name": "submit_sentiment"}}
+    )
+    
+    # 双重解析防线：解析 Tool Call 参数并进行 Pydantic 强校验
+    tool_call = response.choices[0].message.tool_calls[0]
+    raw_args = tool_call.function.arguments
+    
+    # 抛出 ValidationError 若模型输出非法数据
+    return SentimentResult.model_validate_json(raw_args)`,
+
+      stream: `# stream_usage.py - SSE 流式打字机与末帧 Usage 防空指针提取
+
+import sys
+from openai import OpenAI
+
+def stream_with_cost_tracking(prompt: str):
+    client = OpenAI()
+    
+    # 开启 stream=True 与 include_usage=True
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+        stream_options={"include_usage": True}
+    )
+    
+    captured_usage = None
+    
+    for chunk in response:
+        # 防空指针：处理末帧 choices: [] 提取 usage
+        if chunk.choices:
+            delta = chunk.choices[0].delta.content or ""
+            sys.stdout.write(delta)
+            sys.stdout.flush()
+        
+        if chunk.usage:
+            captured_usage = chunk.usage
+
+    print(f"\\n\\n[Cost Tracker] Captured Usage: {captured_usage}")`,
+
+      playground: `# playground_ch9.py - 完整 CLI 异步 Chatbot 沙盒
+
+import asyncio
+from typing import List, Dict
+from pydantic import BaseModel
+
+class UsageTracker:
+    def __init__(self):
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        
+    def add(self, prompt: int, completion: int):
+        self.total_prompt_tokens += prompt
+        self.total_completion_tokens += completion
+
+def trim_messages(messages: List[Dict], keep_last: int = 4) -> List[Dict]:
+    """保留 system 消息 + 最新 keep_last 条历史消息"""
+    if len(messages) <= keep_last + 1:
+        return messages
+    system_msg = [m for m in messages if m["role"] == "system"]
+    other_msgs = [m for m in messages if m["role"] != "system"]
+    return system_msg + other_msgs[-keep_last:]
+
+async def main():
+    print("🤖 Playground Ch9 Ready. (Mock Interactive Engine)")
+
+if __name__ == "__main__":
+    asyncio.run(main())`
+    };
+
+    const quizQuestions = [
+      {
+        q: "1. 关于 LLM 的无状态（Stateless）本质，以下说法正确的是？",
+        options: [
+          "A. LLM 服务器在后台自动帮用户维护 Session 会话历史",
+          "B. 模型每次请求完全独立，客户端必须将历史上下文全量打包提交",
+          "C. 历史对话越长，模型消耗的 Token 数与成本呈线性 O(N) 下降",
+          "D. 关闭系统 prompt 即可让模型自动记住上一轮的回复"
+        ],
+        ans: 1,
+        explain: "LLM API 是无状态的，模型不记忆任何上下文。多轮对话必须由客户端维护并全量上报 payload.messages，因此 Token 呈 O(N²) 暴涨。"
+      },
+      {
+        q: "2. 当模型的 finish_reason 标记为 \"length\" 时，代表什么意思？",
+        options: [
+          "A. 模型已经自然回答完毕",
+          "B. 触发了敏感词内容过滤系统",
+          "C. 生成文本达到了 max_tokens 限制而被强制截断",
+          "D. 模型发起了 Tool Call 工具调用"
+        ],
+        ans: 2,
+        explain: "finish_reason=='length' 明确表示生成由于触发了 max_tokens 上限被中断，回复内容是不完整的。"
+      },
+      {
+        q: "3. 为什么生产环境推荐使用 Function Calling + Pydantic 而非 Pure Prompt 生成 JSON？",
+        options: [
+          "A. Pure Prompt 会导致模型计算速度变慢 10 倍",
+          "B. 模型输出永远是不可信输入，Pydantic 提供 API 级 Schema 绑定与强类型二次校验防线",
+          "C. Pydantic 可以直接修改 OpenAI 云端模型的神经网络权重",
+          "D. Function Calling 不需要消耗任何 Token"
+        ],
+        ans: 1,
+        explain: "模型是概率 Token 生成器，Pure Prompt 易发生 Markdown 逃逸与枚举错乱。客户端必须利用 Pydantic 强类型反序列化构建最后防线。"
+      },
+      {
+        q: "4. 在处理 stream=True 且 include_usage=True 的 SSE 流帧时，如何防止 IndexError 崩溃？",
+        options: [
+          "A. 忽略所有 usage 帧",
+          "B. 检查 chunk.choices 是否非空（if chunk.choices:），因为末尾 usage 帧的 choices 为空数组 []",
+          "C. 将 stream_options 设置为 None",
+          "D. 使用 try-except 忽略所有异常"
+        ],
+        ans: 1,
+        explain: "包含 usage 的最后一个 SSE 帧的 choices 为 []，直接访问 chunk.choices[0] 会抛出 IndexError。必须加 defensive check。"
+      },
+      {
+        q: "5. 在大模型 API 计费模型中，Prompt Token (输入) 与 Completion Token (输出) 的价格关系通常是？",
+        options: [
+          "A. 输出 Token 与输入 Token 价格完全一致",
+          "B. 输出 Token 通常比输入 Token 便宜 50%",
+          "C. 输出 Token 计算复杂度高，通常比输入 Token 贵 3~4 倍",
+          "D. 输入 Token 按字符计费，输出 Token 按单词计费"
+        ],
+        ans: 2,
+        explain: "LLM 生成（Auto-regressive Decode）逐 Token 自回归计算开销远高于 Prefill 阶段，因此 Output Token 价格通常是 Input 的 3~4 倍。"
+      }
+    ];
+
+    function initModule96() {
+      // Terminal simulator setup
+      const termForm = document.getElementById('term-form');
+      const termInput = document.getElementById('term-input');
+      const termOutput = document.getElementById('term-output');
+
+      let termHistoryCount = 1;
+      let termTotalTokens = 0;
+
+      termForm.onsubmit = (e) => {
+        e.preventDefault();
+        const text = termInput.value.trim();
+        if (!text) return;
+        termInput.value = '';
+        executeTermCmd(text);
+      };
+
+      document.querySelectorAll('.cmd-pill').forEach(btn => {
+        btn.onclick = () => {
+          executeTermCmd(btn.getAttribute('data-cmd'));
+        };
+      });
+
+      // RAG Map Setup
+      const ragMapContainer = document.getElementById('rag-map-nodes');
+      ragMapContainer.innerHTML = '';
+      ragNodes.forEach((node, idx) => {
+        const div = document.createElement('div');
+        div.className = "p-2 bg-bgDark border border-borderSubtle rounded cursor-pointer hover:border-accentCyan transition";
+        div.innerHTML = `<span class="text-accentCyan block font-bold">${node.ch}</span><span class="text-slate-300 text-[10px]">${node.name}</span>`;
+        div.onclick = () => {
+          document.getElementById('rag-node-detail').innerHTML = `
+            <span class="text-accentGold font-bold">${node.ch} · ${node.name}：</span>
+            <span class="text-slate-200">${node.desc}</span>
+          `;
+        };
+        ragMapContainer.appendChild(div);
+      });
+
+      // Code Repo Tabs
+      document.querySelectorAll('.code-tab-btn').forEach(btn => {
+        btn.onclick = () => {
+          document.querySelectorAll('.code-tab-btn').forEach(b => {
+            b.className = 'code-tab-btn px-2.5 py-1 rounded bg-cardHover text-slate-400 border border-borderSubtle';
+          });
+          btn.className = 'code-tab-btn px-2.5 py-1 rounded bg-accentCyan/20 text-accentCyan border border-accentCyan/30';
+          const file = btn.getAttribute('data-file');
+          renderCodeFile(file);
+        };
+      });
+
+      renderCodeFile('structured');
+
+      document.getElementById('btn-copy-code').onclick = () => {
+        const codeText = document.getElementById('code-repo-display').innerText;
+        const textarea = document.createElement('textarea');
+        textarea.value = codeText;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        alert("已成功复制代码至剪贴板！");
+      };
+
+      // Quiz Initialization
+      renderQuiz();
+    }
+
+    function executeTermCmd(cmd) {
+      const output = document.getElementById('term-output');
+      const tracker = document.getElementById('term-tracker-val');
+      const histVal = document.getElementById('term-history-val');
+
+      const userLine = document.createElement('div');
+      userLine.className = "text-slate-300";
+      userLine.innerText = `> ${cmd}`;
+      output.appendChild(userLine);
+
+      const respLine = document.createElement('div');
+      respLine.className = "text-accentCyan";
+
+      if (cmd === '/help') {
+        respLine.innerText = "Available commands: /help, /stats, /history, /save, /clear";
+      } else if (cmd === '/stats') {
+        respLine.innerText = `[Tracker Stats] Prompt Tokens: 120 | Completion Tokens: 45 | Est Cost: $0.000045`;
+      } else if (cmd === '/history') {
+        respLine.innerText = `[History Window] Active messages in context: ${document.getElementById('term-history-val').innerText}`;
+      } else if (cmd === '/save') {
+        respLine.innerText = `[Save Session] History exported to session_ch9.json successfully!`;
+      } else if (cmd === '/clear') {
+        output.innerHTML = '';
+        return;
+      } else {
+        respLine.innerText = `🤖 [Mock Assistant]: 收到问题 "${cmd}"。在真实 CLI 中，此处将发起 SSE 流式请求并经过 Pydantic 校验。`;
+      }
+
+      output.appendChild(respLine);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function renderCodeFile(file) {
+      document.getElementById('code-repo-display').innerText = codeFiles[file];
+    }
+
+    function renderQuiz() {
+      const container = document.getElementById('quiz-container');
+      container.innerHTML = '';
+
+      quizQuestions.forEach((q, qIdx) => {
+        const qBox = document.createElement('div');
+        qBox.className = "bg-bgDark p-4 rounded-lg border border-borderSubtle space-y-3 font-sans text-xs";
+
+        let optionsHtml = '';
+        q.options.forEach((opt, oIdx) => {
+          optionsHtml += `
+            <button class="w-full text-left p-2 rounded bg-cardSlate hover:bg-cardHover border border-borderSubtle text-slate-300 transition text-xs font-mono" onclick="checkAnswer(${qIdx}, ${oIdx})">
+              ${opt}
+            </button>
+          `;
+        });
+
+        qBox.innerHTML = `
+          <div class="font-bold text-slate-200 text-sm">${q.q}</div>
+          <div class="space-y-1.5" id="quiz-options-${qIdx}">${optionsHtml}</div>
+          <div class="hidden p-2.5 rounded text-xs leading-relaxed" id="quiz-explain-${qIdx}"></div>
+        `;
+        container.appendChild(qBox);
+      });
+    }
+
+    window.checkAnswer = function(qIdx, selectedOpt) {
+      const q = quizQuestions[qIdx];
+      const explainEl = document.getElementById(`quiz-explain-${qIdx}`);
+      explainEl.classList.remove('hidden');
+
+      if (selectedOpt === q.ans) {
+        explainEl.className = "p-2.5 rounded text-xs leading-relaxed bg-accentEmerald/10 border border-accentEmerald/30 text-accentEmerald font-mono";
+        explainEl.innerHTML = `<strong>✅ 回答正确！</strong> ${q.explain}`;
+      } else {
+        explainEl.className = "p-2.5 rounded text-xs leading-relaxed bg-accentCoral/10 border border-accentCoral/30 text-accentCoral font-mono";
+        explainEl.innerHTML = `<strong>❌ 回答错误。</strong> 正确答案为选项 ${String.fromCharCode(65 + q.ans)}。<br>${q.explain}`;
+      }
+    };
+
+    // Global Initialization on DOM Ready
+    window.onload = function() {
+      initModule91();
+      initModule92PartA();
+      initModule92PartB();
+      initModule93();
+      initModule94();
+      initModule95();
+      initModule96();
+    };
+  </script>
+</body>
+</html>
