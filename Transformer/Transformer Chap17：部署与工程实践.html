@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 17 章：部署与工程实践 —— Docker 容器化、Nginx 反向代理、CI/CD 与生产运维</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0d1117',
+            cardDark: '#141b26',
+            panelDark: '#0f1622',
+            borderDark: '#233044',
+            cyanAccent: '#58c4dd',
+            goldAccent: '#f0b429',
+            emeraldAccent: '#4ade80',
+            coralAccent: '#ff6b6b',
+            violetAccent: '#c084fc',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #233044; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #58c4dd; }
+    .math-symbol { font-family: 'Times New Roman', serif; font-style: italic; }
+    .active-code-tab {
+      border-bottom: 2px solid #58c4dd;
+      color: #58c4dd;
+      font-weight: 700;
+    }
+    .glow-cyan { box-shadow: 0 0 18px rgba(88, 196, 221, 0.16); }
+    .glow-gold { box-shadow: 0 0 18px rgba(240, 180, 41, 0.16); }
+    .glow-emerald { box-shadow: 0 0 18px rgba(74, 222, 128, 0.16); }
+    .glow-coral { box-shadow: 0 0 18px rgba(255, 107, 107, 0.16); }
+    .glow-violet { box-shadow: 0 0 18px rgba(192, 132, 252, 0.16); }
+    canvas { display: block; width: 100%; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-[#58c4dd]/30 selection:text-[#58c4dd]">
+
+  <!-- Sticky Header -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur-md border-b border-[#233044] px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="flex items-center space-x-3">
+        <span class="px-2.5 py-1 text-xs font-mono font-bold uppercase tracking-wider bg-[#4ade80]/15 text-[#4ade80] border border-[#4ade80]/40 rounded-full">
+          CHAPTER 17 · FINALE
+        </span>
+        <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">部署与工程实践：Docker · Nginx · CI/CD · 生产运维</h1>
+      </div>
+      <nav class="flex items-center space-x-1 text-xs font-medium overflow-x-auto max-w-full pb-1 md:pb-0">
+        <a href="#module-17-1" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#58c4dd] hover:bg-[#141b26] transition">17.1 Docker 构建</a>
+        <a href="#module-17-2" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#4ade80] hover:bg-[#141b26] transition">17.2 Compose 与 Nginx</a>
+        <a href="#module-17-3" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#f0b429] hover:bg-[#141b26] transition">17.3 密钥与优雅停机</a>
+        <a href="#module-17-4" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#c084fc] hover:bg-[#141b26] transition">17.4 CI/CD 与灰度</a>
+        <a href="#module-17-5" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#ff6b6b] hover:bg-[#141b26] transition">17.5 配置库与测验</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="border-b border-[#233044] bg-gradient-to-b from-[#141b26] to-[#0d1117] py-12 px-4 relative overflow-hidden">
+    <div class="absolute -top-24 -right-24 w-96 h-96 bg-[#4ade80]/10 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-[#c084fc]/10 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="max-w-7xl mx-auto space-y-6 relative z-10">
+      <div class="space-y-3">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80] text-xs font-mono">
+          <span class="w-2 h-2 rounded-full bg-[#4ade80] animate-pulse"></span>
+          Docker Multi-Stage · Docker Compose · Nginx SSE Proxy · Graceful Shutdown · CI/CD
+        </div>
+        <h2 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+          第 17 章：部署与工程实践 —— 让你的 AI 应用真正 7×24 稳定在线
+        </h2>
+        <p class="text-sm sm:text-base text-gray-400 max-w-3xl leading-relaxed">
+          “在我电脑上明明能跑”是上线的第一道魔咒。作为全套 17 章教程的收官篇，本章将第 16 章写好的 FastAPI AI 服务装进 <span class="text-[#58c4dd] font-semibold">Docker 多阶段精简镜像</span>，用 <span class="text-[#4ade80] font-semibold">Docker Compose + Nginx</span> 编排多服务与 SSE 反向代理，配置 <span class="text-[#f0b429] font-semibold">SIGTERM 优雅停机</span>与密钥防泄露，并通过 <span class="text-[#c084fc] font-semibold">CI/CD 门禁与金丝雀灰度</span>实现零停机迭代。
+        </p>
+      </div>
+
+      <!-- 4 KPI Pills -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-cyan">
+          <div class="text-xs text-gray-400">镜像瘦身与缓存</div>
+          <div class="text-lg font-bold text-[#58c4dd] font-mono">1.4GB → 215MB</div>
+          <div class="text-xs text-gray-500">Multi-Stage + 非 root 用户 + 3s 增量构建</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-emerald">
+          <div class="text-xs text-gray-400">反代与编排</div>
+          <div class="text-lg font-bold text-[#4ade80] font-mono">Nginx + Compose</div>
+          <div class="text-xs text-gray-500">proxy_buffering off · 内网 DNS 隔离</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-gold">
+          <div class="text-xs text-gray-400">零中断运维</div>
+          <div class="text-lg font-bold text-[#f0b429] font-mono">SIGTERM 优雅停机</div>
+          <div class="text-xs text-gray-500">先摘 /ready 流量，等存量 SSE 推完再退</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-violet">
+          <div class="text-xs text-gray-400">自动化交付</div>
+          <div class="text-lg font-bold text-[#c084fc] font-mono">CI/CD + 金丝雀灰度</div>
+          <div class="text-xs text-gray-500">单测 + Eval 门禁 + 10% 灰度放量</div>
+        </div>
+      </div>
+
+      <!-- 5-Stage Quick Nav Strip -->
+      <div class="p-4 rounded-xl bg-[#0d1117]/70 border border-[#233044] space-y-3">
+        <div class="text-xs font-mono uppercase text-gray-400 tracking-wider">生产部署五大互动实验室 (点击跳转)</div>
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-2 text-center text-xs">
+          <a href="#module-17-1" class="p-2.5 rounded-lg bg-[#141b26] border border-[#58c4dd]/40 hover:border-[#58c4dd] text-white font-medium transition">
+            1. Docker 多阶段与缓存
+          </a>
+          <a href="#module-17-2" class="p-2.5 rounded-lg bg-[#141b26] border border-[#4ade80]/40 hover:border-[#4ade80] text-white font-medium transition">
+            2. Compose 拓扑与 Nginx
+          </a>
+          <a href="#module-17-3" class="p-2.5 rounded-lg bg-[#141b26] border border-[#f0b429]/40 hover:border-[#f0b429] text-white font-medium transition">
+            3. 密钥规范与优雅停机
+          </a>
+          <a href="#module-17-4" class="p-2.5 rounded-lg bg-[#141b26] border border-[#c084fc]/40 hover:border-[#c084fc] text-white font-medium transition">
+            4. CI/CD 与金丝雀灰度
+          </a>
+          <a href="#module-17-5" class="p-2.5 rounded-lg bg-[#141b26] border border-[#ff6b6b]/40 hover:border-[#ff6b6b] text-white font-medium transition">
+            5. 生产配置库与收官测验
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 py-10 space-y-16 flex-grow w-full">
+
+    <!-- ==================== MODULE 17.1 ==================== -->
+    <section id="module-17-1" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#58c4dd] font-mono">17.1</span> Docker 容器化：多阶段构建与 Layer 缓存优化实验室
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          写对 <code class="text-[#58c4dd]">Dockerfile</code> 的两个核心秘诀：用 <strong>Multi-Stage Build</strong> 把编译器和缓存留在构建层不进生产镜像；把 <code class="text-[#4ade80]">COPY requirements.txt</code> 放在 <code class="text-[#f0b429]">COPY . .</code> 之前，让改一行代码只需 3 秒重新构建。
+        </p>
+      </div>
+
+      <!-- Part A: Single-Stage vs Multi-Stage Image Size Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 镜像体积瘦身与层缓存命中模拟器 (Build Layer Lab)</h4>
+            <p class="text-xs text-gray-400">切换 Dockerfile 写法与代码变更场景，实时观测镜像体积与每一层的 <code class="text-[#4ade80]">CACHED</code> / <code class="text-[#ff6b6b]">REBUILD</code> 状态</p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs font-mono">
+            <button onclick="setDockerMode('naive')" id="dk-btn-naive" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">❌ 朴素单阶段 (1.42 GB)</button>
+            <button onclick="setDockerMode('multi')" id="dk-btn-multi" class="px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-bold transition">✅ 多阶段 + 缓存优化 (215 MB)</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <!-- Left: High-DPI Size Comparison Canvas -->
+          <div class="lg:col-span-6 overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+            <canvas id="canvas-docker-size" class="w-full h-[225px]"></canvas>
+          </div>
+
+          <!-- Right: Interactive Layer Cache Simulator -->
+          <div class="lg:col-span-6 bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+              <span class="text-gray-300 font-bold">模拟触发构建场景：</span>
+              <div class="flex gap-1.5">
+                <button onclick="simDockerBuild('code')" id="bd-btn-code" class="px-2.5 py-1 rounded bg-[#4ade80] text-black font-bold">只改了 app.py</button>
+                <button onclick="simDockerBuild('deps')" id="bd-btn-deps" class="px-2.5 py-1 rounded bg-[#141b26] border border-[#233044] text-gray-300">改了 requirements.txt</button>
+              </div>
+            </div>
+            <div id="docker-layers-list" class="space-y-1.5 text-xs font-mono"></div>
+            <div id="docker-build-summary" class="p-2.5 rounded-lg bg-[#141b26] border border-[#233044] text-xs font-mono flex justify-between items-center"></div>
+          </div>
+        </div>
+
+        <!-- .dockerignore Warning Banner -->
+        <div class="p-3.5 rounded-xl bg-[#f0b429]/10 border border-[#f0b429]/30 text-xs text-[#f0b429] leading-relaxed">
+          <strong>⚠️ 必配 <code class="font-mono">.dockerignore</code>：</strong>务必把 <code class="font-mono">.venv/</code>、<code class="font-mono">.env</code>、<code class="font-mono">chroma_db/</code>、<code class="font-mono">__pycache__/</code>、<code class="font-mono">.git/</code> 写入 <code class="font-mono">.dockerignore</code>！否则 <code class="font-mono">COPY . .</code> 会把几百 MB 的本地虚拟环境和明文 API Key 一起打包进镜像并推送到仓库！
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 17.2 ==================== -->
+    <section id="module-17-2" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#4ade80] font-mono">17.2</span> Docker Compose 多服务编排与 Nginx SSE 反向代理诊所
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          生产环境绝不是孤零零一个 FastAPI 进程。用 Docker Compose 一键编排入口网关、AI 服务、Redis 会话缓存与向量库，并用内网 DNS 隔离端口暴露。
+        </p>
+      </div>
+
+      <!-- Part A: Interactive Docker Compose Topology Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 生产级 Docker Compose 服务拓扑检视器 (点击下方服务查看详情)</h4>
+            <p class="text-xs text-gray-400">只有 Nginx 暴露公网 443 端口；FastAPI / Redis / Chroma 全部藏在私有 Docker Bridge 网络内部</p>
+          </div>
+          <div class="flex flex-wrap gap-1.5 text-xs font-mono">
+            <button onclick="selectCompNode('nginx')" id="cn-btn-nginx" class="px-2.5 py-1 rounded bg-[#4ade80] text-black font-bold">Nginx</button>
+            <button onclick="selectCompNode('api')" id="cn-btn-api" class="px-2.5 py-1 rounded bg-[#0d1117] border border-[#233044] text-gray-300">FastAPI</button>
+            <button onclick="selectCompNode('redis')" id="cn-btn-redis" class="px-2.5 py-1 rounded bg-[#0d1117] border border-[#233044] text-gray-300">Redis</button>
+            <button onclick="selectCompNode('chroma')" id="cn-btn-chroma" class="px-2.5 py-1 rounded bg-[#0d1117] border border-[#233044] text-gray-300">ChromaDB</button>
+            <button onclick="selectCompNode('vllm')" id="cn-btn-vllm" class="px-2.5 py-1 rounded bg-[#0d1117] border border-[#233044] text-gray-300">LLM / vLLM</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+          <div class="lg:col-span-8 overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+            <canvas id="canvas-compose-topo" class="w-full h-[230px]"></canvas>
+          </div>
+          <div id="compose-node-detail" class="lg:col-span-4 p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-2.5 text-xs h-full flex flex-col justify-between">
+            <!-- Dynamic detail -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: Nginx SSE Reverse Proxy Clinic -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div>
+          <h4 class="text-sm font-semibold text-white">Part B: Nginx 反向代理 AI 流式接口（SSE）三大必配参数诊所</h4>
+          <p class="text-xs text-gray-400">勾选或取消下方 3 个 Nginx 关键指令，实时查看线上现象诊断</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div class="lg:col-span-5 space-y-2.5 text-xs font-mono">
+            <label class="flex items-start gap-2.5 p-3 rounded-xl bg-[#0d1117] border border-[#233044] cursor-pointer hover:border-[#4ade80]">
+              <input type="checkbox" id="ng-chk-buf" checked onchange="updateNginxClinic()" class="mt-0.5 accent-[#4ade80]">
+              <div>
+                <div class="text-[#4ade80] font-bold">proxy_buffering off;</div>
+                <div class="text-gray-400 font-sans text-[11px] mt-0.5">关闭 Nginx 响应缓冲，确保 SSE 每个 token 帧立刻透传浏览器</div>
+              </div>
+            </label>
+            <label class="flex items-start gap-2.5 p-3 rounded-xl bg-[#0d1117] border border-[#233044] cursor-pointer hover:border-[#58c4dd]">
+              <input type="checkbox" id="ng-chk-to" checked onchange="updateNginxClinic()" class="mt-0.5 accent-[#58c4dd]">
+              <div>
+                <div class="text-[#58c4dd] font-bold">proxy_read_timeout 300s;</div>
+                <div class="text-gray-400 font-sans text-[11px] mt-0.5">调大读超时（默认仅 60s），防止慢思考模型或长 Agent 被强斩</div>
+              </div>
+            </label>
+            <label class="flex items-start gap-2.5 p-3 rounded-xl bg-[#0d1117] border border-[#233044] cursor-pointer hover:border-[#f0b429]">
+              <input type="checkbox" id="ng-chk-http" checked onchange="updateNginxClinic()" class="mt-0.5 accent-[#f0b429]">
+              <div>
+                <div class="text-[#f0b429] font-bold">proxy_http_version 1.1; + Connection "";</div>
+                <div class="text-gray-400 font-sans text-[11px] mt-0.5">启用 HTTP/1.1 长连接与分块传输（Chunked Transfer），杜绝连接异常关闭</div>
+              </div>
+            </label>
+          </div>
+
+          <div class="lg:col-span-7 flex flex-col justify-between space-y-3">
+            <pre id="nginx-snippet-pre" class="p-4 rounded-xl bg-[#070a0f] border border-[#233044] font-mono text-xs text-gray-200 overflow-x-auto leading-relaxed"></pre>
+            <div id="nginx-diag-box" class="p-3.5 rounded-xl border text-xs leading-relaxed"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 17.3 ==================== -->
+    <section id="module-17-3" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#f0b429] font-mono">17.3</span> 12-Factor 密钥管理与 SIGTERM 优雅停机剧场
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          容器发版重启时，线上往往还有 20 个用户正在接收 SSE 流式回答。直接 <code class="text-[#ff6b6b]">kill -9</code> 会让所有用户前端瞬间报错断流，必须正确响应 <code class="text-[#4ade80]">SIGTERM</code> 优雅停机。
+        </p>
+      </div>
+
+      <!-- Part A: SIGKILL vs SIGTERM Graceful Shutdown Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 暴力强杀 (SIGKILL) vs 优雅停机 (SIGTERM) 停机时序对比</h4>
+            <p class="text-xs text-gray-400">切换两种停机方式，观察容器收到发版更新信号后，正在进行的 SSE 流式对话与新流量的命运</p>
+          </div>
+          <div class="flex space-x-2 bg-[#0d1117] p-1 rounded-xl border border-[#233044] text-xs font-mono">
+            <button onclick="setShutdownMode('kill')" id="sd-btn-kill" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition">💥 粗暴 kill -9 (大量 502 断流)</button>
+            <button onclick="setShutdownMode('graceful')" id="sd-btn-graceful" class="px-3 py-1.5 rounded-lg bg-[#f0b429] text-black font-bold transition">✅ SIGTERM 优雅停机 (零错误)</button>
+          </div>
+        </div>
+
+        <div class="w-full overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-shutdown" class="w-full h-[225px]"></canvas>
+        </div>
+
+        <div id="shutdown-note" class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] text-xs text-gray-300 leading-relaxed"></div>
+      </div>
+
+      <!-- Part B: 4 Production Security & Config Best Practices -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#ff6b6b]/35 space-y-1.5">
+          <div class="font-bold text-[#ff6b6b]">🔐 1. 严禁把 API Key 打进镜像或 Git</div>
+          <p class="text-gray-400 leading-relaxed">永远通过运行时环境变量（<code class="font-mono text-[#58c4dd]">env_file</code> / K8s Secret / 云 KMS）注入 <code class="font-mono">OPENAI_API_KEY</code>。仓库里只提交脱敏模板 <code class="font-mono">.env.example</code>。</p>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#f0b429]/35 space-y-1.5">
+          <div class="font-bold text-[#f0b429]">👤 2. 容器内切换非 root 用户运行</div>
+          <p class="text-gray-400 leading-relaxed">Dockerfile 里创建普通用户 <code class="font-mono text-[#4ade80]">USER appuser</code>，即使 Agent 工具被 Prompt 注入攻破，攻击者也拿不到宿主机高危权限。</p>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#58c4dd]/35 space-y-1.5">
+          <div class="font-bold text-[#58c4dd]">⚙️ 3. 启动即 Fail-Fast 校验配置</div>
+          <p class="text-gray-400 leading-relaxed">用 <code class="font-mono text-[#58c4dd]">pydantic-settings</code> 在启动第 1 秒强校验必填环境变量；缺 Key 立刻报错退出，绝不等到凌晨 3 点用户提问时才崩溃。</p>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#4ade80]/35 space-y-1.5">
+          <div class="font-bold text-[#4ade80]">💾 4. 有状态数据挂载 Named Volume</div>
+          <p class="text-gray-400 leading-relaxed">容器随时会被销毁重建。Chroma 向量索引、Redis AOF 与审计日志必须挂载宿主机卷或独立托管云数据库，做到应用层完全无状态。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 17.4 ==================== -->
+    <section id="module-17-4" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#c084fc] font-mono">17.4</span> CI/CD 自动化发布流水线与金丝雀灰度实验
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          把代码检查、离线契约单测、第 14 章的 <strong>LLM Eval 黄金评测门禁</strong>、Docker 构建与安全扫描串成 GitHub Actions 流水线，再用金丝雀灰度安全放量。
+        </p>
+      </div>
+
+      <!-- Part A: Interactive CI/CD Pipeline Runner -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: GitHub Actions AI 应用发布流水线模拟器</h4>
+            <p class="text-xs text-gray-400">点击触发一次 <code class="text-[#c084fc]">git push origin main</code>，或注入一次“Eval 忠实度回退”观测自动阻断机制</p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs font-mono">
+            <button onclick="runCicdSim(false)" class="px-3.5 py-1.5 rounded-lg bg-[#4ade80] text-black font-bold hover:bg-[#4ade80]/90 transition">
+              ▶ 模拟正常发布 (PASS)
+            </button>
+            <button onclick="runCicdSim(true)" class="px-3.5 py-1.5 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/50 text-[#ff6b6b] hover:bg-[#ff6b6b]/15 transition">
+              🚨 模拟 Eval 忠实度不达标 (BLOCK)
+            </button>
+          </div>
+        </div>
+
+        <div id="cicd-stages-grid" class="grid grid-cols-1 sm:grid-cols-5 gap-2.5 text-xs font-mono">
+          <!-- Dynamic 5 CI/CD stages -->
+        </div>
+
+        <div id="cicd-summary-banner" class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] text-xs text-gray-300 leading-relaxed">
+          点击上方按钮模拟运行 5 阶段 AI 应用 CI/CD 流水线...
+        </div>
+      </div>
+
+      <!-- Part B: Canary Traffic Splitter & 3 Release Strategies -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: 金丝雀灰度发布 (Canary Release) 流量切分器</h4>
+            <p class="text-xs text-gray-400">换新版 Prompt 或升级大模型时，先切 10% 真实流量观察点踩率、TTFT 与成本，无异常再逐步扩到 100%</p>
+          </div>
+          <div class="flex items-center gap-3 bg-[#0d1117] px-3 py-2 rounded-xl border border-[#233044] text-xs font-mono">
+            <span class="text-gray-300">新版 v1.1 灰度比例:</span>
+            <input type="range" id="sl-canary-pct" min="0" max="100" step="10" value="10" oninput="updateCanaryBar()" class="w-28 accent-[#c084fc]">
+            <span id="val-canary-pct" class="text-[#c084fc] font-bold">10%</span>
+          </div>
+        </div>
+
+        <div class="w-full h-8 rounded-xl bg-[#0d1117] border border-[#233044] overflow-hidden flex font-mono text-xs font-bold">
+          <div id="bar-canary-v1" class="h-full bg-[#58c4dd] text-black flex items-center justify-center transition-all duration-300" style="width: 90%">v1.0 稳定版 (90%)</div>
+          <div id="bar-canary-v2" class="h-full bg-[#c084fc] text-black flex items-center justify-center transition-all duration-300" style="width: 10%">v1.1 (10%)</div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-1">
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">1. 滚动更新 (Rolling Update)</div>
+            <p class="text-gray-400">逐台替换旧容器，资源省、零停机，适合常规 Bug 修复与代码小改动。</p>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">2. 蓝绿部署 (Blue-Green)</div>
+            <p class="text-gray-400">同时准备新旧两套环境，Nginx 瞬间切换；出问题 1 秒切回旧版，代价是双倍机器。</p>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#c084fc]/40 space-y-1">
+            <div class="font-bold text-[#c084fc]">3. 金丝雀灰度 (Canary · AI 首选)</div>
+            <p class="text-gray-400">先放 5%~10% 流量对比真实用户满意度与成本，最适合升级底层模型或改核心 Prompt。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 17.5 ==================== -->
+    <section id="module-17-5" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#ff6b6b] font-mono">17.5</span> 生产部署配置库、收官测验与全系列 17 章全景地图
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          4 份开箱即用的生产级部署模板（Dockerfile / Docker Compose / Nginx / GitHub Actions），一键复制即可套用到你的项目。
+        </p>
+      </div>
+
+      <!-- Part A: Production Ops CLI Simulator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-semibold text-white">Part A: 服务器部署与运维命令模拟器</h4>
+          <div class="flex space-x-1.5">
+            <span class="w-3 h-3 rounded-full bg-red-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-yellow-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-green-500/80 inline-block"></span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 text-xs font-mono">
+          <button onclick="runDeployCli('build')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#58c4dd]/40 text-[#58c4dd] hover:bg-[#58c4dd]/10 transition">
+            $ docker build -t llm-agent-api:v1.0 .
+          </button>
+          <button onclick="runDeployCli('up')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#4ade80]/40 text-[#4ade80] hover:bg-[#4ade80]/10 transition">
+            $ docker compose up -d &amp;&amp; docker compose ps
+          </button>
+          <button onclick="runDeployCli('smoke')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#f0b429]/40 text-[#f0b429] hover:bg-[#f0b429]/10 transition">
+            $ curl -i https://api.example.com/ready
+          </button>
+        </div>
+
+        <pre id="deploy-cli-screen" class="p-4 rounded-xl bg-[#070a0f] border border-[#233044] font-mono text-xs text-gray-200 min-h-[175px] max-h-[290px] overflow-y-auto leading-relaxed whitespace-pre-wrap"></pre>
+      </div>
+
+      <!-- Part B: Complete Production Deployment Repository -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: 第 17 章完整生产部署配置库 (Production Templates)</h4>
+            <p class="text-xs text-gray-400">切换查看 4 份实战配置文件，支持一键复制到剪贴板</p>
+          </div>
+          <button onclick="copyDepCode()" id="btn-copy-dep" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#58c4dd] text-black hover:bg-[#58c4dd]/90 transition">
+            <span id="copy-dep-label">📋 复制当前配置</span>
+          </button>
+        </div>
+
+        <div class="flex border-b border-[#233044] space-x-1 overflow-x-auto text-xs font-mono">
+          <button onclick="selectDepCodeTab('dockerfile')" data-tab="dockerfile" class="dep-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            Dockerfile
+          </button>
+          <button onclick="selectDepCodeTab('compose')" data-tab="compose" class="dep-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            docker-compose.yml
+          </button>
+          <button onclick="selectDepCodeTab('nginx')" data-tab="nginx" class="dep-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            nginx.conf
+          </button>
+          <button onclick="selectDepCodeTab('cicd')" data-tab="cicd" class="dep-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            .github/workflows/deploy.yml
+          </button>
+        </div>
+
+        <pre class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] overflow-x-auto font-mono text-xs text-gray-200 max-h-[450px] leading-relaxed"><code id="dep-code-display"></code></pre>
+      </div>
+
+      <!-- Part C: 5-Question Finale Quiz -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex items-center justify-between border-b border-[#233044] pb-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part C: 第 17 章部署与工程实践收官测验 (5-Question Quiz)</h4>
+            <p class="text-xs text-gray-400">检验对多阶段构建、Nginx SSE 反代、优雅停机与 CI/CD 发布的掌握</p>
+          </div>
+          <span id="dep-quiz-score" class="px-3 py-1 rounded-full bg-[#4ade80]/15 border border-[#4ade80]/30 text-[#4ade80] text-xs font-mono font-bold">
+            得分: 0 / 5
+          </span>
+        </div>
+        <div id="dep-quiz-container" class="space-y-4"></div>
+      </div>
+
+      <!-- Part D: 12-Point Chapter Summary Grid -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <h4 class="text-sm font-semibold text-white">Part D: 第 17 章 12 条生产部署核心要点总结</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">1. 多阶段构建瘦身</div>
+            <div class="text-gray-400">构建阶段装 gcc 编译依赖，运行阶段只拷贝虚拟环境与代码，镜像缩小 80%+。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">2. 依赖层先于业务代码</div>
+            <div class="text-gray-400">先 COPY requirements.txt && pip install，再 COPY app/，改代码 3 秒完成缓存重建。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">3. 必配 .dockerignore</div>
+            <div class="text-gray-400">排除 .venv、.env、.git 与本地大缓存，防止镜像膨胀和明文密钥泄露。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">4. Compose 内网隔离</div>
+            <div class="text-gray-400">Redis / 向量库绝不暴露公网端口，仅通过 Docker 内部服务名安全通信。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">5. Nginx 关闭缓冲保 SSE</div>
+            <div class="text-gray-400">必配 proxy_buffering off、proxy_http_version 1.1 与 300s 读超时，防流式卡顿或断连。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">6. 非 root + 只读最小权限</div>
+            <div class="text-gray-400">容器内切换普通用户 appuser 运行，极大收敛 Agent 工具被注入后的爆炸半径。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">7. 运行时注入密钥</div>
+            <div class="text-gray-400">遵循 12-Factor 原则，配置与代码彻底分离，用 pydantic-settings 启动即校验。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">8. SIGTERM 优雅停机</div>
+            <div class="text-gray-400">Dockerfile 使用 exec 格式 CMD，收到 SIGTERM 后先摘流量、等存量 SSE 推完再退出。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">9. 有状态数据持久化卷</div>
+            <div class="text-gray-400">向量库与 Redis 挂载 Named Volume 或用云托管实例，确保应用容器随时可销毁扩容。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#c084fc]/40 space-y-1">
+            <div class="font-bold text-[#c084fc]">10. CI/CD 挂接 Eval 门禁</div>
+            <div class="text-gray-400">上线前自动跑 Lint + pytest 契约单测 + 黄金集 Eval 回归，守住质量红线。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#c084fc]/40 space-y-1">
+            <div class="font-bold text-[#c084fc]">11. 金丝雀灰度控风险</div>
+            <div class="text-gray-400">换模型或改 Prompt 先切 10% 真实流量观测点踩率与账单，确认健康再全量。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#ff6b6b]/40 space-y-1">
+            <div class="font-bold text-[#ff6b6b]">12. 生产上线检查清单</div>
+            <div class="text-gray-400">HTTPS 证书 + 限流熔断 + 预算告警 + 结构化 Trace 日志齐备，才算真正 Production Ready！</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Graduation Banner: Full 17-Chapter Mastery Roadmap -->
+      <div class="p-6 rounded-2xl bg-gradient-to-r from-[#141b26] via-[#132232] to-[#141b26] border border-[#4ade80]/50 space-y-4 glow-emerald">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span class="text-xs font-mono uppercase tracking-wider text-[#4ade80] font-bold">🎓 FULL COURSE COMPLETE · 17 CHAPTERS MASTERED</span>
+            <h4 class="text-lg font-extrabold text-white mt-1">恭喜通关！大模型 &amp; AI Agent 全栈工程全景地图</h4>
+          </div>
+          <span class="px-3 py-1 rounded-full bg-[#4ade80]/20 text-[#4ade80] text-xs font-mono font-bold self-start sm:self-auto">
+            Ch 1 → Ch 17 · 100% 闭环
+          </span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div class="p-3 rounded-xl bg-[#0d1117]/80 border border-[#58c4dd]/30">
+            <div class="font-bold text-[#58c4dd] font-mono">Ch 1–8 · Transformer 底层</div>
+            <div class="text-gray-400 mt-1">向量矩阵 → Softmax → Attention → MiniGPT → 混合精度训练 → HuggingFace</div>
+          </div>
+          <div class="p-3 rounded-xl bg-[#0d1117]/80 border border-[#f0b429]/30">
+            <div class="font-bold text-[#f0b429] font-mono">Ch 9–11 · LLM 应用与 RAG</div>
+            <div class="text-gray-400 mt-1">Chat API &amp; SSE → Embeddings &amp; HNSW → 解析切块、三阶段重排与忠实度评估</div>
+          </div>
+          <div class="p-3 rounded-xl bg-[#0d1117]/80 border border-[#c084fc]/30">
+            <div class="font-bold text-[#c084fc] font-mono">Ch 12–15 · Agent / MCP / 微调</div>
+            <div class="text-gray-400 mt-1">Function Calling &amp; ReAct → MCP 生态协议 → LLMOps 工程化 → Ollama/vLLM &amp; QLoRA</div>
+          </div>
+          <div class="p-3 rounded-xl bg-[#0d1117]/80 border border-[#4ade80]/40">
+            <div class="font-bold text-[#4ade80] font-mono">Ch 16–17 · 服务化与生产部署</div>
+            <div class="text-gray-400 mt-1">FastAPI + 令牌桶限流 + TestClient → Docker 多阶段 + Nginx SSE + CI/CD 灰度上线</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-[#233044] bg-[#0d1117] py-6 px-4 text-center text-xs text-gray-500">
+    <div class="max-w-7xl mx-auto space-y-1">
+      <p>第 17 章：部署与工程实践 —— Docker 容器化、Nginx 反向代理、CI/CD 与生产运维</p>
+      <p>3Blue1Brown Mathematical &amp; Engineering Style Interactive Tutorial · Series Grand Finale</p>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // CANVAS HELPERS (High-DPI Retina + Custom RoundedRect + Arrow)
+    // =========================================================================
+    function setupCanvas(canvas) {
+      if (!canvas) return null;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(rect.width || 600, 300);
+      const height = rect.height || 225;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width, height };
+    }
+
+    function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke, lw = 1.5) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+    }
+
+    function drawArrow(ctx, x1, y1, x2, y2, color, lw = 2) {
+      const head = 7;
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // =========================================================================
+    // MODULE 17.1: DOCKER MULTI-STAGE SIZE CANVAS & LAYER CACHE SIM
+    // =========================================================================
+    let dockerMode = 'multi';
+    let dockerChange = 'code';
+
+    function setDockerMode(mode) {
+      dockerMode = mode;
+      const bN = document.getElementById('dk-btn-naive');
+      const bM = document.getElementById('dk-btn-multi');
+      if (mode === 'naive') {
+        bN.className = 'px-3 py-1.5 rounded-lg bg-[#ff6b6b] text-black font-bold transition';
+        bM.className = 'px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition';
+      } else {
+        bM.className = 'px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-bold transition';
+        bN.className = 'px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition';
+      }
+      renderDockerSizeCanvas();
+      renderDockerLayers();
+    }
+
+    function simDockerBuild(change) {
+      dockerChange = change;
+      const bC = document.getElementById('bd-btn-code');
+      const bD = document.getElementById('bd-btn-deps');
+      if (change === 'code') {
+        bC.className = 'px-2.5 py-1 rounded bg-[#4ade80] text-black font-bold';
+        bD.className = 'px-2.5 py-1 rounded bg-[#141b26] border border-[#233044] text-gray-300';
+      } else {
+        bD.className = 'px-2.5 py-1 rounded bg-[#f0b429] text-black font-bold';
+        bC.className = 'px-2.5 py-1 rounded bg-[#141b26] border border-[#233044] text-gray-300';
+      }
+      renderDockerLayers();
+    }
+
+    function renderDockerLayers() {
+      let layers = [];
+      let totalSec = 0;
+
+      if (dockerMode === 'naive') {
+        layers = [
+          { cmd: 'FROM python:3.11 (完整 Debian 镜像 · 1.0GB)', cached: true, sec: 0 },
+          { cmd: 'COPY . .  (把代码和依赖混在一层!)', cached: false, sec: 2 },
+          { cmd: 'RUN pip install -r requirements.txt  (缓存失效重装!)', cached: false, sec: 145 },
+          { cmd: 'CMD ["uvicorn", "app:app"]  (以 root 运行)', cached: false, sec: 1 }
+        ];
+        totalSec = 148;
+      } else {
+        const depsCached = (dockerChange === 'code');
+        layers = [
+          { cmd: 'FROM python:3.11-slim (精简底座 · 125MB)', cached: true, sec: 0 },
+          { cmd: 'COPY requirements.txt .', cached: depsCached, sec: depsCached ? 0 : 1 },
+          { cmd: 'RUN pip install --no-cache-dir -r requirements.txt', cached: depsCached, sec: depsCached ? 0 : 58 },
+          { cmd: 'COPY app/ ./app/  (仅最后一层变动)', cached: false, sec: 2 },
+          { cmd: 'USER appuser && CMD ["uvicorn", ...]', cached: false, sec: 1 }
+        ];
+        totalSec = depsCached ? 3 : 62;
+      }
+
+      document.getElementById('docker-layers-list').innerHTML = layers.map((ly, i) => `
+        <div class="p-2 rounded-lg bg-[#141b26] border ${ly.cached ? 'border-[#4ade80]/30' : 'border-[#ff6b6b]/40'} flex items-center justify-between gap-2">
+          <span class="truncate text-gray-200">[${i + 1}] ${ly.cmd}</span>
+          <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${ly.cached ? 'bg-[#4ade80]/15 text-[#4ade80]' : 'bg-[#ff6b6b]/15 text-[#ff6b6b]'}">
+            ${ly.cached ? 'CACHED (0s)' : `REBUILD (${ly.sec}s)`}
+          </span>
+        </div>
+      `).join('');
+
+      const sumEl = document.getElementById('docker-build-summary');
+      const fast = totalSec <= 10;
+      sumEl.innerHTML = `
+        <span class="text-gray-400">本次构建耗时:</span>
+        <span class="font-bold ${fast ? 'text-[#4ade80]' : 'text-[#ff6b6b]'}">${totalSec} 秒 ${fast ? '⚡ 秒级增量命中缓存!' : '🐢 依赖层缓存被击穿'}</span>
+      `;
+    }
+
+    function renderDockerSizeCanvas() {
+      const canvas = document.getElementById('canvas-docker-size');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+      ctx.fillText('镜像体积拆解对比 (MB) — 多阶段构建瘦身 85%', 14, 20);
+
+      const padL = 96, padR = 24, barH = 38;
+      const plotW = width - padL - padR;
+      const maxMB = 1500;
+
+      // Row 1: Naive Single Stage (1420 MB)
+      const y1 = 54;
+      ctx.fillStyle = dockerMode === 'naive' ? '#ff6b6b' : '#9ca3af';
+      ctx.font = 'bold 11px monospace'; ctx.textAlign = 'right';
+      ctx.fillText('朴素单阶段', padL - 10, y1 + barH / 2 + 4);
+
+      const naiveSegs = [
+        { mb: 980, col: '#ff6b6b', lbl: 'python:3.11 (980M)' },
+        { mb: 320, col: '#f0b429', lbl: 'gcc+pip缓存 (320M)' },
+        { mb: 120, col: '#58c4dd', lbl: '依赖+代码' }
+      ];
+      let cx = padL;
+      naiveSegs.forEach(s => {
+        const w = (s.mb / maxMB) * plotW;
+        drawRoundedRect(ctx, cx, y1, w - 2, barH, 4, s.col, null);
+        if (w > 64) {
+          ctx.fillStyle = '#0d1117'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+          ctx.fillText(s.lbl, cx + w / 2, y1 + barH / 2 + 3);
+        }
+        cx += w;
+      });
+      ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+      ctx.fillText('1,420 MB', cx + 4, y1 + barH / 2 + 4);
+
+      // Row 2: Multi-Stage Slim (215 MB)
+      const y2 = 126;
+      ctx.fillStyle = dockerMode === 'multi' ? '#4ade80' : '#9ca3af';
+      ctx.font = 'bold 11px monospace'; ctx.textAlign = 'right';
+      ctx.fillText('多阶段精简', padL - 10, y2 + barH / 2 + 4);
+
+      const multiSegs = [
+        { mb: 125, col: '#4ade80', lbl: 'slim' },
+        { mb: 90, col: '#58c4dd', lbl: 'venv' }
+      ];
+      cx = padL;
+      multiSegs.forEach(s => {
+        const w = (s.mb / maxMB) * plotW;
+        drawRoundedRect(ctx, cx, y2, w - 2, barH, 4, s.col, null);
+        cx += w;
+      });
+      ctx.fillStyle = '#4ade80'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
+      ctx.fillText('215 MB  (✅ 体积直降 85%，拉取部署提速 6×)', cx + 8, y2 + barH / 2 + 4);
+
+      ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('Builder 阶段的 gcc / wheel 编译缓存全部丢弃，绝不进入生产镜像', width / 2, height - 14);
+    }
+
+    // =========================================================================
+    // MODULE 17.2: DOCKER COMPOSE TOPOLOGY & NGINX SSE CLINIC
+    // =========================================================================
+    const COMP_NODES = {
+      nginx: {
+        title: '🌐 Nginx Reverse Proxy (入口网关)',
+        col: '#4ade80',
+        ports: '公网暴露 80 / 443 (TLS/HTTPS 卸载)',
+        dns: '容器名: nginx',
+        vol: '挂载 ./nginx.conf:ro + SSL 证书',
+        note: '唯一对外暴露端口的容器。负责 HTTPS 加密、静态前端托管、负载均衡以及关闭缓冲透传 SSE 流。'
+      },
+      api: {
+        title: '⚡ FastAPI AI Service (无状态核心)',
+        col: '#58c4dd',
+        ports: '仅内网 8000 (expose，不映射宿主机公网)',
+        dns: '内网地址: http://api:8000',
+        vol: '无本地状态卷 (可横向扩容至 4 个副本)',
+        note: '托管第 16 章的 FastAPI + RAG + Agent 逻辑，配置 healthcheck 探测 /ready，支持 SIGTERM 优雅停机。'
+      },
+      redis: {
+        title: '💾 Redis 7 (热会话与限流状态)',
+        col: '#ff6b6b',
+        ports: '仅内网 6379 (严禁暴露公网防挖矿)',
+        dns: '内网地址: redis://redis:6379/0',
+        vol: 'Named Volume: redis_data:/data',
+        note: '在多 Worker / 多副本 FastAPI 间共享多轮对话历史（带 TTL）与分布式令牌桶限流计数。'
+      },
+      chroma: {
+        title: '🧠 ChromaDB / Qdrant (向量知识库)',
+        col: '#c084fc',
+        ports: '仅内网 8000',
+        dns: '内网地址: http://chroma:8000',
+        vol: 'Named Volume: chroma_data:/chroma/chroma',
+        note: '持久化存储文档切片向量与元数据索引，与无状态 FastAPI 解耦，重启服务不丢知识库。'
+      },
+      vllm: {
+        title: '🤖 Cloud LLM API / 本地 vLLM 推理节点',
+        col: '#f0b429',
+        ports: 'HTTPS 外网出口 或 内网 GPU 节点 :8000',
+        dns: 'base_url 由环境变量 LLM_BASE_URL 动态切换',
+        vol: '本地部署时挂载 HuggingFace 模型权重缓存卷',
+        note: '上游模型提供方。开发期接云端 API 或 Ollama，内网高并发生产无缝切换至 GPU 集群 vLLM。'
+      }
+    };
+
+    let selectedCompNode = 'nginx';
+
+    function selectCompNode(key) {
+      selectedCompNode = key;
+      ['nginx', 'api', 'redis', 'chroma', 'vllm'].forEach(k => {
+        const b = document.getElementById('cn-btn-' + k);
+        b.className = (k === key)
+          ? 'px-2.5 py-1 rounded bg-[#4ade80] text-black font-bold'
+          : 'px-2.5 py-1 rounded bg-[#0d1117] border border-[#233044] text-gray-300';
+      });
+      const n = COMP_NODES[key];
+      document.getElementById('compose-node-detail').innerHTML = `
+        <div class="space-y-2">
+          <div class="text-sm font-bold" style="color:${n.col}">${n.title}</div>
+          <div class="p-2 rounded bg-[#141b26] border border-[#233044] font-mono text-[11px] space-y-1">
+            <div><span class="text-gray-400">端口策略:</span> <span class="text-white">${n.ports}</span></div>
+            <div><span class="text-gray-400">服务发现:</span> <span class="text-[#58c4dd]">${n.dns}</span></div>
+            <div><span class="text-gray-400">数据卷  :</span> <span class="text-[#f0b429]">${n.vol}</span></div>
+          </div>
+          <p class="text-gray-300 leading-relaxed">${n.note}</p>
+        </div>
+        <div class="text-[10px] font-mono text-gray-500 pt-2 border-t border-[#233044]">Docker Bridge Network: app-net (内网隔离)</div>
+      `;
+      renderComposeCanvas();
+    }
+
+    function renderComposeCanvas() {
+      const canvas = document.getElementById('canvas-compose-topo');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      // Private Network Dashed Box
+      const netX = width * 0.25, netW = width * 0.72;
+      drawRoundedRect(ctx, netX, 12, netW, height - 24, 12, 'rgba(88,196,221,0.04)', '#233044', 1.5);
+      ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'left';
+      ctx.fillText('Docker Private Bridge Network (app-net · 仅内网互通)', netX + 12, 27);
+
+      const bw = Math.min(116, width * 0.19), bh = 40;
+      const xNginx = width * 0.12 - bw / 2;
+      const xApi = width * 0.44 - bw / 2;
+      const xRight = width * 0.80 - bw / 2;
+      const yMid = height * 0.54;
+      const yTop = height * 0.26;
+      const yBot = height * 0.80;
+
+      // Connections
+      drawArrow(ctx, xNginx + bw + 3, yMid, xApi - 3, yMid, '#4ade80', 2);
+      drawArrow(ctx, xApi + bw + 3, yMid - 8, xRight - 3, yTop, '#ff6b6b', 1.8);
+      drawArrow(ctx, xApi + bw + 3, yMid, xRight - 3, yMid, '#c084fc', 1.8);
+      drawArrow(ctx, xApi + bw + 3, yMid + 8, xRight - 3, yBot, '#f0b429', 1.8);
+
+      const items = [
+        { k: 'nginx', lbl: 'Nginx :443', x: xNginx, y: yMid, col: '#4ade80' },
+        { k: 'api', lbl: 'FastAPI :8000', x: xApi, y: yMid, col: '#58c4dd' },
+        { k: 'redis', lbl: 'Redis :6379', x: xRight, y: yTop, col: '#ff6b6b' },
+        { k: 'chroma', lbl: 'ChromaDB', x: xRight, y: yMid, col: '#c084fc' },
+        { k: 'vllm', lbl: 'LLM / vLLM', x: xRight, y: yBot, col: '#f0b429' }
+      ];
+
+      ctx.textAlign = 'center';
+      items.forEach(it => {
+        const act = (it.k === selectedCompNode);
+        drawRoundedRect(ctx, it.x, it.y - bh / 2, bw, bh, 8, act ? it.col + '2a' : '#141b26', act ? it.col : '#233044', act ? 2.4 : 1.4);
+        ctx.fillStyle = act ? '#ffffff' : '#cbd5e1';
+        ctx.font = act ? 'bold 11px monospace' : '11px monospace';
+        ctx.fillText(it.lbl, it.x + bw / 2, it.y + 4);
+      });
+    }
+
+    function updateNginxClinic() {
+      const bufOff = document.getElementById('ng-chk-buf').checked;
+      const to300 = document.getElementById('ng-chk-to').checked;
+      const http11 = document.getElementById('ng-chk-http').checked;
+
+      document.getElementById('nginx-snippet-pre').textContent =
+`location /v1/chat/stream {
+    proxy_pass http://api:8000;
+    proxy_set_header Host $host;
+    ${http11 ? 'proxy_http_version 1.1;\n    proxy_set_header Connection "";' : '# ❌ 缺少 HTTP/1.1 与 Connection "" (默认 HTTP/1.0 短连接)'}
+    ${bufOff ? 'proxy_buffering off;\n    proxy_cache off;' : '# ❌ 默认 proxy_buffering on (攒满 4KB 才转发)'}
+    ${to300 ? 'proxy_read_timeout 300s;' : '# ❌ 默认 proxy_read_timeout 60s'}
+}`;
+
+      const diag = document.getElementById('nginx-diag-box');
+      const issues = [];
+      if (!bufOff) issues.push('SSE 流式打字机失效，前端白屏卡顿 5~10 秒后整段文字一次性弹出');
+      if (!to300) issues.push('推理模型思考或复杂 Agent 执行超过 60 秒时，Nginx 直接返回 HTTP 504 Gateway Timeout');
+      if (!http11) issues.push('HTTP/1.0 不支持 Chunked 流式传输，长连接可能被提前关闭');
+
+      if (issues.length === 0) {
+        diag.className = 'p-3.5 rounded-xl border border-[#4ade80]/40 bg-[#4ade80]/10 text-[#4ade80] text-xs leading-relaxed';
+        diag.innerHTML = '<strong>✅ 生产级 Nginx SSE 配置就绪：</strong>逐字零缓冲实时透传、支持 5 分钟长耗时 Agent 推理、HTTP/1.1 长连接稳定复用。';
+      } else {
+        diag.className = 'p-3.5 rounded-xl border border-[#ff6b6b]/40 bg-[#ff6b6b]/10 text-[#ff6b6b] text-xs leading-relaxed';
+        diag.innerHTML = '<strong>🚨 线上将触发以下故障：</strong><br>• ' + issues.join('<br>• ');
+      }
+    }
+
+    // =========================================================================
+    // MODULE 17.3: GRACEFUL SHUTDOWN CANVAS
+    // =========================================================================
+    let shutdownMode = 'graceful';
+
+    function setShutdownMode(mode) {
+      shutdownMode = mode;
+      const bK = document.getElementById('sd-btn-kill');
+      const bG = document.getElementById('sd-btn-graceful');
+      if (mode === 'kill') {
+        bK.className = 'px-3 py-1.5 rounded-lg bg-[#ff6b6b] text-black font-bold transition';
+        bG.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+        document.getElementById('shutdown-note').innerHTML = '<strong class="text-[#ff6b6b]">💥 粗暴强杀（kill -9 或 Dockerfile 误用 shell 格式 CMD）：</strong>进程瞬间消失，正在接收 SSE 流式回答的 20 位用户前端当场报错断流，数据库连接池未释放，容易触发线上 502 告警！';
+      } else {
+        bG.className = 'px-3 py-1.5 rounded-lg bg-[#f0b429] text-black font-bold transition';
+        bK.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+        document.getElementById('shutdown-note').innerHTML = '<strong class="text-[#4ade80]">✅ SIGTERM 优雅停机（exec 格式 CMD + --timeout-graceful-shutdown 30）：</strong>收到停机信号后，① <code class="font-mono">/ready</code> 立刻返回 503 阻止新流量进入；② 存量 SSE 流继续推送直至正常结束；③ 执行 lifespan yield 后清理连接池；④ 以 exit code 0 安全退出。';
+      }
+      renderShutdownCanvas();
+    }
+
+    function renderShutdownCanvas() {
+      const canvas = document.getElementById('canvas-shutdown');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const padL = 96, padR = 24, padT = 34, padB = 30;
+      const plotW = width - padL - padR;
+      const xSig = padL + plotW * 0.42;
+
+      // Vertical Signal Line
+      ctx.strokeStyle = shutdownMode === 'kill' ? '#ff6b6b' : '#f0b429';
+      ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(xSig, padT - 10); ctx.lineTo(xSig, height - padB); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = shutdownMode === 'kill' ? '#ff6b6b' : '#f0b429';
+      ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(shutdownMode === 'kill' ? 't=0s: SIGKILL (强杀)' : 't=0s: 收到 SIGTERM', xSig, 18);
+
+      const rows = ['存量 SSE #1', '存量 SSE #2', '新到达请求'];
+      const rowH = (height - padT - padB) / 3;
+
+      rows.forEach((lbl, i) => {
+        const y = padT + i * rowH + 8;
+        const bh = rowH - 16;
+        ctx.fillStyle = '#cbd5e1'; ctx.font = '11px monospace'; ctx.textAlign = 'right';
+        ctx.fillText(lbl, padL - 10, y + bh / 2 + 4);
+
+        if (shutdownMode === 'kill') {
+          if (i < 2) {
+            const wBefore = xSig - padL;
+            drawRoundedRect(ctx, padL, y, wBefore, bh, 5, '#58c4dd', null);
+            ctx.fillStyle = '#0d1117'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+            ctx.fillText('正在流式输出...', padL + wBefore / 2, y + bh / 2 + 3);
+            drawRoundedRect(ctx, xSig + 4, y, plotW * 0.28, bh, 5, 'rgba(255,107,107,0.2)', '#ff6b6b', 1.4);
+            ctx.fillStyle = '#ff6b6b'; ctx.fillText('❌ 连接重置断流!', xSig + 4 + plotW * 0.14, y + bh / 2 + 3);
+          } else {
+            drawRoundedRect(ctx, xSig + 14, y, plotW * 0.35, bh, 5, 'rgba(255,107,107,0.2)', '#ff6b6b', 1.4);
+            ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+            ctx.fillText('❌ 502 Bad Gateway', xSig + 14 + plotW * 0.175, y + bh / 2 + 3);
+          }
+        } else {
+          if (i < 2) {
+            const wTotal = plotW * (i === 0 ? 0.68 : 0.78);
+            drawRoundedRect(ctx, padL, y, wTotal, bh, 5, '#4ade80', null);
+            ctx.fillStyle = '#0d1117'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+            ctx.fillText('优雅等待推送完成 [DONE] ✅', padL + wTotal / 2, y + bh / 2 + 3);
+          } else {
+            drawRoundedRect(ctx, xSig + 14, y, plotW * 0.44, bh, 5, 'rgba(88,196,221,0.2)', '#58c4dd', 1.5);
+            ctx.fillStyle = '#58c4dd'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+            ctx.fillText('自动路由至新版本容器 v1.1 ✅', xSig + 14 + plotW * 0.22, y + bh / 2 + 3);
+          }
+        }
+      });
+
+      ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(shutdownMode === 'graceful' ? '所有存量流结束后 → 执行 lifespan 释放连接池 → exit 0' : '未处理 SIGTERM，发版瞬间引发前端大面积报错', width / 2, height - 10);
+    }
+
+    // =========================================================================
+    // MODULE 17.4: CI/CD PIPELINE SIMULATOR & CANARY SPLITTER
+    // =========================================================================
+    const CICD_STAGES = [
+      { id: 0, name: '1. Lint & Type', sub: 'ruff + mypy' },
+      { id: 1, name: '2. 离线契约单测', sub: 'pytest TestClient' },
+      { id: 2, name: '3. Eval 质量门禁', sub: '忠实度 ≥ 93%' },
+      { id: 3, name: '4. Docker + 扫描', sub: 'Multi-Stage + Trivy' },
+      { id: 4, name: '5. 灰度发布上线', sub: 'Canary 10% → 100%' }
+    ];
+
+    let cicdTimer = null;
+
+    function renderCicdGrid(states) {
+      document.getElementById('cicd-stages-grid').innerHTML = CICD_STAGES.map((st, i) => {
+        const s = states[i] || 'idle';
+        let cls = 'border-[#233044] bg-[#0d1117] text-gray-400';
+        let badge = 'WAIT';
+        if (s === 'run') { cls = 'border-[#58c4dd] bg-[#58c4dd]/15 text-[#58c4dd]'; badge = 'RUNNING...'; }
+        if (s === 'pass') { cls = 'border-[#4ade80] bg-[#4ade80]/15 text-[#4ade80]'; badge = '✅ PASS'; }
+        if (s === 'fail') { cls = 'border-[#ff6b6b] bg-[#ff6b6b]/15 text-[#ff6b6b]'; badge = '❌ BLOCK'; }
+        return `
+          <div class="p-3 rounded-xl border ${cls} space-y-1 transition">
+            <div class="font-bold">${st.name}</div>
+            <div class="text-[10px] opacity-80">${st.sub}</div>
+            <div class="text-[10px] font-bold pt-1">${badge}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function runCicdSim(failEval) {
+      if (cicdTimer) clearInterval(cicdTimer);
+      const states = ['idle', 'idle', 'idle', 'idle', 'idle'];
+      let step = 0;
+      const banner = document.getElementById('cicd-summary-banner');
+      banner.className = 'p-3.5 rounded-xl bg-[#0d1117] border border-[#58c4dd]/40 text-xs text-[#58c4dd] leading-relaxed';
+      banner.textContent = '🚀 触发 GitHub Actions 工作流：正在执行自动化流水线...';
+      renderCicdGrid(states);
+
+      cicdTimer = setInterval(() => {
+        if (step < 5) {
+          states[step] = 'run';
+          renderCicdGrid(states);
+          setTimeout(() => {
+            if (failEval && step === 2) {
+              states[step] = 'fail';
+              renderCicdGrid(states);
+              clearInterval(cicdTimer);
+              banner.className = 'p-3.5 rounded-xl bg-[#ff6b6b]/10 border border-[#ff6b6b]/40 text-xs text-[#ff6b6b] leading-relaxed';
+              banner.innerHTML = '<strong>🛑 流水线在第 3 步（Eval 质量门禁）自动熔断阻断！</strong>本次 Prompt 修改导致忠实度跌至 82.5%（&lt; 93% 红线），系统已自动拒绝构建镜像与上线，保护了线上用户！';
+              return;
+            }
+            states[step] = 'pass';
+            renderCicdGrid(states);
+            if (step === 4) {
+              clearInterval(cicdTimer);
+              banner.className = 'p-3.5 rounded-xl bg-[#4ade80]/10 border border-[#4ade80]/40 text-xs text-[#4ade80] leading-relaxed';
+              banner.innerHTML = '<strong>✅ 全链路 CI/CD 通过！</strong>代码质量、契约单测、黄金集 Eval 回归与容器镜像扫描全部绿灯，已自动推送镜像并完成 10% 金丝雀灰度发布！';
+            }
+            step++;
+          }, 260);
+        }
+      }, 520);
+    }
+
+    function updateCanaryBar() {
+      const pct = parseInt(document.getElementById('sl-canary-pct').value, 10);
+      const v1 = 100 - pct;
+      document.getElementById('val-canary-pct').textContent = pct + '%';
+      const b1 = document.getElementById('bar-canary-v1');
+      const b2 = document.getElementById('bar-canary-v2');
+      b1.style.width = v1 + '%';
+      b2.style.width = pct + '%';
+      b1.textContent = v1 >= 15 ? `v1.0 稳定版 (${v1}%)` : '';
+      b2.textContent = pct >= 15 ? `v1.1 灰度 (${pct}%)` : '';
+    }
+
+    // =========================================================================
+    // MODULE 17.5: CLI SIMULATOR, DEPLOY TEMPLATES & QUIZ
+    // =========================================================================
+    function runDeployCli(cmd) {
+      const screen = document.getElementById('deploy-cli-screen');
+      if (cmd === 'build') {
+        screen.textContent =
+`$ docker build -t llm-agent-api:v1.0 .
+[+] Building 3.2s (11/11) FINISHED
+ => [builder 1/3] FROM python:3.11-slim                                    CACHED
+ => [builder 2/3] COPY requirements.txt .                                  CACHED
+ => [builder 3/3] RUN pip install --no-cache-dir -r requirements.txt       CACHED
+ => [runtime 3/4] COPY --from=builder /opt/venv /opt/venv                  CACHED
+ => [runtime 4/4] COPY app/ ./app/                                           0.4s
+ => exporting to image llm-agent-api:v1.0 (size: 215MB, user: appuser)`;
+      } else if (cmd === 'up') {
+        screen.textContent =
+`$ docker compose up -d && docker compose ps
+NAME          IMAGE                 STATUS                   PORTS
+ai-nginx      nginx:1.27-alpine     Up 2 minutes (healthy)   0.0.0.0:443->443/tcp
+ai-api        llm-agent-api:v1.0    Up 2 minutes (healthy)   8000/tcp
+ai-redis      redis:7-alpine        Up 2 minutes (healthy)   6379/tcp
+ai-chroma     chromadb/chroma:0.5   Up 2 minutes (healthy)   8000/tcp`;
+      } else {
+        screen.textContent =
+`$ curl -i https://api.example.com/ready
+HTTP/2 200
+content-type: application/json
+x-request-id: req_9b41e20a
+
+{"status": "ready", "version": "v1.0", "checks": {"redis": "ok", "chroma": "ok"}}`;
+      }
+    }
+
+    const DEP_CODE_FILES = {
+      dockerfile: [
+        '# Dockerfile: 生产级多阶段精简构建（非 root 运行 + 层缓存优化 + 健康检查）',
+        '# ================= Stage 1: Builder =================',
+        'FROM python:3.11-slim AS builder',
+        'WORKDIR /build',
+        '',
+        'RUN python -m venv /opt/venv',
+        'ENV PATH="/opt/venv/bin:$PATH"',
+        '',
+        '# 先拷贝依赖清单，利用 Docker Layer 缓存（改业务代码不重装依赖）',
+        'COPY requirements.txt .',
+        'RUN pip install --no-cache-dir --upgrade pip && \\',
+        '    pip install --no-cache-dir -r requirements.txt',
+        '',
+        '# ================= Stage 2: Runtime =================',
+        'FROM python:3.11-slim AS runtime',
+        'WORKDIR /app',
+        '',
+        '# 安全：创建非 root 普通用户运行进程',
+        'RUN useradd --create-home --shell /bin/bash appuser',
+        '',
+        'COPY --from=builder /opt/venv /opt/venv',
+        'ENV PATH="/opt/venv/bin:$PATH" \\',
+        '    PYTHONUNBUFFERED=1 \\',
+        '    PYTHONDONTWRITEBYTECODE=1',
+        '',
+        'COPY --chown=appuser:appuser app/ ./app/',
+        'USER appuser',
+        '',
+        'EXPOSE 8000',
+        'HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \\',
+        '  CMD python -c "import urllib.request; urllib.request.urlopen(\'http://127.0.0.1:8000/ready\')" || exit 1',
+        '',
+        '# 必须使用 exec 数组格式，确保 uvicorn 作为 PID 1 直接接收 SIGTERM 优雅停机！',
+        'CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--timeout-graceful-shutdown", "30"]'
+      ].join('\n'),
+
+      compose: [
+        '# docker-compose.yml: Nginx + FastAPI + Redis + ChromaDB 生产编排',
+        'services:',
+        '  nginx:',
+        '    image: nginx:1.27-alpine',
+        '    container_name: ai-nginx',
+        '    ports:',
+        '      - "80:80"',
+        '      - "443:443"',
+        '    volumes:',
+        '      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro',
+        '    depends_on:',
+        '      api:',
+        '        condition: service_healthy',
+        '    restart: unless-stopped',
+        '    networks: [app-net]',
+        '',
+        '  api:',
+        '    build: .',
+        '    image: llm-agent-api:v1.0',
+        '    container_name: ai-api',
+        '    env_file: .env            # 运行时注入密钥，严禁打进镜像！',
+        '    environment:',
+        '      REDIS_URL: redis://redis:6379/0',
+        '      CHROMA_HOST: chroma',
+        '    expose:',
+        '      - "8000"                # 仅暴露给内网 Nginx，不映射到宿主机公网',
+        '    depends_on:',
+        '      redis:',
+        '        condition: service_healthy',
+        '    restart: unless-stopped',
+        '    networks: [app-net]',
+        '',
+        '  redis:',
+        '    image: redis:7-alpine',
+        '    container_name: ai-redis',
+        '    command: redis-server --appendonly yes',
+        '    volumes:',
+        '      - redis_data:/data',
+        '    healthcheck:',
+        '      test: ["CMD", "redis-cli", "ping"]',
+        '      interval: 10s',
+        '      timeout: 3s',
+        '      retries: 3',
+        '    restart: unless-stopped',
+        '    networks: [app-net]',
+        '',
+        '  chroma:',
+        '    image: chromadb/chroma:0.5.20',
+        '    container_name: ai-chroma',
+        '    volumes:',
+        '      - chroma_data:/chroma/chroma',
+        '    restart: unless-stopped',
+        '    networks: [app-net]',
+        '',
+        'volumes:',
+        '  redis_data:',
+        '  chroma_data:',
+        '',
+        'networks:',
+        '  app-net:',
+        '    driver: bridge'
+      ].join('\n'),
+
+      nginx: [
+        '# nginx.conf: 面向 FastAPI + SSE 流式 AI 接口的生产反向代理配置',
+        'upstream ai_backend {',
+        '    server api:8000;',
+        '    keepalive 32;',
+        '}',
+        '',
+        'server {',
+        '    listen 80;',
+        '    server_name api.example.com;',
+        '',
+        '    # 普通 REST 接口（健康检查、非流式问答）',
+        '    location / {',
+        '        proxy_pass http://ai_backend;',
+        '        proxy_set_header Host $host;',
+        '        proxy_set_header X-Real-IP $remote_addr;',
+        '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;',
+        '        proxy_read_timeout 60s;',
+        '    }',
+        '',
+        '    # SSE 流式对话接口：必须关闭缓冲 + HTTP/1.1 + 长超时！',
+        '    location /v1/chat/stream {',
+        '        proxy_pass http://ai_backend;',
+        '        proxy_http_version 1.1;',
+        '        proxy_set_header Connection "";',
+        '        proxy_set_header Host $host;',
+        '        proxy_set_header X-Real-IP $remote_addr;',
+        '',
+        '        proxy_buffering off;          # 关键：禁止 Nginx 攒包，逐字透传前端',
+        '        proxy_cache off;',
+        '        chunked_transfer_encoding on;',
+        '        proxy_read_timeout 300s;      # 防止长推理 / 多步 Agent 60s 被斩断',
+        '    }',
+        '}'
+      ].join('\n'),
+
+      cicd: [
+        '# .github/workflows/deploy.yml: Lint + pytest + Eval 门禁 + Docker 发布',
+        'name: AI Service CI/CD',
+        'on:',
+        '  push:',
+        '    branches: [main]',
+        '',
+        'jobs:',
+        '  test-and-eval:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '      - uses: actions/setup-python@v5',
+        '        with:',
+        '          python-version: "3.11"',
+        '      - name: Install dependencies',
+        '        run: pip install -r requirements.txt pytest ruff',
+        '      - name: Lint check',
+        '        run: ruff check app/ tests/',
+        '      - name: Run offline contract tests (TestClient + MockLLM)',
+        '        run: pytest tests/test_api.py -v',
+        '      - name: Run LLM Eval regression gate (忠实度 >= 93%)',
+        '        env:',
+        '          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}',
+        '        run: pytest tests/test_eval_gate.py -v',
+        '',
+        '  build-and-release:',
+        '    needs: test-and-eval',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '      - name: Build production multi-stage image',
+        '        run: docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .',
+        '      - name: Trigger Canary 10% rollout',
+        '        run: echo "Deploying image to Canary 10% ring..."'
+      ].join('\n')
+    };
+
+    let currentDepCodeTab = 'dockerfile';
+
+    function selectDepCodeTab(key) {
+      currentDepCodeTab = key;
+      document.querySelectorAll('.dep-code-tab').forEach(btn => {
+        const active = (btn.dataset.tab === key);
+        btn.classList.toggle('active-code-tab', active);
+        btn.classList.toggle('text-gray-400', !active);
+      });
+      const el = document.getElementById('dep-code-display');
+      if (el && DEP_CODE_FILES[key]) el.textContent = DEP_CODE_FILES[key];
+    }
+
+    function copyDepCode() {
+      const text = DEP_CODE_FILES[currentDepCodeTab] || '';
+      const label = document.getElementById('copy-dep-label');
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        label.textContent = '✅ 已复制到剪贴板';
+      } catch (e) {
+        label.textContent = '❌ 复制失败';
+      }
+      document.body.removeChild(ta);
+      setTimeout(() => { label.textContent = '📋 复制当前配置'; }, 2000);
+    }
+
+    const DEP_QUIZ = [
+      {
+        q: '1. 在编写 Python AI 服务的 Dockerfile 时，为什么要把 COPY requirements.txt 和 pip install 写在 COPY app/ 之前？',
+        options: [
+          'A. Docker 语法强制要求先装依赖',
+          'B. 利用 Docker Layer 缓存机制：平时只改业务代码时无需重新下载安装几百 MB 的依赖，构建从几分钟缩到 3 秒',
+          'C. 可以让 Python 运行速度变快 2 倍',
+          'D. 可以自动加密源代码'
+        ],
+        ans: 1,
+        exp: 'Docker 按层自上而下缓存；只要 requirements.txt 没变，依赖安装层就能 100% 命中缓存。'
+      },
+      {
+        q: '2. 用 Nginx 反向代理 FastAPI 的 SSE 流式接口（/v1/chat/stream）时，最关键的两个配置项是？',
+        options: [
+          'A. proxy_buffering off; 和调大 proxy_read_timeout（如 300s）',
+          'B. 开启 gzip 极致压缩并把超时设为 5s',
+          'C. 强制降级为 HTTP/1.0 短连接',
+          'D. 把 Redis 6379 端口直接暴露到公网'
+        ],
+        ans: 0,
+        exp: '关闭缓冲确保逐字实时透传不卡顿，调大读超时防止慢思考模型或长耗时 Agent 在 60s 时触发 504 断流。'
+      },
+      {
+        q: '3. 为什么 Dockerfile 最后一行推荐使用数组 exec 格式 CMD ["uvicorn", ...] 而不是 shell 字符串格式？',
+        options: [
+          'A. 数组格式写起来更好看',
+          'B. exec 格式让 uvicorn 直接成为 PID 1 进程，能够收到容器发来的 SIGTERM 信号并执行优雅停机，避免存量 SSE 断流',
+          'C. shell 格式不支持 Python 3.11',
+          'D. 数组格式会自动启用 HTTPS'
+        ],
+        ans: 1,
+        exp: 'shell 格式会套一层 /bin/sh -c，导致 SIGTERM 传不到 uvicorn，最终触发超时强杀 SIGKILL 造成用户断流。'
+      },
+      {
+        q: '4. 在 Docker Compose 生产编排中，关于 API Key 和 Redis / ChromaDB 端口的最佳安全实践是？',
+        options: [
+          'A. 把 API Key 写死在 Dockerfile 的 ENV 里，把 Redis 6379 映射到 0.0.0.0 公网方便远程连接',
+          'B. 通过运行时 env_file / Secret 注入密钥，并将 .env 加入 .dockerignore；Redis 与向量库仅在私有 Bridge 内网互通',
+          'C. 把 API Key 写在前端网页的 JavaScript 里',
+          'D. 不需要设置密码和网络隔离'
+        ],
+        ans: 1,
+        exp: '密钥运行时注入 + 私有内网隔离 + 非 root 用户是容器化部署的三条基本安全底线。'
+      },
+      {
+        q: '5. 当团队准备将线上客服 Agent 的底层模型升级到新版本，或大幅重构 System Prompt 时，风险最低的发布策略是？',
+        options: [
+          'A. 周五晚上直接 100% 覆盖线上旧容器',
+          'B. 先通过 CI/CD 黄金评测集（Eval Gate），再采用金丝雀灰度发布（先切 10% 真实流量观测点踩率、延迟与成本）',
+          'C. 跳过单元测试直接手动 scp 传代码到服务器',
+          'D. 关闭所有日志以节省磁盘'
+        ],
+        ans: 1,
+        exp: 'Eval 自动化门禁守住离线基线，金丝雀灰度（Canary）把线上未知风险控制在极小流量范围内。'
+      }
+    ];
+
+    let depQuizAnswers = {};
+
+    function renderDepQuiz() {
+      const box = document.getElementById('dep-quiz-container');
+      box.innerHTML = DEP_QUIZ.map((item, qIdx) => `
+        <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+          <div class="text-xs font-bold text-white">${item.q}</div>
+          <div class="space-y-1.5 text-xs">
+            ${item.options.map((opt, oIdx) => `
+              <button onclick="answerDepQuiz(${qIdx}, ${oIdx})" id="dq-${qIdx}-o-${oIdx}" class="w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] hover:border-[#4ade80] text-gray-300 transition">
+                ${opt}
+              </button>
+            `).join('')}
+          </div>
+          <div id="dq-${qIdx}-exp" class="hidden p-3 rounded-lg text-xs leading-relaxed"></div>
+        </div>
+      `).join('');
+    }
+
+    function answerDepQuiz(qIdx, oIdx) {
+      depQuizAnswers[qIdx] = oIdx;
+      const item = DEP_QUIZ[qIdx];
+      item.options.forEach((_, i) => {
+        const btn = document.getElementById(`dq-${qIdx}-o-${i}`);
+        if (i === item.ans) {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#4ade80]/20 border border-[#4ade80] text-[#4ade80] font-bold';
+        } else if (i === oIdx && oIdx !== item.ans) {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#ff6b6b]/20 border border-[#ff6b6b] text-[#ff6b6b]';
+        } else {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] text-gray-500 opacity-60';
+        }
+      });
+      const exp = document.getElementById(`dq-${qIdx}-exp`);
+      exp.classList.remove('hidden');
+      if (oIdx === item.ans) {
+        exp.className = 'p-3 rounded-lg bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80] text-xs leading-relaxed';
+        exp.innerHTML = `<strong>✅ 回答正确！</strong> ${item.exp}`;
+      } else {
+        exp.className = 'p-3 rounded-lg bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 text-[#ff6b6b] text-xs leading-relaxed';
+        exp.innerHTML = `<strong>❌ 解析：</strong> ${item.exp}`;
+      }
+      const score = Object.keys(depQuizAnswers).filter(k => depQuizAnswers[k] === DEP_QUIZ[k].ans).length;
+      document.getElementById('dep-quiz-score').textContent = `得分: ${score} / ${DEP_QUIZ.length}`;
+    }
+
+    // =========================================================================
+    // INIT ON DOM READY
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      setDockerMode('multi');
+      simDockerBuild('code');
+      selectCompNode('nginx');
+      updateNginxClinic();
+      setShutdownMode('graceful');
+      renderCicdGrid(['idle', 'idle', 'idle', 'idle', 'idle']);
+      updateCanaryBar();
+      runDeployCli('build');
+      selectDepCodeTab('dockerfile');
+      renderDepQuiz();
+
+      window.addEventListener('resize', () => {
+        renderDockerSizeCanvas();
+        renderComposeCanvas();
+        renderShutdownCanvas();
+      });
+    });
+  </script>
+</body>
+</html>

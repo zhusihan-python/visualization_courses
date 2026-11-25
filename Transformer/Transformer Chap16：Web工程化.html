@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 16 章：Web 服务化 —— 用 FastAPI 把 LLM / RAG / Agent 封装成生产级 API</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0d1117',
+            cardDark: '#141b26',
+            panelDark: '#0f1622',
+            borderDark: '#233044',
+            cyanAccent: '#58c4dd',
+            goldAccent: '#f0b429',
+            emeraldAccent: '#4ade80',
+            coralAccent: '#ff6b6b',
+            violetAccent: '#c084fc',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #233044; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #58c4dd; }
+    .math-symbol { font-family: 'Times New Roman', serif; font-style: italic; }
+    .active-code-tab {
+      border-bottom: 2px solid #58c4dd;
+      color: #58c4dd;
+      font-weight: 700;
+    }
+    .glow-cyan { box-shadow: 0 0 18px rgba(88, 196, 221, 0.16); }
+    .glow-gold { box-shadow: 0 0 18px rgba(240, 180, 41, 0.16); }
+    .glow-emerald { box-shadow: 0 0 18px rgba(74, 222, 128, 0.16); }
+    .glow-coral { box-shadow: 0 0 18px rgba(255, 107, 107, 0.16); }
+    .glow-violet { box-shadow: 0 0 18px rgba(192, 132, 252, 0.16); }
+    canvas { display: block; width: 100%; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-[#58c4dd]/30 selection:text-[#58c4dd]">
+
+  <!-- Sticky Header -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur-md border-b border-[#233044] px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="flex items-center space-x-3">
+        <span class="px-2.5 py-1 text-xs font-mono font-bold uppercase tracking-wider bg-[#58c4dd]/15 text-[#58c4dd] border border-[#58c4dd]/40 rounded-full">
+          CHAPTER 16
+        </span>
+        <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">Web 服务化：用 FastAPI 把 LLM 应用封装成生产级 API</h1>
+      </div>
+      <nav class="flex items-center space-x-1 text-xs font-medium overflow-x-auto max-w-full pb-1 md:pb-0">
+        <a href="#module-16-1" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#58c4dd] hover:bg-[#141b26] transition">16.1 路由与 Lifespan</a>
+        <a href="#module-16-2" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#4ade80] hover:bg-[#141b26] transition">16.2 SSE 流式接口</a>
+        <a href="#module-16-3" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#f0b429] hover:bg-[#141b26] transition">16.3 中间件与限流</a>
+        <a href="#module-16-4" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#c084fc] hover:bg-[#141b26] transition">16.4 并发与测试</a>
+        <a href="#module-16-5" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#ff6b6b] hover:bg-[#141b26] transition">16.5 源码与测验</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="border-b border-[#233044] bg-gradient-to-b from-[#141b26] to-[#0d1117] py-12 px-4 relative overflow-hidden">
+    <div class="absolute -top-24 -right-24 w-96 h-96 bg-[#58c4dd]/10 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-[#4ade80]/10 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="max-w-7xl mx-auto space-y-6 relative z-10">
+      <div class="space-y-3">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#58c4dd]/10 border border-[#58c4dd]/30 text-[#58c4dd] text-xs font-mono">
+          <span class="w-2 h-2 rounded-full bg-[#58c4dd] animate-pulse"></span>
+          FastAPI · Pydantic v2 · SSE Streaming · Rate Limiting · Async Concurrency
+        </div>
+        <h2 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+          第 16 章：Web 服务化 —— 从命令行脚本到高并发 AI API
+        </h2>
+        <p class="text-sm sm:text-base text-gray-400 max-w-3xl leading-relaxed">
+          前面我们写的 RAG、Agent、MCP 与本地推理都跑在终端命令行里。要让网页前端、小程序、App 或公司其他微服务调用，就必须用 <span class="text-[#58c4dd] font-semibold">FastAPI</span> 将其封装为标准 HTTP / <span class="text-[#4ade80] font-semibold">SSE 流式接口</span>，并配齐生命周期管理、认证限流、异步后台任务与自动化测试。
+        </p>
+      </div>
+
+      <!-- 4 KPI Pills -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-cyan">
+          <div class="text-xs text-gray-400">核心框架</div>
+          <div class="text-lg font-bold text-[#58c4dd] font-mono">FastAPI + Uvicorn</div>
+          <div class="text-xs text-gray-500">原生 async + Pydantic 校验 + OpenAPI</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-emerald">
+          <div class="text-xs text-gray-400">流式传输标准</div>
+          <div class="text-lg font-bold text-[#4ade80] font-mono">SSE + 断连检测</div>
+          <div class="text-xs text-gray-500">X-Accel-Buffering: no · 防僵尸扣费</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-gold">
+          <div class="text-xs text-gray-400">网关治理防线</div>
+          <div class="text-lg font-bold text-[#f0b429] font-mono">Bearer + 令牌桶限流</div>
+          <div class="text-xs text-gray-500">Request-ID 贯穿日志 · 429 精准限流</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-violet">
+          <div class="text-xs text-gray-400">质量保障闭环</div>
+          <div class="text-lg font-bold text-[#c084fc] font-mono">lifespan + TestClient</div>
+          <div class="text-xs text-gray-500">单次加载模型 · 零网络离线单测</div>
+        </div>
+      </div>
+
+      <!-- 5-Stage Quick Nav Strip -->
+      <div class="p-4 rounded-xl bg-[#0d1117]/70 border border-[#233044] space-y-3">
+        <div class="text-xs font-mono uppercase text-gray-400 tracking-wider">Web 服务化五大互动实验室 (点击跳转)</div>
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-2 text-center text-xs">
+          <a href="#module-16-1" class="p-2.5 rounded-lg bg-[#141b26] border border-[#58c4dd]/40 hover:border-[#58c4dd] text-white font-medium transition">
+            1. 路由、校验与 Lifespan
+          </a>
+          <a href="#module-16-2" class="p-2.5 rounded-lg bg-[#141b26] border border-[#4ade80]/40 hover:border-[#4ade80] text-white font-medium transition">
+            2. SSE 流式与断连剧场
+          </a>
+          <a href="#module-16-3" class="p-2.5 rounded-lg bg-[#141b26] border border-[#f0b429]/40 hover:border-[#f0b429] text-white font-medium transition">
+            3. 中间件与令牌桶限流
+          </a>
+          <a href="#module-16-4" class="p-2.5 rounded-lg bg-[#141b26] border border-[#c084fc]/40 hover:border-[#c084fc] text-white font-medium transition">
+            4. 并发阻塞与自动化测试
+          </a>
+          <a href="#module-16-5" class="p-2.5 rounded-lg bg-[#141b26] border border-[#ff6b6b]/40 hover:border-[#ff6b6b] text-white font-medium transition">
+            5. FastAPI 源码与测验
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 py-10 space-y-16 flex-grow w-full">
+
+    <!-- ==================== MODULE 16.1 ==================== -->
+    <section id="module-16-1" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#58c4dd] font-mono">16.1</span> FastAPI 路由设计、Pydantic 强校验与 Lifespan 生命周期
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          LLM 应用服务化的第一条铁律：<strong>绝对不要在路由函数里初始化 Embedding 模型、向量库或 HTTP 客户端</strong>，必须托管在 <code class="text-[#58c4dd]">lifespan</code> 上下文中。
+        </p>
+      </div>
+
+      <!-- Part A: Lifespan vs Per-Request Init Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 模型加载生命周期对比 (Lifespan 单例 vs 每次请求重载)</h4>
+            <p class="text-xs text-gray-400">切换两种写法，在高分屏画布中对比内存占用、首字延迟与进程关闭时的优雅清理</p>
+          </div>
+          <div class="flex space-x-2 bg-[#0d1117] p-1 rounded-xl border border-[#233044] text-xs font-mono">
+            <button onclick="setLifespanMode('bad')" id="ls-btn-bad" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition">❌ 路由内初始化 (3.2s + OOM)</button>
+            <button onclick="setLifespanMode('good')" id="ls-btn-good" class="px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-bold transition">✅ lifespan 托管 (18ms 复用)</button>
+          </div>
+        </div>
+
+        <div class="w-full overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-lifespan" class="w-full h-[215px]"></canvas>
+        </div>
+
+        <div id="lifespan-desc" class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] text-xs text-gray-300 leading-relaxed"></div>
+      </div>
+
+      <!-- Part B: Interactive HTTP Endpoint & Pydantic 422 Validator Sandbox -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: REST API 与 Pydantic 强校验交互沙盒 (Swagger / OpenAPI 视角)</h4>
+            <p class="text-xs text-gray-400">点击测试 5 种典型 HTTP 请求，观察 FastAPI 的标准状态码（200 / 401 / 422 / 503）与统一错误体</p>
+          </div>
+          <span class="text-xs font-mono px-2.5 py-1 rounded bg-[#58c4dd]/15 text-[#58c4dd] border border-[#58c4dd]/30">自动生成 /docs 交互文档</span>
+        </div>
+
+        <div class="flex flex-wrap gap-2 text-xs font-mono">
+          <button onclick="testApiCase('ok_chat')" id="api-btn-ok_chat" class="px-3 py-1.5 rounded-lg bg-[#4ade80] text-black font-bold transition">POST /v1/chat (正常 200)</button>
+          <button onclick="testApiCase('err_422')" id="api-btn-err_422" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">POST /v1/chat (参数越界 422)</button>
+          <button onclick="testApiCase('err_401')" id="api-btn-err_401" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">POST /v1/chat (缺 Key 401)</button>
+          <button onclick="testApiCase('health')" id="api-btn-health" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">GET /health (存活探针 200)</button>
+          <button onclick="testApiCase('ready_503')" id="api-btn-ready_503" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">GET /ready (模型加载中 503)</button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <div class="text-xs font-mono text-gray-400 flex justify-between">
+              <span>HTTP REQUEST</span>
+              <span id="api-req-line" class="text-[#58c4dd]">POST /v1/chat HTTP/1.1</span>
+            </div>
+            <pre id="api-req-pre" class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] font-mono text-xs text-gray-200 h-[210px] overflow-auto leading-relaxed"></pre>
+          </div>
+          <div class="space-y-1.5">
+            <div class="text-xs font-mono text-gray-400 flex justify-between">
+              <span>HTTP RESPONSE</span>
+              <span id="api-res-status" class="px-2 py-0.5 rounded bg-[#4ade80]/20 text-[#4ade80] font-bold">200 OK</span>
+            </div>
+            <pre id="api-res-pre" class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] font-mono text-xs text-[#4ade80] h-[210px] overflow-auto leading-relaxed"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 16.2 ==================== -->
+    <section id="module-16-2" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#4ade80] font-mono">16.2</span> SSE 流式接口剧场与客户端断连防扣费机制
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          大模型生成 500 字可能需要 8 秒。通过 FastAPI <code class="text-[#4ade80]">StreamingResponse(..., media_type="text/event-stream")</code> 把首字响应压到 500ms 内，并及时感知用户关掉网页。
+        </p>
+      </div>
+
+      <!-- Part A: Interactive SSE Frame Streamer & Disconnect Guard -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 实时 SSE 帧传输与客户端中途断连模拟器</h4>
+            <p class="text-xs text-gray-400">点击发起流式生成，可在中途点击「🔌 模拟用户关闭浏览器」，观察服务端 <code class="text-[#ff6b6b]">request.is_disconnected()</code> 立刻止损</p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs font-mono">
+            <button onclick="startSseStream()" id="btn-sse-start" class="px-3.5 py-1.5 rounded-lg bg-[#4ade80] text-black font-bold hover:bg-[#4ade80]/90 transition">
+              ▶ 发起 SSE 流式请求
+            </button>
+            <button onclick="disconnectSseClient()" id="btn-sse-abort" disabled class="px-3.5 py-1.5 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/50 text-[#ff6b6b] disabled:opacity-40 hover:bg-[#ff6b6b]/15 transition">
+              🔌 模拟用户中途关网页
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <!-- Left: Raw SSE Wire Frames -->
+          <div class="lg:col-span-6 space-y-1.5">
+            <div class="text-xs font-mono text-gray-400 flex justify-between">
+              <span>1. 服务端发出的原始 SSE 帧 (data: ...\n\n)</span>
+              <span id="sse-frame-cnt" class="text-[#58c4dd]">0 frames</span>
+            </div>
+            <pre id="sse-raw-box" class="p-3.5 rounded-xl bg-[#070a0f] border border-[#233044] font-mono text-[11px] text-[#58c4dd] h-[220px] overflow-y-auto leading-relaxed whitespace-pre-wrap"></pre>
+          </div>
+
+          <!-- Right: Frontend Typewriter + Server Guard Log -->
+          <div class="lg:col-span-6 flex flex-col justify-between space-y-3">
+            <div class="space-y-1.5">
+              <div class="text-xs font-mono text-gray-400 flex justify-between">
+                <span>2. 前端浏览器打字机渲染效果 (fetch + ReadableStream)</span>
+                <span id="sse-state-pill" class="text-gray-400">IDLE</span>
+              </div>
+              <div id="sse-ui-box" class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] text-xs text-white h-[118px] overflow-y-auto leading-relaxed">
+                等待发起 SSE 流式请求...
+              </div>
+            </div>
+            <div id="sse-server-log" class="p-3 rounded-xl bg-[#0d1117] border border-[#233044] font-mono text-[11px] text-gray-400 leading-relaxed">
+              [Server] 状态：等待连接 · 响应头已配置 X-Accel-Buffering: no, Cache-Control: no-cache
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: SSE vs WebSocket + 3 Pitfalls -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 text-xs">
+        <div class="lg:col-span-7 overflow-x-auto bg-[#141b26] p-4 rounded-xl border border-[#233044]">
+          <div class="font-bold text-white mb-2.5">SSE vs WebSocket 选型对比</div>
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-[#233044] text-gray-400 font-mono">
+                <th class="p-2">对比维度</th>
+                <th class="p-2 text-[#4ade80]">SSE (Server-Sent Events)</th>
+                <th class="p-2 text-[#c084fc]">WebSocket</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#233044] text-gray-300">
+              <tr><td class="p-2 font-semibold text-white">通信方向</td><td class="p-2">服务端 → 客户端（单向推送）</td><td class="p-2">全双工双向通信</td></tr>
+              <tr><td class="p-2 font-semibold text-white">底层协议</td><td class="p-2">纯 HTTP，天然兼容代理/防火墙</td><td class="p-2">独立 ws:// 协议，需网关升级</td></tr>
+              <tr><td class="p-2 font-semibold text-white">适用 AI 场景</td><td class="p-2 text-[#4ade80] font-bold">95% 文本对话/RAG/Agent 进度推送</td><td class="p-2">实时语音通话（随时打断）</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="lg:col-span-5 p-4 rounded-xl bg-[#141b26] border border-[#f0b429]/40 space-y-2">
+          <div class="font-bold text-[#f0b429]">⚠️ 线上 SSE 最常见的 3 个坑</div>
+          <ul class="space-y-1.5 text-gray-300 list-disc list-inside leading-relaxed">
+            <li><strong class="text-white">Nginx 缓冲吃掉流式：</strong>Nginx 默认攒满 4KB 才转发，响应头必须加 <code class="text-[#58c4dd]">X-Accel-Buffering: no</code>！</li>
+            <li><strong class="text-white">浏览器原生 EventSource 只支持 GET：</strong>带 JSON body 和 Authorization Header 的 POST 流式请用 <code class="text-[#4ade80]">fetch() + getReader()</code>。</li>
+            <li><strong class="text-white">流中途报错无法改 HTTP 状态码：</strong>流开始后状态码已是 200，异常必须作为 <code class="text-[#ff6b6b]">event: error</code> 帧推送给前端。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 16.3 ==================== -->
+    <section id="module-16-3" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#f0b429] font-mono">16.3</span> 认证鉴权、会话管理与令牌桶限流实验室
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          裸奔的 LLM API 上线 10 分钟就会被爬虫刷爆余额。用中间件统一处理 CORS、Request-ID、API Key 鉴权与令牌桶限流。
+        </p>
+      </div>
+
+      <!-- Part A: Interactive Token Bucket Rate Limiter -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 实时令牌桶限流模拟器 (Token Bucket Rate Limiter)</h4>
+            <p class="text-xs text-gray-400">每个请求消耗 1 个令牌；桶空时立即返回 <code class="text-[#ff6b6b]">HTTP 429 Too Many Requests</code> 并附带 <code class="text-[#f0b429]">Retry-After</code></p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs font-mono">
+            <button onclick="sendBucketReq(1)" class="px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-bold hover:bg-[#58c4dd]/90 transition">
+              ⚡ 发 1 次请求
+            </button>
+            <button onclick="sendBucketReq(6)" class="px-3 py-1.5 rounded-lg bg-[#f0b429] text-black font-bold hover:bg-[#f0b429]/90 transition">
+              🌊 模拟突发 6 并发
+            </button>
+            <button onclick="resetBucket()" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">
+              ↺ 填满令牌桶
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-[#0d1117] p-4 rounded-xl border border-[#233044] text-xs font-mono items-center">
+          <div class="space-y-1">
+            <div class="flex justify-between">
+              <span class="text-gray-300">桶容量 (Burst):</span>
+              <span id="val-tb-cap" class="text-[#58c4dd] font-bold">8 tokens</span>
+            </div>
+            <input type="range" id="sl-tb-cap" min="4" max="15" step="1" value="8" oninput="updateBucketConfig()" class="w-full accent-[#58c4dd]">
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between">
+              <span class="text-gray-300">补充速率 (Refill):</span>
+              <span id="val-tb-rate" class="text-[#4ade80] font-bold">1.0 tok/s</span>
+            </div>
+            <input type="range" id="sl-tb-rate" min="0.5" max="3.0" step="0.5" value="1.0" oninput="updateBucketConfig()" class="w-full accent-[#4ade80]">
+          </div>
+          <div class="flex justify-between p-2.5 rounded-lg bg-[#141b26] border border-[#233044]">
+            <span class="text-[#4ade80]">200 通过: <strong id="tb-ok-cnt">0</strong></span>
+            <span class="text-[#ff6b6b]">429 拦截: <strong id="tb-err-cnt">0</strong></span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div class="lg:col-span-7 overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+            <canvas id="canvas-token-bucket" class="w-full h-[200px]"></canvas>
+          </div>
+          <div class="lg:col-span-5 bg-[#070a0f] p-3.5 rounded-xl border border-[#233044] font-mono text-[11px] h-[216px] overflow-y-auto space-y-1" id="tb-log-box">
+            <div class="text-gray-500"># 点击上方按钮发送请求，观测令牌桶实时放行与 429 限流...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: Middleware Pipeline & Session Storage Matrix -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+        <div class="p-5 rounded-xl bg-[#141b26] border border-[#233044] space-y-3">
+          <div class="font-bold text-white">🧅 FastAPI 中间件洋葱执行顺序</div>
+          <div class="space-y-1.5 font-mono text-[11px]">
+            <div class="p-2 rounded bg-[#0d1117] border-l-4 border-[#58c4dd]">1. CORS Middleware → 放行指定前端域名（生产禁用 allow_origins=["*"] + credentials）</div>
+            <div class="p-2 rounded bg-[#0d1117] border-l-4 border-[#c084fc]">2. Request-ID &amp; Access Log → 注入 X-Request-ID 贯穿全链路日志</div>
+            <div class="p-2 rounded bg-[#0d1117] border-l-4 border-[#f0b429]">3. Bearer Auth (Depends) → 用 hmac.compare_digest 校验 API Key</div>
+            <div class="p-2 rounded bg-[#0d1117] border-l-4 border-[#ff6b6b]">4. Rate Limiter → 按租户/IP 扣除令牌，超限直接返回 429</div>
+            <div class="p-2 rounded bg-[#0d1117] border-l-4 border-[#4ade80]">5. Route Handler → 执行 RAG / Agent 业务并返回统一响应体</div>
+          </div>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#141b26] border border-[#233044] space-y-3">
+          <div class="font-bold text-white">💾 多轮会话状态存储选型（为什么不能只用全局 dict？）</div>
+          <div class="space-y-2 text-gray-300">
+            <div class="p-2.5 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/30">
+              <span class="font-bold text-[#ff6b6b]">1. 内存 dict（仅限单进程 Demo）：</span>
+              Uvicorn 开 <code class="font-mono">--workers 4</code> 多进程后，第 1 轮落在 Worker A，第 2 轮落在 Worker B 直接失忆，且进程重启清空！
+            </div>
+            <div class="p-2.5 rounded-lg bg-[#0d1117] border border-[#4ade80]/30">
+              <span class="font-bold text-[#4ade80]">2. Redis + TTL（生产热会话首选）：</span>
+              多 Worker / 多机共享上下文，自带过期时间（如 24h 自动淘汰防内存泄漏），读写延迟 &lt; 1ms。
+            </div>
+            <div class="p-2.5 rounded-lg bg-[#0d1117] border border-[#58c4dd]/30">
+              <span class="font-bold text-[#58c4dd]">3. PostgreSQL（长期审计与历史回看）：</span>
+              持久化归档用户完整历史会话与点赞/点踩反馈，供离线 Eval 评测复用。
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 16.4 ==================== -->
+    <section id="module-16-4" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#c084fc] font-mono">16.4</span> 异步并发陷阱、后台任务与自动化接口测试
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          FastAPI 很快，但一旦在 <code class="text-[#ff6b6b]">async def</code> 里误写了同步阻塞调用，整个服务的并发能力会瞬间跌回 1！同时掌握用 <code class="text-[#4ade80]">TestClient</code> 编写零网络自动化单测。
+        </p>
+      </div>
+
+      <!-- Part A: Async Event Loop Blocking vs Non-Blocking Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: FastAPI 异步事件循环高并发对比 (4 个同时到达的 LLM 请求)</h4>
+            <p class="text-xs text-gray-400">切换同步阻塞与异步非阻塞，观察事件循环（Event Loop）上的时间线调度差异</p>
+          </div>
+          <div class="flex space-x-2 bg-[#0d1117] p-1 rounded-xl border border-[#233044] text-xs font-mono">
+            <button onclick="setAsyncMode('blocking')" id="as-btn-blocking" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition">❌ async def + requests.post (总耗时 4.0s)</button>
+            <button onclick="setAsyncMode('async')" id="as-btn-async" class="px-3 py-1.5 rounded-lg bg-[#c084fc] text-black font-bold transition">✅ async def + httpx.AsyncClient (总耗时 1.1s)</button>
+          </div>
+        </div>
+
+        <div class="w-full overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-async-loop" class="w-full h-[205px]"></canvas>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300">
+            <strong class="text-[#c084fc]">🔧 CPU 密集型任务（如本地 Embedding / PDF 解析）：</strong>
+            不要在 <code class="font-mono">async def</code> 里直接跑，用 <code class="font-mono text-[#58c4dd]">await asyncio.to_thread(model.encode, texts)</code> 丢给线程池，或直接把路由声明为普通 <code class="font-mono text-[#4ade80]">def</code> 让 FastAPI 自动托管线程池。
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300">
+            <strong class="text-[#f0b429]">📦 耗时异步任务（如上传 100 页 PDF 建索引）：</strong>
+            接口不要干等！用 <code class="font-mono text-[#4ade80]">BackgroundTasks</code>（或 Celery/ARQ）立即返回 <code class="font-mono text-[#58c4dd]">HTTP 202 Accepted + job_id</code>，前端轮询任务进度。
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: Interactive pytest + TestClient Runner -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: FastAPI 离线自动化测试套件 (<code class="text-[#4ade80] font-mono">pytest + TestClient</code>)</h4>
+            <p class="text-xs text-gray-400">利用 <code class="text-[#58c4dd]">app.dependency_overrides</code> 把真实 LLM 替换为 Mock，毫秒级跑完所有接口契约测试</p>
+          </div>
+          <button onclick="runPytestSim()" id="btn-run-pytest" class="px-4 py-1.5 rounded-lg bg-[#4ade80] text-black text-xs font-mono font-bold hover:bg-[#4ade80]/90 transition">
+            ▶ 运行 pytest test_api.py -v
+          </button>
+        </div>
+
+        <div id="pytest-results-list" class="space-y-2 text-xs font-mono">
+          <!-- Dynamic test rows -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 16.5 ==================== -->
+    <section id="module-16-5" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#ff6b6b] font-mono">16.5</span> 服务化 CLI 终端、完整 FastAPI 源码库与章末测验
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          可直接启动运行的 FastAPI 主服务、带断连检测的 SSE 流式接口、令牌桶限流中间件与 <code class="text-[#58c4dd]">pytest</code> 测试套件。
+        </p>
+      </div>
+
+      <!-- Part A: CLI Simulator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-semibold text-white">Part A: Web 服务开发与调试终端模拟器</h4>
+          <div class="flex space-x-1.5">
+            <span class="w-3 h-3 rounded-full bg-red-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-yellow-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-green-500/80 inline-block"></span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 text-xs font-mono">
+          <button onclick="runWebCli('uvicorn')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#58c4dd]/40 text-[#58c4dd] hover:bg-[#58c4dd]/10 transition">
+            $ uvicorn app_main:app --reload --port 8000
+          </button>
+          <button onclick="runWebCli('curl_sse')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#4ade80]/40 text-[#4ade80] hover:bg-[#4ade80]/10 transition">
+            $ curl -N -X POST http://localhost:8000/v1/chat/stream
+          </button>
+          <button onclick="runWebCli('curl_429')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/40 text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition">
+            $ for i in {1..10}; do curl -s -o /dev/null -w "%{http_code} " ...; done
+          </button>
+        </div>
+
+        <pre id="web-cli-screen" class="p-4 rounded-xl bg-[#070a0f] border border-[#233044] font-mono text-xs text-gray-200 min-h-[175px] max-h-[290px] overflow-y-auto leading-relaxed whitespace-pre-wrap"></pre>
+      </div>
+
+      <!-- Part B: Complete Python Code Repository -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: 第 16 章完整 FastAPI Python 源码库 (可直接运行)</h4>
+            <p class="text-xs text-gray-400">切换查看 4 份核心代码，支持一键复制到剪贴板</p>
+          </div>
+          <button onclick="copyWebCode()" id="btn-copy-web" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#58c4dd] text-black hover:bg-[#58c4dd]/90 transition">
+            <span id="copy-web-label">📋 复制当前代码</span>
+          </button>
+        </div>
+
+        <div class="flex border-b border-[#233044] space-x-1 overflow-x-auto text-xs font-mono">
+          <button onclick="selectWebCodeTab('main')" data-tab="main" class="web-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            app_main.py
+          </button>
+          <button onclick="selectWebCodeTab('sse')" data-tab="sse" class="web-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            sse_streaming.py
+          </button>
+          <button onclick="selectWebCodeTab('ratelimit')" data-tab="ratelimit" class="web-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            middleware_ratelimit.py
+          </button>
+          <button onclick="selectWebCodeTab('tests')" data-tab="tests" class="web-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            test_api.py
+          </button>
+        </div>
+
+        <pre class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] overflow-x-auto font-mono text-xs text-gray-200 max-h-[450px] leading-relaxed"><code id="web-code-display"></code></pre>
+      </div>
+
+      <!-- Part C: 5-Question Quiz -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex items-center justify-between border-b border-[#233044] pb-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part C: 第 16 章 Web 服务化核心测验 (5-Question Quiz)</h4>
+            <p class="text-xs text-gray-400">检验对 Lifespan、SSE 断连、限流中间件与异步并发的掌握</p>
+          </div>
+          <span id="web-quiz-score" class="px-3 py-1 rounded-full bg-[#58c4dd]/15 border border-[#58c4dd]/30 text-[#58c4dd] text-xs font-mono font-bold">
+            得分: 0 / 5
+          </span>
+        </div>
+        <div id="web-quiz-container" class="space-y-4"></div>
+      </div>
+
+      <!-- Part D: 12-Point Chapter Summary Grid -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <h4 class="text-sm font-semibold text-white">Part D: 第 16 章 12 条核心要点总结矩阵</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">1. Lifespan 托管重资源</div>
+            <div class="text-gray-400">Embedding 模型、向量库、AsyncClient 必须在 lifespan 启动时加载一次，关闭时优雅释放。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">2. Pydantic 强契约校验</div>
+            <div class="text-gray-400">用 Field 约束长度、温度范围与枚举值，非法请求在进业务前自动返回 HTTP 422。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">3. 区分 /health 与 /ready</div>
+            <div class="text-gray-400">/health 查进程存活；/ready 查模型和依赖就绪，加载未完成返回 503 防止流量提前打入。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">4. SSE 响应头防缓冲</div>
+            <div class="text-gray-400">流式接口必加 X-Accel-Buffering: no 与 Cache-Control: no-cache，防止 Nginx 攒包。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">5. 监听客户端断连止损</div>
+            <div class="text-gray-400">生成器循环内检查 await request.is_disconnected()，用户关网页后立刻中止上游扣费。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">6. 文本对话首选 SSE</div>
+            <div class="text-gray-400">SSE 纯 HTTP 更易部署与负载均衡；只有需要随时语音打断的全双工场景才上 WebSocket。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">7. 令牌桶精准限流</div>
+            <div class="text-gray-400">按 API Key / IP 实施 Token Bucket 限流，超限返回 429 + Retry-After 保护上游额度。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">8. 多 Worker 必用 Redis 会话</div>
+            <div class="text-gray-400">多进程部署下内存 dict 会导致上下文丢失，热会话应存入 Redis 并配置 TTL 自动过期。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">9. X-Request-ID 贯穿全链路</div>
+            <div class="text-gray-400">中间件为每次请求生成唯一 ID 并写入响应头与日志，前后端排查线上故障秒级对齐。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#c084fc]/40 space-y-1">
+            <div class="font-bold text-[#c084fc]">10. 严防 async def 阻塞</div>
+            <div class="text-gray-400">异步路由内绝不能用 requests 或 time.sleep；CPU 密集计算用 asyncio.to_thread 卸载。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#c084fc]/40 space-y-1">
+            <div class="font-bold text-[#c084fc]">11. 长耗时任务 202 异步化</div>
+            <div class="text-gray-400">文档批量入库等耗时操作交给 BackgroundTasks / 任务队列，接口立即返回 202 + job_id。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#ff6b6b]/40 space-y-1">
+            <div class="font-bold text-[#ff6b6b]">12. 依赖注入解耦单测</div>
+            <div class="text-gray-400">用 Depends 注入 LLM 客户端，配合 dependency_overrides 让 pytest 零费用离线跑通全量测试。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-[#233044] bg-[#0d1117] py-6 px-4 text-center text-xs text-gray-500">
+    <div class="max-w-7xl mx-auto space-y-1">
+      <p>第 16 章：Web 服务化 —— 用 FastAPI 把 LLM / RAG / Agent 封装成生产级 API</p>
+      <p>3Blue1Brown Mathematical &amp; Engineering Style Interactive Tutorial</p>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // CANVAS HELPERS (High-DPI Retina + Custom RoundedRect + Arrow)
+    // =========================================================================
+    function setupCanvas(canvas) {
+      if (!canvas) return null;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(rect.width || 600, 300);
+      const height = rect.height || 210;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width, height };
+    }
+
+    function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke, lw = 1.5) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+    }
+
+    // =========================================================================
+    // MODULE 16.1: LIFESPAN CANVAS & API VALIDATOR SANDBOX
+    // =========================================================================
+    let lifespanMode = 'good';
+
+    function setLifespanMode(mode) {
+      lifespanMode = mode;
+      const bBad = document.getElementById('ls-btn-bad');
+      const bGood = document.getElementById('ls-btn-good');
+      if (mode === 'bad') {
+        bBad.className = 'px-3 py-1.5 rounded-lg bg-[#ff6b6b] text-black font-bold transition';
+        bGood.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+        document.getElementById('lifespan-desc').innerHTML = '<strong class="text-[#ff6b6b]">❌ 灾难写法（路由函数内加载）：</strong>每次用户发请求都执行 <code class="font-mono">SentenceTransformer(...)</code> 和 <code class="font-mono">httpx.AsyncClient()</code>，每次白白浪费 3 秒加载权重，10 个并发瞬间把内存撑爆 OOM，且连接池泄露！';
+      } else {
+        bGood.className = 'px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-bold transition';
+        bBad.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+        document.getElementById('lifespan-desc').innerHTML = '<strong class="text-[#4ade80]">✅ 生产最佳实践（@asynccontextmanager lifespan）：</strong>服务启动（yield 之前）一次性加载模型、连好向量库并建立 HTTP 连接池挂载到 <code class="font-mono">app.state</code>；所有请求毫秒级共享复用；服务关闭（yield 之后）自动关闭连接池。';
+      }
+      renderLifespanCanvas();
+    }
+
+    function renderLifespanCanvas() {
+      const canvas = document.getElementById('canvas-lifespan');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const padL = 78, padR = 20, padT = 30, padB = 30;
+      const plotW = width - padL - padR;
+
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = lifespanMode === 'good' ? '#4ade80' : '#ff6b6b';
+      ctx.fillText(
+        lifespanMode === 'good'
+          ? 'lifespan 模式：启动加载 1 次，后续 Req #1/#2/#3 仅耗时 ~18ms 复用常驻实例'
+          : '错误模式：每个请求都重新加载 3,000ms 模型，延迟暴涨且内存成倍叠加！',
+        14, 18
+      );
+
+      if (lifespanMode === 'bad') {
+        const rows = ['Req #1', 'Req #2', 'Req #3'];
+        const rowH = (height - padT - padB) / 3;
+        rows.forEach((lbl, i) => {
+          const y = padT + i * rowH + 6;
+          const bh = rowH - 12;
+          ctx.fillStyle = '#94a3b8'; ctx.font = '11px monospace'; ctx.textAlign = 'right';
+          ctx.fillText(lbl, padL - 10, y + bh / 2 + 4);
+
+          const xStart = padL + i * plotW * 0.08;
+          const wLoad = plotW * 0.62;
+          const wInfer = plotW * 0.14;
+          drawRoundedRect(ctx, xStart, y, wLoad, bh, 5, 'rgba(255,107,107,0.25)', '#ff6b6b', 1.4);
+          ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+          ctx.fillText('重复加载 Embedding + DB (3,000ms · +400MB RAM)', xStart + wLoad / 2, y + bh / 2 + 3);
+
+          drawRoundedRect(ctx, xStart + wLoad + 3, y, wInfer, bh, 5, '#58c4dd', null);
+          ctx.fillStyle = '#0d1117'; ctx.fillText('推理', xStart + wLoad + 3 + wInfer / 2, y + bh / 2 + 3);
+        });
+      } else {
+        const rows = ['Startup', 'Req #1', 'Req #2', 'Req #3'];
+        const rowH = (height - padT - padB) / 4;
+        // Startup bar
+        const y0 = padT + 4;
+        const bh = rowH - 8;
+        ctx.fillStyle = '#f0b429'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'right';
+        ctx.fillText('Startup', padL - 10, y0 + bh / 2 + 4);
+        const wBoot = plotW * 0.32;
+        drawRoundedRect(ctx, padL, y0, wBoot, bh, 5, 'rgba(240,180,41,0.22)', '#f0b429', 1.5);
+        ctx.fillStyle = '#f0b429'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('lifespan 仅加载 1 次 (yield 前)', padL + wBoot / 2, y0 + bh / 2 + 3);
+
+        // Ready vertical line
+        const xReady = padL + wBoot + 8;
+        ctx.strokeStyle = '#4ade80'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(xReady, padT); ctx.lineTo(xReady, height - padB); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Fast requests
+        for (let i = 1; i <= 3; i++) {
+          const y = padT + i * rowH + 4;
+          ctx.fillStyle = '#94a3b8'; ctx.font = '11px monospace'; ctx.textAlign = 'right';
+          ctx.fillText(`Req #${i}`, padL - 10, y + bh / 2 + 4);
+          const rx = xReady + 12 + (i - 1) * (plotW * 0.16);
+          const rw = plotW * 0.14;
+          drawRoundedRect(ctx, rx, y, rw, bh, 5, '#4ade80', null);
+          ctx.fillStyle = '#0d1117'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+          ctx.fillText('18ms OK', rx + rw / 2, y + bh / 2 + 3);
+        }
+      }
+      ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('Timeline (时间轴)  →  服务关闭时自动执行 lifespan yield 后的资源清理', width / 2, height - 8);
+    }
+
+    const API_CASES = {
+      ok_chat: {
+        reqLine: 'POST /v1/chat HTTP/1.1',
+        status: '200 OK',
+        ok: true,
+        req: `Headers:\n  Authorization: Bearer sk-prod-8829\n  Content-Type: application/json\n\nBody:\n{\n  "session_id": "sess_u102",\n  "message": "签收第 5 天可以无理由退货吗？",\n  "temperature": 0.3\n}`,
+        res: `Headers:\n  X-Request-ID: req_4f8a91c0\n\nBody:\n{\n  "request_id": "req_4f8a91c0",\n  "answer": "可以的，签收 7 天内保持商品完好即可申请无理由退货 [1]。",\n  "citations": ["refund_policy.md#0"],\n  "usage": {"prompt_tokens": 148, "completion_tokens": 28}\n}`
+      },
+      err_422: {
+        reqLine: 'POST /v1/chat HTTP/1.1',
+        status: '422 Unprocessable Entity',
+        ok: false,
+        req: `Headers:\n  Authorization: Bearer sk-prod-8829\n\nBody:\n{\n  "session_id": "sess_u102",\n  "message": "",\n  "temperature": 3.5\n}`,
+        res: `// FastAPI + Pydantic v2 在进入业务逻辑前自动拦截：\n{\n  "detail": [\n    {\n      "loc": ["body", "message"],\n      "msg": "String should have at least 1 character"\n    },\n    {\n      "loc": ["body", "temperature"],\n      "msg": "Input should be less than or equal to 2"\n    }\n  ]\n}`
+      },
+      err_401: {
+        reqLine: 'POST /v1/chat HTTP/1.1',
+        status: '401 Unauthorized',
+        ok: false,
+        req: `Headers:\n  Content-Type: application/json\n  (缺少 Authorization: Bearer <API_KEY>)\n\nBody:\n{\n  "session_id": "sess_u102",\n  "message": "你好"\n}`,
+        res: `// Depends(verify_api_key) 鉴权依赖直接拒绝：\n{\n  "error": "UNAUTHORIZED",\n  "message": "缺少或无效的 API Key，请携带 Authorization: Bearer <token>",\n  "request_id": "req_7e2b109d"\n}`
+      },
+      health: {
+        reqLine: 'GET /health HTTP/1.1',
+        status: '200 OK',
+        ok: true,
+        req: `// Kubernetes Liveness Probe (存活探针)\nGET /health HTTP/1.1\nHost: ai-api.internal:8000`,
+        res: `// 极轻量：只检查进程事件循环存活，不调用外部 LLM！\n{\n  "status": "alive",\n  "uptime_sec": 84210\n}`
+      },
+      ready_503: {
+        reqLine: 'GET /ready HTTP/1.1',
+        status: '503 Service Unavailable',
+        ok: false,
+        req: `// Kubernetes Readiness Probe (就绪探针)\nGET /ready HTTP/1.1\nHost: ai-api.internal:8000`,
+        res: `// 刚启动第 2 秒：Embedding 模型还在加载中，告知负载均衡暂勿切入流量\n{\n  "status": "not_ready",\n  "checks": {\n    "embedding_model": "loading...",\n    "redis_session": "ok"\n  }\n}`
+      }
+    };
+
+    function testApiCase(key) {
+      ['ok_chat', 'err_422', 'err_401', 'health', 'ready_503'].forEach(k => {
+        const b = document.getElementById('api-btn-' + k);
+        if (k === key) {
+          b.className = API_CASES[k].ok
+            ? 'px-3 py-1.5 rounded-lg bg-[#4ade80] text-black font-bold transition'
+            : 'px-3 py-1.5 rounded-lg bg-[#ff6b6b] text-black font-bold transition';
+        } else {
+          b.className = 'px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition';
+        }
+      });
+      const c = API_CASES[key];
+      document.getElementById('api-req-line').textContent = c.reqLine;
+      document.getElementById('api-req-pre').textContent = c.req;
+      const st = document.getElementById('api-res-status');
+      st.textContent = c.status;
+      st.className = c.ok
+        ? 'px-2 py-0.5 rounded bg-[#4ade80]/20 text-[#4ade80] font-bold'
+        : 'px-2 py-0.5 rounded bg-[#ff6b6b]/20 text-[#ff6b6b] font-bold';
+      const rp = document.getElementById('api-res-pre');
+      rp.textContent = c.res;
+      rp.className = c.ok
+        ? 'p-4 rounded-xl bg-[#0d1117] border border-[#233044] font-mono text-xs text-[#4ade80] h-[210px] overflow-auto leading-relaxed'
+        : 'p-4 rounded-xl bg-[#0d1117] border border-[#ff6b6b]/40 font-mono text-xs text-[#ff6b6b] h-[210px] overflow-auto leading-relaxed';
+    }
+
+    // =========================================================================
+    // MODULE 16.2: SSE LIVE STREAMER & DISCONNECT GUARD
+    // =========================================================================
+    const SSE_TOKENS = [
+      '根据', '《退款政策》', '[1]，', '自签收', '之日起 ', '7 天内',
+      '保持商品', '完好', '即可申请', '无理由', '退货。',
+      '审核通过后', '资金将在 ', '3 个工作日', '内原路', '退回您的', '支付账户。'
+    ];
+    let sseTimer = null;
+    let sseIdx = 0;
+
+    function startSseStream() {
+      if (sseTimer) clearInterval(sseTimer);
+      sseIdx = 0;
+      const rawBox = document.getElementById('sse-raw-box');
+      const uiBox = document.getElementById('sse-ui-box');
+      const srvLog = document.getElementById('sse-server-log');
+      const pill = document.getElementById('sse-state-pill');
+      rawBox.textContent = '';
+      uiBox.textContent = '';
+      document.getElementById('sse-frame-cnt').textContent = '0 frames';
+      document.getElementById('btn-sse-abort').disabled = false;
+      pill.textContent = 'STREAMING...';
+      pill.className = 'text-[#4ade80] font-bold';
+      srvLog.className = 'p-3 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 font-mono text-[11px] text-[#4ade80] leading-relaxed';
+      srvLog.textContent = '[Server] 200 OK · Content-Type: text/event-stream · X-Accel-Buffering: no · 开始流式推送...';
+
+      sseTimer = setInterval(() => {
+        if (sseIdx < SSE_TOKENS.length) {
+          const tok = SSE_TOKENS[sseIdx];
+          const frame = `data: ${JSON.stringify({ delta: tok, idx: sseIdx + 1 })}\n\n`;
+          rawBox.textContent += frame;
+          rawBox.scrollTop = rawBox.scrollHeight;
+          uiBox.textContent += tok;
+          sseIdx++;
+          document.getElementById('sse-frame-cnt').textContent = `${sseIdx} frames`;
+        } else {
+          clearInterval(sseTimer);
+          sseTimer = null;
+          rawBox.textContent += `data: ${JSON.stringify({ usage: { prompt_tokens: 142, completion_tokens: 46 } })}\n\n`;
+          rawBox.textContent += 'data: [DONE]\n\n';
+          rawBox.scrollTop = rawBox.scrollHeight;
+          document.getElementById('btn-sse-abort').disabled = true;
+          pill.textContent = 'COMPLETED';
+          pill.className = 'text-[#58c4dd] font-bold';
+          srvLog.textContent = '[Server] 流式生成正常结束 · finally 钩子已记录本次 46 completion_tokens 用量并写入审计日志。';
+        }
+      }, 260);
+    }
+
+    function disconnectSseClient() {
+      if (!sseTimer) return;
+      clearInterval(sseTimer);
+      sseTimer = null;
+      document.getElementById('btn-sse-abort').disabled = true;
+      const pill = document.getElementById('sse-state-pill');
+      pill.textContent = 'ABORTED BY CLIENT';
+      pill.className = 'text-[#ff6b6b] font-bold';
+      const srvLog = document.getElementById('sse-server-log');
+      srvLog.className = 'p-3 rounded-xl bg-[#ff6b6b]/10 border border-[#ff6b6b]/40 font-mono text-[11px] text-[#ff6b6b] leading-relaxed';
+      srvLog.textContent = `[Server] 🚨 检测到 await request.is_disconnected() == True！在第 ${sseIdx} 帧立刻 break 中止上游 LLM 流，省去剩余 ${SSE_TOKENS.length - sseIdx} 个片段的 API 扣费！`;
+    }
+
+    // =========================================================================
+    // MODULE 16.3: TOKEN BUCKET RATE LIMITER SIMULATOR
+    // =========================================================================
+    let tbCap = 8;
+    let tbRate = 1.0;
+    let tbTokens = 8.0;
+    let tbOk = 0;
+    let tbErr = 0;
+
+    function updateBucketConfig() {
+      tbCap = parseInt(document.getElementById('sl-tb-cap').value, 10);
+      tbRate = parseFloat(document.getElementById('sl-tb-rate').value);
+      document.getElementById('val-tb-cap').textContent = tbCap + ' tokens';
+      document.getElementById('val-tb-rate').textContent = tbRate.toFixed(1) + ' tok/s';
+      if (tbTokens > tbCap) tbTokens = tbCap;
+      renderBucketCanvas();
+    }
+
+    function resetBucket() {
+      tbTokens = tbCap;
+      tbOk = 0;
+      tbErr = 0;
+      document.getElementById('tb-ok-cnt').textContent = '0';
+      document.getElementById('tb-err-cnt').textContent = '0';
+      document.getElementById('tb-log-box').innerHTML = '<div class="text-gray-500"># 令牌桶已重置并填满...</div>';
+      renderBucketCanvas();
+    }
+
+    function sendBucketReq(n) {
+      const logBox = document.getElementById('tb-log-box');
+      const now = new Date().toTimeString().slice(0, 8);
+      for (let i = 0; i < n; i++) {
+        if (tbTokens >= 1.0) {
+          tbTokens -= 1.0;
+          tbOk++;
+          logBox.innerHTML += `<div class="text-[#4ade80]">[${now}] ✅ 200 OK · 扣 1 令牌 (剩余 ${tbTokens.toFixed(1)}/${tbCap})</div>`;
+        } else {
+          tbErr++;
+          const retryAfter = ((1.0 - tbTokens) / tbRate).toFixed(1);
+          logBox.innerHTML += `<div class="text-[#ff6b6b]">[${now}] 🛑 429 Too Many Requests · Retry-After: ${retryAfter}s</div>`;
+        }
+      }
+      logBox.scrollTop = logBox.scrollHeight;
+      document.getElementById('tb-ok-cnt').textContent = tbOk;
+      document.getElementById('tb-err-cnt').textContent = tbErr;
+      renderBucketCanvas();
+    }
+
+    function renderBucketCanvas() {
+      const canvas = document.getElementById('canvas-token-bucket');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const bx = width * 0.22;
+      const bw = width * 0.56;
+      const by = 34;
+      const bh = height - 66;
+
+      // Bucket outline
+      drawRoundedRect(ctx, bx, by, bw, bh, 12, '#141b26', '#233044', 2);
+
+      // Fill level
+      const ratio = Math.max(0, Math.min(1, tbTokens / tbCap));
+      const fillH = ratio * (bh - 8);
+      const fillCol = ratio > 0.35 ? '#4ade80' : (ratio > 0.12 ? '#f0b429' : '#ff6b6b');
+      if (fillH > 2) {
+        drawRoundedRect(ctx, bx + 4, by + bh - 4 - fillH, bw - 8, fillH, 8, fillCol + '38', fillCol, 1.5);
+      }
+
+      // Draw individual token pills inside
+      const wholeTokens = Math.floor(tbTokens);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`当前可用令牌：${tbTokens.toFixed(1)} / ${tbCap}`, width / 2, by + bh / 2 + 4);
+
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '11px monospace';
+      ctx.fillText(`自动匀速补充速率：+${tbRate.toFixed(1)} token / 秒  (整数可用: ${wholeTokens})`, width / 2, height - 12);
+
+      ctx.fillStyle = '#58c4dd';
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText('Token Bucket (按 X-API-Key / IP 隔离)', width / 2, 20);
+    }
+
+    // Refill loop every 250ms
+    setInterval(() => {
+      if (tbTokens < tbCap) {
+        tbTokens = Math.min(tbCap, tbTokens + tbRate * 0.25);
+        renderBucketCanvas();
+      }
+    }, 250);
+
+    // =========================================================================
+    // MODULE 16.4: ASYNC EVENT LOOP CANVAS & PYTEST SIMULATOR
+    // =========================================================================
+    let asyncMode = 'async';
+
+    function setAsyncMode(mode) {
+      asyncMode = mode;
+      const bBlk = document.getElementById('as-btn-blocking');
+      const bAsy = document.getElementById('as-btn-async');
+      if (mode === 'blocking') {
+        bBlk.className = 'px-3 py-1.5 rounded-lg bg-[#ff6b6b] text-black font-bold transition';
+        bAsy.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+      } else {
+        bAsy.className = 'px-3 py-1.5 rounded-lg bg-[#c084fc] text-black font-bold transition';
+        bBlk.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+      }
+      renderAsyncCanvas();
+    }
+
+    function renderAsyncCanvas() {
+      const canvas = document.getElementById('canvas-async-loop');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const padL = 72, padR = 24, padT = 30, padB = 30;
+      const plotW = width - padL - padR;
+      const rowH = (height - padT - padB) / 4;
+      const cols = ['#58c4dd', '#4ade80', '#f0b429', '#c084fc'];
+
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = asyncMode === 'async' ? '#c084fc' : '#ff6b6b';
+      ctx.fillText(
+        asyncMode === 'async'
+          ? '✅ async def + await httpx.AsyncClient：遇到网络 I/O 立刻交出控制权，4 并发 1.1s 全部完成！'
+          : '❌ async def + 同步 requests.post：主线程事件循环被锁死，4 个请求被迫串行排队 4.0s！',
+        14, 18
+      );
+
+      for (let i = 0; i < 4; i++) {
+        const y = padT + i * rowH + 5;
+        const bh = rowH - 10;
+        ctx.fillStyle = '#94a3b8'; ctx.font = '11px monospace'; ctx.textAlign = 'right';
+        ctx.fillText(`Req #${i + 1}`, padL - 10, y + bh / 2 + 4);
+
+        if (asyncMode === 'blocking') {
+          const w = plotW * 0.23;
+          const x = padL + i * (w + 4);
+          if (i > 0) {
+            drawRoundedRect(ctx, padL, y, x - padL - 3, bh, 4, 'rgba(255,107,107,0.14)', '#ff6b6b', 1);
+            ctx.fillStyle = '#ff6b6b'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+            ctx.fillText('卡死排队等待...', padL + (x - padL - 3) / 2, y + bh / 2 + 3);
+          }
+          drawRoundedRect(ctx, x, y, w, bh, 5, cols[i], null);
+          ctx.fillStyle = '#0d1117'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+          ctx.fillText('1.0s 阻塞', x + w / 2, y + bh / 2 + 3);
+        } else {
+          const x = padL + i * 10;
+          const w = plotW * 0.25;
+          drawRoundedRect(ctx, x, y, w, bh, 5, cols[i], null);
+          ctx.fillStyle = '#0d1117'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+          ctx.fillText('await I/O (1.0s)', x + w / 2, y + bh / 2 + 3);
+        }
+      }
+
+      ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(asyncMode === 'async' ? '总吞吐提升 ≈ 3.6× (单 Worker 可轻松承载数百路并发 LLM 流)' : '单 Worker 吞吐骤降为 1 req/s，甚至连 /health 探针都会超时重启！', width / 2, height - 10);
+    }
+
+    const PYTEST_CASES = [
+      { name: 'test_api.py::test_health_and_ready', desc: '验证 /health 返回 200 且 /ready 检查 lifespan 状态', ms: '4ms' },
+      { name: 'test_api.py::test_chat_success_with_mock_llm', desc: '通过 dependency_overrides 注入 MockLLM，零费用验证 200 响应体', ms: '11ms' },
+      { name: 'test_api.py::test_chat_validation_422', desc: '传入空消息与 temperature=3.5，断言 Pydantic 拦截返回 422', ms: '6ms' },
+      { name: 'test_api.py::test_auth_missing_key_401', desc: '不带 Authorization 头访问受保护路由，断言返回 401', ms: '5ms' },
+      { name: 'test_api.py::test_sse_stream_frames_and_done', desc: '消费 text/event-stream，断言包含增量 delta 帧与 [DONE] 尾帧', ms: '14ms' }
+    ];
+
+    function renderPytestRows(passedCount) {
+      const el = document.getElementById('pytest-results-list');
+      el.innerHTML = PYTEST_CASES.map((tc, i) => {
+        const done = i < passedCount;
+        return `
+          <div class="p-3 rounded-lg bg-[#0d1117] border ${done ? 'border-[#4ade80]/40' : 'border-[#233044]'} flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span class="font-bold ${done ? 'text-[#4ade80]' : 'text-gray-300'}">${done ? '✅ PASSED' : '⏳ PENDING'}</span>
+              <span class="text-white ml-2">${tc.name}</span>
+              <div class="text-[11px] text-gray-400 font-sans mt-0.5">${tc.desc}</div>
+            </div>
+            <span class="text-[11px] text-gray-500 shrink-0">${done ? tc.ms : '—'}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function runPytestSim() {
+      let c = 0;
+      renderPytestRows(0);
+      const t = setInterval(() => {
+        c++;
+        renderPytestRows(c);
+        if (c >= PYTEST_CASES.length) clearInterval(t);
+      }, 220);
+    }
+
+    // =========================================================================
+    // MODULE 16.5: CLI SIMULATOR, CODE REPO & QUIZ
+    // =========================================================================
+    function runWebCli(cmd) {
+      const screen = document.getElementById('web-cli-screen');
+      if (cmd === 'uvicorn') {
+        screen.textContent =
+`$ uvicorn app_main:app --reload --port 8000
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     [Lifespan] 正在加载本地 Embedding 模型与 HTTP 连接池...
+INFO:     [Lifespan] 初始化完成 (耗时 1.2s) -> /ready 已就绪！
+INFO:     Interactive Swagger Docs: http://127.0.0.1:8000/docs`;
+      } else if (cmd === 'curl_sse') {
+        screen.textContent =
+`$ curl -N -X POST http://localhost:8000/v1/chat/stream \\
+  -H "Authorization: Bearer sk-demo-key" \\
+  -H "Content-Type: application/json" \\
+  -d '{"session_id":"s1","message":"7天退货规则是什么？"}'
+
+data: {"delta": "根据《退款政策》，"}
+data: {"delta": "签收 7 天内"}
+data: {"delta": "可申请无理由退货 [1]。"}
+data: {"usage": {"prompt_tokens": 120, "completion_tokens": 22}}
+data: [DONE]`;
+      } else {
+        screen.textContent =
+`$ for i in {1..10}; do curl -s -o /dev/null -w "%{http_code} " -H "Authorization: Bearer sk-demo-key" http://localhost:8000/v1/chat; done
+
+200 200 200 200 200 200 200 200 429 429
+# 前 8 个突发请求命中令牌桶放行，第 9、10 个请求触发 HTTP 429 限流保护！`;
+      }
+    }
+
+    const WEB_CODE_FILES = {
+      main: [
+        '"""app_main.py: FastAPI 生产骨架（lifespan 生命周期 + Pydantic 校验 + 鉴权 + 探针）"""',
+        'import hmac',
+        'import os',
+        'import time',
+        'import uuid',
+        'from contextlib import asynccontextmanager',
+        'import httpx',
+        'from fastapi import Depends, FastAPI, Header, HTTPException, Request',
+        'from pydantic import BaseModel, Field',
+        '',
+        'API_KEY = os.getenv("SERVICE_API_KEY", "sk-demo-key")',
+        '',
+        '@asynccontextmanager',
+        'async def lifespan(app: FastAPI):',
+        '    """启动时一次性初始化连接池/模型；关闭时优雅释放资源。"""',
+        '    app.state.started_at = time.time()',
+        '    app.state.http_client = httpx.AsyncClient(timeout=30.0)',
+        '    app.state.ready = True',
+        '    yield',
+        '    app.state.ready = False',
+        '    await app.state.http_client.aclose()',
+        '',
+        'app = FastAPI(title="LLM Agent Web Service", version="1.0.0", lifespan=lifespan)',
+        '',
+        'class ChatRequest(BaseModel):',
+        '    session_id: str = Field(..., min_length=1, max_length=64)',
+        '    message: str = Field(..., min_length=1, max_length=2000)',
+        '    temperature: float = Field(default=0.3, ge=0.0, le=2.0)',
+        '',
+        'class ChatResponse(BaseModel):',
+        '    request_id: str',
+        '    answer: str',
+        '    usage: dict[str, int]',
+        '',
+        'def verify_api_key(authorization: str = Header(default="")) -> str:',
+        '    token = authorization.removeprefix("Bearer ").strip()',
+        '    if not token or not hmac.compare_digest(token, API_KEY):',
+        '        raise HTTPException(status_code=401, detail="无效的 API Key")',
+        '    return token',
+        '',
+        'def get_llm_service():',
+        '    """可被 pytest dependency_overrides 轻松替换为 Mock 的依赖函数。"""',
+        '    async def _call(msg: str, temp: float) -> tuple[str, dict]:',
+        '        return f"收到提问「{msg}」(T={temp})，已由服务化接口安全返回。", {"prompt_tokens": 50, "completion_tokens": 20}',
+        '    return _call',
+        '',
+        '@app.get("/health")',
+        'async def health():',
+        '    return {"status": "alive", "uptime_sec": int(time.time() - app.state.started_at)}',
+        '',
+        '@app.get("/ready")',
+        'async def ready():',
+        '    if not getattr(app.state, "ready", False):',
+        '        raise HTTPException(status_code=503, detail="模型尚未就绪")',
+        '    return {"status": "ready"}',
+        '',
+        '@app.post("/v1/chat", response_model=ChatResponse)',
+        'async def chat(req: ChatRequest, _key: str = Depends(verify_api_key), llm=Depends(get_llm_service)):',
+        '    req_id = f"req_{uuid.uuid4().hex[:8]}"',
+        '    answer, usage = await llm(req.message, req.temperature)',
+        '    return ChatResponse(request_id=req_id, answer=answer, usage=usage)'
+      ].join('\n'),
+
+      sse: [
+        '"""sse_streaming.py: 带客户端断连检测与防 Nginx 缓冲的 SSE 流式接口"""',
+        'import asyncio',
+        'import json',
+        'from fastapi import FastAPI, Request',
+        'from fastapi.responses import StreamingResponse',
+        'from pydantic import BaseModel, Field',
+        '',
+        'app = FastAPI(title="SSE Streaming Demo")',
+        '',
+        'class StreamReq(BaseModel):',
+        '    message: str = Field(..., min_length=1, max_length=2000)',
+        '',
+        '@app.post("/v1/chat/stream")',
+        'async def chat_stream(req: StreamReq, request: Request):',
+        '    async def event_generator():',
+        '        tokens = ["根据", "《退款政策》，", "签收 7 天内", "可申请", "无理由退货 [1]。"]',
+        '        sent = 0',
+        '        try:',
+        '            for tok in tokens:',
+        '                # 关键：检测用户是否已关闭浏览器，及时中止上游模型扣费',
+        '                if await request.is_disconnected():',
+        '                    break',
+        '                await asyncio.sleep(0.15)  # 异步非阻塞等待，严禁 time.sleep！',
+        '                sent += 1',
+        '                yield f"data: {json.dumps({\'delta\': tok}, ensure_ascii=False)}\\n\\n"',
+        '            else:',
+        '                yield f"data: {json.dumps({\'usage\': {\'completion_tokens\': sent}})}\\n\\n"',
+        '                yield "data: [DONE]\\n\\n"',
+        '        except Exception as e:',
+        '            # 流开始后 HTTP 状态码已是 200，异常需通过 SSE error 事件通知前端',
+        '            yield f"event: error\\ndata: {json.dumps({\'error\': str(e)}, ensure_ascii=False)}\\n\\n"',
+        '',
+        '    return StreamingResponse(',
+        '        event_generator(),',
+        '        media_type="text/event-stream",',
+        '        headers={',
+        '            "Cache-Control": "no-cache",',
+        '            "X-Accel-Buffering": "no",  # 禁用 Nginx 代理缓冲，确保逐字实时到达前端',
+        '        },',
+        '    )'
+      ].join('\n'),
+
+      ratelimit: [
+        '"""middleware_ratelimit.py: Request-ID 追踪 + 令牌桶限流中间件"""',
+        'import time',
+        'import uuid',
+        'from fastapi import FastAPI, Request',
+        'from fastapi.responses import JSONResponse',
+        '',
+        'class TokenBucket:',
+        '    def __init__(self, capacity: int = 8, refill_per_sec: float = 1.0):',
+        '        self.capacity = capacity',
+        '        self.refill_per_sec = refill_per_sec',
+        '        self._store: dict[str, tuple[float, float]] = {}  # key -> (tokens, last_ts)',
+        '',
+        '    def allow(self, key: str) -> tuple[bool, float]:',
+        '        now = time.monotonic()',
+        '        tokens, last_ts = self._store.get(key, (float(self.capacity), now))',
+        '        tokens = min(self.capacity, tokens + (now - last_ts) * self.refill_per_sec)',
+        '        if tokens >= 1.0:',
+        '            self._store[key] = (tokens - 1.0, now)',
+        '            return True, 0.0',
+        '        self._store[key] = (tokens, now)',
+        '        retry_after = (1.0 - tokens) / self.refill_per_sec',
+        '        return False, round(retry_after, 2)',
+        '',
+        'app = FastAPI()',
+        'limiter = TokenBucket(capacity=8, refill_per_sec=1.0)',
+        '',
+        '@app.middleware("http")',
+        'async def request_id_and_ratelimit(request: Request, call_next):',
+        '    req_id = request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:8]}"',
+        '    client_key = request.headers.get("Authorization") or (request.client.host if request.client else "anon")',
+        '',
+        '    if request.url.path.startswith("/v1/"):',
+        '        ok, retry_after = limiter.allow(client_key)',
+        '        if not ok:',
+        '            return JSONResponse(',
+        '                status_code=429,',
+        '                content={"error": "RATE_LIMITED", "request_id": req_id, "retry_after": retry_after},',
+        '                headers={"Retry-After": str(retry_after), "X-Request-ID": req_id},',
+        '            )',
+        '',
+        '    response = await call_next(request)',
+        '    response.headers["X-Request-ID"] = req_id',
+        '    return response'
+      ].join('\n'),
+
+      tests: [
+        '"""test_api.py: 使用 FastAPI TestClient + dependency_overrides 零费用离线单测"""',
+        'from fastapi.testclient import TestClient',
+        'from app_main import app, get_llm_service',
+        '',
+        'def override_mock_llm():',
+        '    async def _mock(msg: str, temp: float):',
+        '        return f"[MOCK] {msg}", {"prompt_tokens": 10, "completion_tokens": 5}',
+        '    return _mock',
+        '',
+        'app.dependency_overrides[get_llm_service] = override_mock_llm',
+        '',
+        'def test_health_and_ready():',
+        '    with TestClient(app) as client:  # with 上下文会触发 lifespan！',
+        '        assert client.get("/health").status_code == 200',
+        '        assert client.get("/ready").json()["status"] == "ready"',
+        '',
+        'def test_chat_success():',
+        '    with TestClient(app) as client:',
+        '        r = client.post(',
+        '            "/v1/chat",',
+        '            headers={"Authorization": "Bearer sk-demo-key"},',
+        '            json={"session_id": "s1", "message": "你好", "temperature": 0.2},',
+        '        )',
+        '        assert r.status_code == 200',
+        '        assert r.json()["answer"] == "[MOCK] 你好"',
+        '',
+        'def test_chat_validation_422():',
+        '    with TestClient(app) as client:',
+        '        r = client.post(',
+        '            "/v1/chat",',
+        '            headers={"Authorization": "Bearer sk-demo-key"},',
+        '            json={"session_id": "s1", "message": "", "temperature": 3.5},',
+        '        )',
+        '        assert r.status_code == 422',
+        '',
+        'def test_auth_missing_401():',
+        '    with TestClient(app) as client:',
+        '        r = client.post("/v1/chat", json={"session_id": "s1", "message": "你好"})',
+        '        assert r.status_code == 401'
+      ].join('\n')
+    };
+
+    let currentWebCodeTab = 'main';
+
+    function selectWebCodeTab(key) {
+      currentWebCodeTab = key;
+      document.querySelectorAll('.web-code-tab').forEach(btn => {
+        const active = (btn.dataset.tab === key);
+        btn.classList.toggle('active-code-tab', active);
+        btn.classList.toggle('text-gray-400', !active);
+      });
+      const el = document.getElementById('web-code-display');
+      if (el && WEB_CODE_FILES[key]) el.textContent = WEB_CODE_FILES[key];
+    }
+
+    function copyWebCode() {
+      const text = WEB_CODE_FILES[currentWebCodeTab] || '';
+      const label = document.getElementById('copy-web-label');
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        label.textContent = '✅ 已复制到剪贴板';
+      } catch (e) {
+        label.textContent = '❌ 复制失败';
+      }
+      document.body.removeChild(ta);
+      setTimeout(() => { label.textContent = '📋 复制当前代码'; }, 2000);
+    }
+
+    const WEB_QUIZ = [
+      {
+        q: '1. 在 FastAPI 中，Embedding 模型、向量库连接与 httpx.AsyncClient 应该放在哪里初始化？',
+        options: [
+          'A. 每次收到请求后在路由函数内部重新创建',
+          'B. 放在 lifespan 上下文管理器中（yield 之前初始化，yield 之后优雅关闭）',
+          'C. 放在前端浏览器的 localStorage 里',
+          'D. 写在 Pydantic 的 Field 默认值里'
+        ],
+        ans: 1,
+        exp: 'lifespan 保证重型模型和连接池在进程启动时只加载一次、所有请求毫秒级复用，并在服务停机时优雅释放连接。'
+      },
+      {
+        q: '2. 上线 SSE 流式对话接口后，本地测试能逐字打字机输出，但经过 Nginx 反向代理后却卡顿 5 秒才一次性弹出整段话，最可能的原因是？',
+        options: [
+          'A. 大模型忘记传 stream=True',
+          'B. Nginx 默认开启了响应缓冲（proxy_buffering），需要在响应头加上 X-Accel-Buffering: no',
+          'C. 浏览器不支持 JSON.parse',
+          'D. Python 版本太新'
+        ],
+        ans: 1,
+        exp: 'Nginx 默认会攒满缓冲区才把响应发给客户端，导致 SSE 失去流式体验；设置 X-Accel-Buffering: no 即可实时透传。'
+      },
+      {
+        q: '3. 在 FastAPI 的 async def 路由里直接调用同步的 requests.post() 或 time.sleep(2) 会造成什么后果？',
+        options: [
+          'A. 自动变成异步并发，没有任何影响',
+          'B. 会锁死整个主线程事件循环（Event Loop），导致其他所有并发请求甚至 /health 探针全部卡死排队',
+          'C. 只会稍微多消耗 1MB 内存',
+          'D. FastAPI 会自动抛出 422 错误'
+        ],
+        ans: 1,
+        exp: '异步路由中必须使用 await httpx.AsyncClient / await asyncio.sleep；同步耗时代码应放到 def 路由或 asyncio.to_thread 中执行。'
+      },
+      {
+        q: '4. 为什么生产环境使用 uvicorn --workers 4 多进程部署时，不能用 Python 全局 dict 存储多轮对话历史？',
+        options: [
+          'A. Python 字典不支持存储中文字符串',
+          'B. 多个 Worker 进程内存彼此隔离，同一用户的下一轮请求打到其他 Worker 会丢失上下文，应改用 Redis + TTL',
+          'C. 字典查询速度太慢',
+          'D. FastAPI 禁止在代码里定义 dict'
+        ],
+        ans: 1,
+        exp: '多 Worker / 多实例部署必须做到无状态（Stateless），将热会话状态外置到 Redis 并设置 TTL 过期时间。'
+      },
+      {
+        q: '5. 用 pytest + TestClient 给 FastAPI AI 接口写自动化单元测试时，如何做到“零 API 费用且毫秒级跑通”？',
+        options: [
+          'A. 每次跑测试都真实调用昂贵的 GPT-4o API',
+          'B. 不写测试，上线靠用户反馈',
+          'C. 通过 Depends() 注入 LLM 服务，并在测试中用 app.dependency_overrides 替换为确定性的 Mock 实现',
+          'D. 把所有接口都改成 GET 请求'
+        ],
+        ans: 2,
+        exp: 'FastAPI 的依赖注入（Depends + dependency_overrides）是解耦外部大模型 API、实现高速离线契约测试的最佳实践。'
+      }
+    ];
+
+    let webQuizAnswers = {};
+
+    function renderWebQuiz() {
+      const box = document.getElementById('web-quiz-container');
+      box.innerHTML = WEB_QUIZ.map((item, qIdx) => `
+        <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+          <div class="text-xs font-bold text-white">${item.q}</div>
+          <div class="space-y-1.5 text-xs">
+            ${item.options.map((opt, oIdx) => `
+              <button onclick="answerWebQuiz(${qIdx}, ${oIdx})" id="wq-${qIdx}-o-${oIdx}" class="w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] hover:border-[#58c4dd] text-gray-300 transition">
+                ${opt}
+              </button>
+            `).join('')}
+          </div>
+          <div id="wq-${qIdx}-exp" class="hidden p-3 rounded-lg text-xs leading-relaxed"></div>
+        </div>
+      `).join('');
+    }
+
+    function answerWebQuiz(qIdx, oIdx) {
+      webQuizAnswers[qIdx] = oIdx;
+      const item = WEB_QUIZ[qIdx];
+      item.options.forEach((_, i) => {
+        const btn = document.getElementById(`wq-${qIdx}-o-${i}`);
+        if (i === item.ans) {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#4ade80]/20 border border-[#4ade80] text-[#4ade80] font-bold';
+        } else if (i === oIdx && oIdx !== item.ans) {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#ff6b6b]/20 border border-[#ff6b6b] text-[#ff6b6b]';
+        } else {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] text-gray-500 opacity-60';
+        }
+      });
+      const exp = document.getElementById(`wq-${qIdx}-exp`);
+      exp.classList.remove('hidden');
+      if (oIdx === item.ans) {
+        exp.className = 'p-3 rounded-lg bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80] text-xs leading-relaxed';
+        exp.innerHTML = `<strong>✅ 回答正确！</strong> ${item.exp}`;
+      } else {
+        exp.className = 'p-3 rounded-lg bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 text-[#ff6b6b] text-xs leading-relaxed';
+        exp.innerHTML = `<strong>❌ 解析：</strong> ${item.exp}`;
+      }
+      const score = Object.keys(webQuizAnswers).filter(k => webQuizAnswers[k] === WEB_QUIZ[k].ans).length;
+      document.getElementById('web-quiz-score').textContent = `得分: ${score} / ${WEB_QUIZ.length}`;
+    }
+
+    // =========================================================================
+    // INIT ON DOM READY
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      setLifespanMode('good');
+      testApiCase('ok_chat');
+      updateBucketConfig();
+      setAsyncMode('async');
+      renderPytestRows(0);
+      runWebCli('uvicorn');
+      selectWebCodeTab('main');
+      renderWebQuiz();
+
+      window.addEventListener('resize', () => {
+        renderLifespanCanvas();
+        renderBucketCanvas();
+        renderAsyncCanvas();
+      });
+    });
+  </script>
+</body>
+</html>

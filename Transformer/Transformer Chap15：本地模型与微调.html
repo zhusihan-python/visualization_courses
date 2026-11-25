@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 15 章：本地模型与微调入门 —— Ollama / vLLM 本地部署、显存估算与 LoRA / QLoRA 实战</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0d1117',
+            cardDark: '#141b26',
+            panelDark: '#0f1622',
+            borderDark: '#233044',
+            cyanAccent: '#58c4dd',
+            goldAccent: '#f0b429',
+            emeraldAccent: '#4ade80',
+            coralAccent: '#ff6b6b',
+            violetAccent: '#c084fc',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #233044; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #58c4dd; }
+    .math-symbol { font-family: 'Times New Roman', serif; font-style: italic; }
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 3px;
+      line-height: 1.1;
+    }
+    .frac .num { border-bottom: 1px solid currentColor; padding-bottom: 1px; font-size: 0.88em; }
+    .frac .den { padding-top: 1px; font-size: 0.88em; }
+    .active-code-tab {
+      border-bottom: 2px solid #58c4dd;
+      color: #58c4dd;
+      font-weight: 700;
+    }
+    .glow-cyan { box-shadow: 0 0 18px rgba(88, 196, 221, 0.16); }
+    .glow-gold { box-shadow: 0 0 18px rgba(240, 180, 41, 0.16); }
+    .glow-emerald { box-shadow: 0 0 18px rgba(74, 222, 128, 0.16); }
+    .glow-coral { box-shadow: 0 0 18px rgba(255, 107, 107, 0.16); }
+    .glow-violet { box-shadow: 0 0 18px rgba(192, 132, 252, 0.16); }
+    canvas { display: block; width: 100%; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-[#58c4dd]/30 selection:text-[#58c4dd]">
+
+  <!-- Sticky Header -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur-md border-b border-[#233044] px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="flex items-center space-x-3">
+        <span class="px-2.5 py-1 text-xs font-mono font-bold uppercase tracking-wider bg-[#c084fc]/15 text-[#c084fc] border border-[#c084fc]/40 rounded-full">
+          CHAPTER 15
+        </span>
+        <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">本地模型与微调入门：Ollama · vLLM · LoRA / QLoRA</h1>
+      </div>
+      <nav class="flex items-center space-x-1 text-xs font-medium overflow-x-auto max-w-full pb-1 md:pb-0">
+        <a href="#module-15-1" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#58c4dd] hover:bg-[#141b26] transition">15.1 本地部署与显存</a>
+        <a href="#module-15-2" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#f0b429] hover:bg-[#141b26] transition">15.2 HF 衔接与采样</a>
+        <a href="#module-15-3" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#c084fc] hover:bg-[#141b26] transition">15.3 LoRA / QLoRA</a>
+        <a href="#module-15-4" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#4ade80] hover:bg-[#141b26] transition">15.4 微调决策树</a>
+        <a href="#module-15-5" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#ff6b6b] hover:bg-[#141b26] transition">15.5 源码与测验</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="border-b border-[#233044] bg-gradient-to-b from-[#141b26] to-[#0d1117] py-12 px-4 relative overflow-hidden">
+    <div class="absolute -top-24 -right-24 w-96 h-96 bg-[#c084fc]/10 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-[#58c4dd]/10 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="max-w-7xl mx-auto space-y-6 relative z-10">
+      <div class="space-y-3">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#c084fc]/10 border border-[#c084fc]/30 text-[#c084fc] text-xs font-mono">
+          <span class="w-2 h-2 rounded-full bg-[#c084fc] animate-pulse"></span>
+          Local Inference · Ollama &amp; vLLM · VRAM Math · LoRA / QLoRA Fine-tuning
+        </div>
+        <h2 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+          第 15 章：本地模型与微调入门 —— 把大模型装进自己的机器
+        </h2>
+        <p class="text-sm sm:text-base text-gray-400 max-w-3xl leading-relaxed">
+          前面都在调用云端 API。遇到数据不能出内网、高频调用账单太贵、或需要定制专属输出风格时，我们需要掌握两项核心能力：用 <span class="text-[#58c4dd] font-semibold">Ollama / vLLM</span> 在自有机器部署推理服务，以及用 <span class="text-[#c084fc] font-semibold">LoRA / QLoRA</span> 在消费级显卡上以 1/8 显存成本完成模型微调。
+        </p>
+      </div>
+
+      <!-- 4 KPI Pills -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-cyan">
+          <div class="text-xs text-gray-400">本地部署双雄</div>
+          <div class="text-lg font-bold text-[#58c4dd] font-mono">Ollama vs vLLM</div>
+          <div class="text-xs text-gray-500">个人开发极速上手 · 生产高并发吞吐 20x</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-gold">
+          <div class="text-xs text-gray-400">7B 推理黄金参考</div>
+          <div class="text-lg font-bold text-[#f0b429] font-mono">Q4 ≈ 6GB · FP16 ≈ 16GB</div>
+          <div class="text-xs text-gray-500">Q4_K_M 性价比最高，KV Cache 随并发增长</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-violet">
+          <div class="text-xs text-gray-400">LoRA 低秩微调</div>
+          <div class="text-lg font-bold text-[#c084fc] font-mono">显存直降 87% (1/8)</div>
+          <div class="text-xs text-gray-500">B=0 零偏移启动，部署前可合并零延迟</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-emerald">
+          <div class="text-xs text-gray-400">QLoRA 极致省卡</div>
+          <div class="text-lg font-bold text-[#4ade80] font-mono">NF4 4bit + LoRA ≈ 6GB</div>
+          <div class="text-xs text-gray-500">单张 8GB 消费级显卡也能微调 7B 模型</div>
+        </div>
+      </div>
+
+      <!-- 5-Stage Quick Nav Strip -->
+      <div class="p-4 rounded-xl bg-[#0d1117]/70 border border-[#233044] space-y-3">
+        <div class="text-xs font-mono uppercase text-gray-400 tracking-wider">本章五大互动实验室 (点击跳转)</div>
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-2 text-center text-xs">
+          <a href="#module-15-1" class="p-2.5 rounded-lg bg-[#141b26] border border-[#58c4dd]/40 hover:border-[#58c4dd] text-white font-medium transition">
+            1. Ollama/vLLM 与显存
+          </a>
+          <a href="#module-15-2" class="p-2.5 rounded-lg bg-[#141b26] border border-[#f0b429]/40 hover:border-[#f0b429] text-white font-medium transition">
+            2. Transformers 采样诊所
+          </a>
+          <a href="#module-15-3" class="p-2.5 rounded-lg bg-[#141b26] border border-[#c084fc]/40 hover:border-[#c084fc] text-white font-medium transition">
+            3. LoRA / QLoRA 剧场
+          </a>
+          <a href="#module-15-4" class="p-2.5 rounded-lg bg-[#141b26] border border-[#4ade80]/40 hover:border-[#4ade80] text-white font-medium transition">
+            4. 微调决策树与数据
+          </a>
+          <a href="#module-15-5" class="p-2.5 rounded-lg bg-[#141b26] border border-[#ff6b6b]/40 hover:border-[#ff6b6b] text-white font-medium transition">
+            5. PyTorch 源码与测验
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 py-10 space-y-16 flex-grow w-full">
+
+    <!-- ==================== MODULE 15.1 ==================== -->
+    <section id="module-15-1" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#58c4dd] font-mono">15.1</span> Ollama / vLLM 本地部署与显存估算实验室
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          理解个人开发神器 Ollama 与生产推理引擎 vLLM 的本质差异，并用实时显存计算器规划你的 GPU 硬件配置。
+        </p>
+      </div>
+
+      <!-- Part A: Static Batching vs vLLM Continuous Batching + PagedAttention Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 为什么 vLLM 吞吐量比原生高 10~24 倍？（调度与显存可视化）</h4>
+            <p class="text-xs text-gray-400">切换「传统静态批处理」与「vLLM Continuous Batching + PagedAttention」，对比 GPU 算力气泡与显存碎片</p>
+          </div>
+          <div class="flex space-x-2 bg-[#0d1117] p-1 rounded-xl border border-[#233044] text-xs font-mono">
+            <button onclick="setServingMode('static')" id="srv-btn-static" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition">🐢 传统静态批处理 (30% GPU)</button>
+            <button onclick="setServingMode('vllm')" id="srv-btn-vllm" class="px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-bold transition">⚡ vLLM 连续批处理 (85%+ GPU)</button>
+          </div>
+        </div>
+
+        <div class="w-full overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-vllm-batch" class="w-full h-[225px]"></canvas>
+        </div>
+
+        <!-- Ollama vs vLLM Comparison Table -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 text-xs">
+          <div class="lg:col-span-7 overflow-x-auto bg-[#0d1117] rounded-xl border border-[#233044]">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-[#233044] text-gray-400 font-mono">
+                  <th class="p-2.5">对比维度</th>
+                  <th class="p-2.5 text-[#58c4dd]">Ollama (llama.cpp)</th>
+                  <th class="p-2.5 text-[#f0b429]">vLLM (生产引擎)</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#233044] text-gray-300">
+                <tr><td class="p-2.5 font-semibold text-white">安装与硬件</td><td class="p-2.5">一条命令 · CPU 也能跑</td><td class="p-2.5">需配 CUDA · 必须 GPU</td></tr>
+                <tr><td class="p-2.5 font-semibold text-white">多并发吞吐</td><td class="p-2.5 text-[#ff6b6b]">差（默认串行排队）</td><td class="p-2.5 text-[#4ade80] font-bold">极好（10~24x 吞吐）</td></tr>
+                <tr><td class="p-2.5 font-semibold text-white">量化格式</td><td class="p-2.5 font-mono">GGUF (Q4_K_M / Q8_0)</td><td class="p-2.5 font-mono">AWQ / GPTQ / FP8</td></tr>
+                <tr><td class="p-2.5 font-semibold text-white">OpenAI 兼容</td><td class="p-2.5 font-mono text-[#4ade80]">:11434/v1/chat/completions</td><td class="p-2.5 font-mono text-[#4ade80]">:8000/v1/chat/completions</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="lg:col-span-5 p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-2.5">
+            <div class="font-bold text-[#f0b429]">🎯 量化版本与选型口诀</div>
+            <div class="space-y-1 text-gray-300 font-mono text-[11px]">
+              <div>• <span class="text-[#4ade80]">7b (Q4_K_M 默认)</span>：≈ 4.7 GB · 质量好，性价比最高</div>
+              <div>• <span class="text-[#58c4dd]">7b-q8_0 (Q8)</span>：≈ 8.0 GB · 质量提升有限但显存翻倍</div>
+              <div>• <span class="text-[#ff6b6b]">7b-q2_K (Q2)</span>：≈ 2.7 GB · 智力明显下降，不推荐</div>
+            </div>
+            <div class="p-2.5 rounded-lg bg-[#58c4dd]/10 border border-[#58c4dd]/30 text-[11px] text-[#58c4dd]">
+              <strong>零改动迁移：</strong>第 8~14 章的所有代码，只需把 <code class="font-mono">base_url</code> 改为 <code class="font-mono">http://localhost:11434/v1</code> 就能直连本地模型！
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: Interactive Local Inference VRAM Calculator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: 本地推理显存计算器 (<code class="text-[#58c4dd] font-mono">estimate_vram</code>)</h4>
+            <p class="text-xs text-gray-400">调整模型规模、量化精度、上下文长度与并发数，实时观测权重与 KV Cache 显存占比</p>
+          </div>
+          <div id="vram-total-pill" class="px-3.5 py-1.5 rounded-full bg-[#58c4dd]/15 border border-[#58c4dd]/40 text-[#58c4dd] text-xs font-mono font-bold">
+            总显存需求：6.0 GB
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-[#0d1117] p-4 rounded-xl border border-[#233044] text-xs">
+          <div class="space-y-1.5">
+            <label class="text-gray-300 font-mono block">模型参数量 (Params)</label>
+            <select id="sel-vram-size" onchange="updateVramLab()" class="w-full p-2 rounded-lg bg-[#141b26] border border-[#233044] text-white font-mono focus:outline-none focus:border-[#58c4dd]">
+              <option value="3">3B (Llama-3.2 / Qwen2.5)</option>
+              <option value="7" selected>7B (Qwen2.5-7B 主力)</option>
+              <option value="13">13B / 14B (进阶中文)</option>
+              <option value="32">32B (Qwen2.5-32B)</option>
+              <option value="70">70B (旗舰开源)</option>
+            </select>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="text-gray-300 font-mono block">量化精度 (Quant)</label>
+            <select id="sel-vram-quant" onchange="updateVramLab()" class="w-full p-2 rounded-lg bg-[#141b26] border border-[#233044] text-white font-mono focus:outline-none focus:border-[#f0b429]">
+              <option value="fp16">FP16 / BF16 (16 bit)</option>
+              <option value="q8">Q8_0 (8 bit)</option>
+              <option value="q4" selected>Q4_K_M / NF4 (4 bit 推荐)</option>
+              <option value="q2">Q2_K (2 bit 极限)</option>
+            </select>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between font-mono">
+              <span class="text-gray-300">上下文长度 (Context):</span>
+              <span id="val-vram-ctx" class="text-[#c084fc] font-bold">4,096</span>
+            </div>
+            <input type="range" id="sl-vram-ctx" min="2048" max="32768" step="2048" value="4096" oninput="updateVramLab()" class="w-full accent-[#c084fc] bg-gray-800 h-1.5 rounded cursor-pointer">
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between font-mono">
+              <span class="text-gray-300">并发请求数 (Batch):</span>
+              <span id="val-vram-bs" class="text-[#4ade80] font-bold">1</span>
+            </div>
+            <input type="range" id="sl-vram-bs" min="1" max="16" step="1" value="1" oninput="updateVramLab()" class="w-full accent-[#4ade80] bg-gray-800 h-1.5 rounded cursor-pointer">
+          </div>
+        </div>
+
+        <!-- Stacked Bar + GPU Compatibility Matrix -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+          <div class="lg:col-span-7 bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+            <div class="flex justify-between text-xs font-mono">
+              <span class="text-gray-400">显存构成拆解 (Weights + KV Cache + 10% Overhead)</span>
+              <span id="vram-breakdown-text" class="text-white font-bold">3.5G + 2.1G + 0.4G = 6.0G</span>
+            </div>
+            <div class="w-full h-7 rounded-lg bg-[#141b26] border border-[#233044] overflow-hidden flex">
+              <div id="bar-vram-w" class="h-full bg-[#58c4dd] transition-all duration-300 flex items-center justify-center text-[10px] font-mono font-bold text-black">Weights</div>
+              <div id="bar-vram-kv" class="h-full bg-[#c084fc] transition-all duration-300 flex items-center justify-center text-[10px] font-mono font-bold text-black">KV</div>
+              <div id="bar-vram-oh" class="h-full bg-[#f0b429] transition-all duration-300"></div>
+            </div>
+            <div class="flex flex-wrap gap-4 text-[11px] font-mono text-gray-400">
+              <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-[#58c4dd] mr-1"></span>模型权重: <strong id="lbl-w" class="text-white">3.5 GB</strong></span>
+              <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-[#c084fc] mr-1"></span>KV Cache: <strong id="lbl-kv" class="text-white">2.1 GB</strong></span>
+              <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-[#f0b429] mr-1"></span>运行时开销: <strong id="lbl-oh" class="text-white">0.4 GB</strong></span>
+            </div>
+          </div>
+
+          <div class="lg:col-span-5 bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-2">
+            <div class="text-xs font-mono text-gray-400">常见显卡硬件兼容性判定 (预留 10% 碎片安全余量)</div>
+            <div id="gpu-fit-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono">
+              <!-- Dynamic badges -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 15.2 ==================== -->
+    <section id="module-15-2" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#f0b429] font-mono">15.2</span> HuggingFace Transformers 本地衔接与生成采样诊所
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          掌握 <code class="text-[#58c4dd]">AutoConfig / AutoTokenizer / AutoModelForCausalLM</code> 的本地加载参数，避开 <code class="text-[#ff6b6b]">do_sample=False</code> 导致温度失效的经典陷阱。
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <!-- Left: 4 Key Loading Params -->
+        <div class="lg:col-span-5 p-5 rounded-xl bg-[#141b26] border border-[#233044] space-y-3 text-xs">
+          <h4 class="text-sm font-semibold text-white">from_pretrained() 四大核心加载参数</h4>
+          <div class="space-y-2">
+            <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044]">
+              <div class="font-mono font-bold text-[#58c4dd]">torch_dtype = torch.bfloat16</div>
+              <div class="text-gray-400 mt-0.5">GPU 上首选 BF16（省一半显存且不溢出），纯 CPU 上用 float32。</div>
+            </div>
+            <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044]">
+              <div class="font-mono font-bold text-[#f0b429]">device_map = "auto"</div>
+              <div class="text-gray-400 mt-0.5">由 accelerate 自动把模型层切分分配到可用 GPU 显存 / CPU 内存。</div>
+            </div>
+            <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044]">
+              <div class="font-mono font-bold text-[#c084fc]">quantization_config = BitsAndBytesConfig(...)</div>
+              <div class="text-gray-400 mt-0.5">开启 4bit NF4 量化（需 CUDA + bitsandbytes），7B 显存从 14G 降到 3.5G。</div>
+            </div>
+            <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044]">
+              <div class="font-mono font-bold text-[#4ade80]">attn_implementation = "flash_attention_2"</div>
+              <div class="text-gray-400 mt-0.5">Ampere 及以上架构 GPU 开启 FlashAttention-2，长文本速度翻倍且省显存。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Interactive generate() Sampling Clinic -->
+        <div class="lg:col-span-7 p-5 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h4 class="text-sm font-semibold text-white">model.generate() 生成参数互动诊所</h4>
+              <p class="text-xs text-gray-400">试着关闭 <code class="text-[#f0b429]">do_sample</code> 并拖动 temperature，观察底层行为变化</p>
+            </div>
+            <label class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] cursor-pointer text-xs font-mono">
+              <input type="checkbox" id="chk-dosample" checked onchange="updateSamplingClinic()" class="accent-[#4ade80]">
+              <span id="lbl-dosample" class="text-[#4ade80] font-bold">do_sample = True (概率采样)</span>
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#0d1117] p-3.5 rounded-xl border border-[#233044] text-xs font-mono">
+            <div class="space-y-1">
+              <div class="flex justify-between">
+                <span class="text-gray-400">temperature:</span>
+                <span id="val-gen-temp" class="text-[#f0b429] font-bold">0.70</span>
+              </div>
+              <input type="range" id="sl-gen-temp" min="0.0" max="1.5" step="0.1" value="0.7" oninput="updateSamplingClinic()" class="w-full accent-[#f0b429]">
+            </div>
+            <div class="space-y-1">
+              <div class="flex justify-between">
+                <span class="text-gray-400">top_p:</span>
+                <span id="val-gen-topp" class="text-[#58c4dd] font-bold">0.90</span>
+              </div>
+              <input type="range" id="sl-gen-topp" min="0.1" max="1.0" step="0.05" value="0.9" oninput="updateSamplingClinic()" class="w-full accent-[#58c4dd]">
+            </div>
+            <div class="space-y-1">
+              <div class="flex justify-between">
+                <span class="text-gray-400">rep_penalty:</span>
+                <span id="val-gen-rep" class="text-[#c084fc] font-bold">1.10</span>
+              </div>
+              <input type="range" id="sl-gen-rep" min="1.0" max="1.5" step="0.05" value="1.1" oninput="updateSamplingClinic()" class="w-full accent-[#c084fc]">
+            </div>
+          </div>
+
+          <pre id="gen-code-preview" class="p-3.5 rounded-xl bg-[#070a0f] border border-[#233044] font-mono text-xs text-gray-200 overflow-x-auto leading-relaxed"></pre>
+          <div id="gen-clinic-alert" class="p-3 rounded-xl border text-xs leading-relaxed"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 15.3 ==================== -->
+    <section id="module-15-3" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#c084fc] font-mono">15.3</span> LoRA / QLoRA 微调数学原理与显存压缩剧场
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          核心假设：微调时的权重变化量 <span class="math-symbol">ΔW</span> 是低秩的。冻结庞大的原始权重 <span class="math-symbol">W<sub>0</sub></span>，只训练两个极小的低秩旁路矩阵 <span class="math-symbol">A</span> 与 <span class="math-symbol">B</span>。
+        </p>
+      </div>
+
+      <!-- Part A: Interactive LoRA Matrix Decomposition & 3-Way VRAM Chart -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: LoRA 低秩分解矩阵与 全量 / LoRA / QLoRA 显存实时对比</h4>
+            <p class="text-xs text-gray-400">
+              公式：<span class="font-mono text-[#c084fc] font-bold">h = W<sub>0</sub>x + <span class="frac"><span class="num">α</span><span class="den">r</span></span> B · A · x</span>（以 7B 模型单层 4096 × 4096 线性层为例）
+            </p>
+          </div>
+          <div id="lora-compress-pill" class="px-3 py-1 rounded-full bg-[#c084fc]/15 border border-[#c084fc]/40 text-[#c084fc] text-xs font-mono font-bold">
+            单层参数压缩 256× (仅 0.39%)
+          </div>
+        </div>
+
+        <!-- Sliders -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-[#0d1117] p-4 rounded-xl border border-[#233044] text-xs font-mono">
+          <div class="space-y-1.5">
+            <div class="flex justify-between">
+              <span class="text-gray-300">低秩维度 r:</span>
+              <span id="val-lora-r" class="text-[#c084fc] font-bold">r = 8</span>
+            </div>
+            <input type="range" id="sl-lora-r" min="4" max="64" step="4" value="8" oninput="updateLoraLab()" class="w-full accent-[#c084fc] bg-gray-800 h-1.5 rounded cursor-pointer">
+          </div>
+          <div class="space-y-1.5">
+            <div class="flex justify-between">
+              <span class="text-gray-300">缩放系数 lora_alpha:</span>
+              <span id="val-lora-alpha" class="text-[#f0b429] font-bold">α = 16 (scale = 2.0)</span>
+            </div>
+            <input type="range" id="sl-lora-alpha" min="8" max="128" step="8" value="16" oninput="updateLoraLab()" class="w-full accent-[#f0b429] bg-gray-800 h-1.5 rounded cursor-pointer">
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-gray-300 block">target_modules 注入范围:</label>
+            <select id="sel-lora-targets" onchange="updateLoraLab()" class="w-full p-1.5 rounded-lg bg-[#141b26] border border-[#233044] text-white focus:outline-none focus:border-[#58c4dd]">
+              <option value="qv" selected>q_proj, v_proj (~0.2% · 小数据够用)</option>
+              <option value="qkvo">q/k/v/o_proj (~0.4% · 中等数据)</option>
+              <option value="all">Attention + FFN 全线性层 (~1.5% · 最强)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- High-DPI LoRA Matrix + VRAM Comparison Canvas -->
+        <div class="w-full overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-lora-math" class="w-full h-[250px]"></canvas>
+        </div>
+
+        <!-- Part B: Two Key Properties of LoRA -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div class="p-4 rounded-xl bg-[#0d1117] border border-[#58c4dd]/40 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-[#58c4dd]">✨ 性质 1：初始化时零偏移 (B = 0)</span>
+              <span class="font-mono text-[10px] px-2 py-0.5 rounded bg-[#58c4dd]/15 text-[#58c4dd]">torch.allclose == True</span>
+            </div>
+            <p class="text-gray-400 leading-relaxed">
+              <code class="text-white">lora_A</code> 随机高斯初始化，<code class="text-white">lora_B</code> 严格初始化为<strong>全 0 矩阵</strong>。因此训练第 0 步时 <code class="text-[#58c4dd]">B · A · x = 0</code>，输出与原模型完全一致，保证微调平稳起步而不破坏预训练知识。
+            </p>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-[#4ade80]">🚀 性质 2：部署前可合并 (Zero Overhead)</span>
+              <span class="font-mono text-[10px] px-2 py-0.5 rounded bg-[#4ade80]/15 text-[#4ade80]">W' = W₀ + (α/r)BA</span>
+            </div>
+            <p class="text-gray-400 leading-relaxed">
+              训练完成后，把 <code class="text-[#4ade80]">(α/r) · B @ A</code> 直接加回原权重 <code class="text-white">W₀</code> 导出为标准模型权重。线上用 Ollama / vLLM 推理时<strong>零额外延迟</strong>，且一个基座可挂载多个不同业务 LoRA 适配器（每个仅几十 MB）！
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 15.4 ==================== -->
+    <section id="module-15-4" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#4ade80] font-mono">15.4</span> 什么时候该微调？Prompt vs RAG vs Fine-tuning 决策实验室
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          微调不是银弹！90% 的新手一上来就想微调，其实用 Prompt 或 RAG 更便宜、更易维护。记住黄金铁律：<strong>知识用 RAG，风格/格式/领域能力用微调</strong>。
+        </p>
+      </div>
+
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div>
+          <h4 class="text-sm font-semibold text-white">Part A: 6 大真实业务场景选型诊断器 (点击场景查看最佳技术路线)</h4>
+          <p class="text-xs text-gray-400">选错技术路线会让团队多花 10 倍成本还做不出好效果</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs" id="dec-case-btns">
+          <button onclick="selectDecCase(0)" id="dc-btn-0" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">① 接入公司每天更新的报销与售后文档</div>
+          </button>
+          <button onclick="selectDecCase(1)" id="dc-btn-1" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">② 固定 50 类工单打标，偶尔输出错格式</div>
+          </button>
+          <button onclick="selectDecCase(2)" id="dc-btn-2" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">③ 让 7B 本地小模型稳定输出特定 JSON &amp; 话术风格</div>
+          </button>
+          <button onclick="selectDecCase(3)" id="dc-btn-3" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">④ 医疗影像/法律文书等强垂直专业推理</div>
+          </button>
+          <button onclick="selectDecCase(4)" id="dc-btn-4" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">⑤ 既要懂最新产品库，又要模仿品牌客服腔调</div>
+          </button>
+          <button onclick="selectDecCase(5)" id="dc-btn-5" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">⑥ 把 GPT-4o 蒸馏到 7B 本地模型降本 90%</div>
+          </button>
+        </div>
+
+        <div id="dec-result-card" class="p-5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+          <!-- Dynamic verdict -->
+        </div>
+
+        <!-- SFT Dataset Format Preview -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-2 border-t border-[#233044]">
+          <div class="lg:col-span-7 space-y-1.5">
+            <div class="text-xs font-mono text-gray-400">标准 SFT 微调数据集格式 (ChatML / messages JSONL)</div>
+            <pre class="p-3.5 rounded-xl bg-[#070a0f] border border-[#233044] font-mono text-[11px] text-[#58c4dd] overflow-x-auto leading-relaxed">{"messages": [
+  {"role": "system", "content": "你是严谨的电商售后客服，回复不超过 2 句话。"},
+  {"role": "user", "content": "收到货第 5 天不喜欢了能退吗？"},
+  {"role": "assistant", "content": "可以的，签收 7 天内保持商品完好即可申请无理由退货。"}
+]}</pre>
+          </div>
+          <div class="lg:col-span-5 p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-2 text-xs">
+            <div class="font-bold text-[#f0b429]">📊 微调数据黄金法则</div>
+            <ul class="space-y-1.5 text-gray-400 list-disc list-inside leading-relaxed">
+              <li><strong class="text-white">质量远大于数量：</strong>500~2,000 条人工精修高质量样本，远胜 10 万条爬虫脏数据。</li>
+              <li><strong class="text-white">只算 assistant 损失：</strong>通过 <code class="text-[#58c4dd]">labels = -100</code> 掩盖 system 和 user 部分，只让模型学怎么回答。</li>
+              <li><strong class="text-white">警惕灾难性遗忘：</strong>epoch 设为 1~3 轮即可，可混入 10% 通用指令数据保持基础智力。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 15.5 ==================== -->
+    <section id="module-15-5" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#ff6b6b] font-mono">15.5</span> 本地实战 CLI、完整 Python 代码库与章末测验
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          可离线运行的显存估算器、纯 PyTorch 手写 LoRA 及权重合并验证、QLoRA (PEFT) 微调脚本，以及 Ollama OpenAI 兼容客户端。
+        </p>
+      </div>
+
+      <!-- Part A: CLI Simulator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-semibold text-white">Part A: 本地部署与 LoRA 实验终端模拟器</h4>
+          <div class="flex space-x-1.5">
+            <span class="w-3 h-3 rounded-full bg-red-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-yellow-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-green-500/80 inline-block"></span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 text-xs font-mono">
+          <button onclick="runLocalCli('ollama')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#58c4dd]/40 text-[#58c4dd] hover:bg-[#58c4dd]/10 transition">
+            $ ollama run qwen2.5:7b "用一句话解释RAG"
+          </button>
+          <button onclick="runLocalCli('lora')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#c084fc]/40 text-[#c084fc] hover:bg-[#c084fc]/10 transition">
+            $ python lora_from_scratch.py
+          </button>
+          <button onclick="runLocalCli('vllm')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#4ade80]/40 text-[#4ade80] hover:bg-[#4ade80]/10 transition">
+            $ vllm serve Qwen/Qwen2.5-7B-Instruct --port 8000
+          </button>
+        </div>
+
+        <pre id="local-cli-screen" class="p-4 rounded-xl bg-[#070a0f] border border-[#233044] font-mono text-xs text-gray-200 min-h-[175px] max-h-[290px] overflow-y-auto leading-relaxed whitespace-pre-wrap"></pre>
+      </div>
+
+      <!-- Part B: Complete Python Code Repository -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: 第 15 章完整 Python 源码库 (可直接运行)</h4>
+            <p class="text-xs text-gray-400">切换查看 4 份核心代码，支持一键复制到剪贴板</p>
+          </div>
+          <button onclick="copyLocalCode()" id="btn-copy-local" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#58c4dd] text-black hover:bg-[#58c4dd]/90 transition">
+            <span id="copy-local-label">📋 复制当前代码</span>
+          </button>
+        </div>
+
+        <div class="flex border-b border-[#233044] space-x-1 overflow-x-auto text-xs font-mono">
+          <button onclick="selectLocalCodeTab('lora')" data-tab="lora" class="local-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            lora_from_scratch.py
+          </button>
+          <button onclick="selectLocalCodeTab('vram')" data-tab="vram" class="local-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            vram_estimator.py
+          </button>
+          <button onclick="selectLocalCodeTab('qlora')" data-tab="qlora" class="local-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            qlora_sft_peft.py
+          </button>
+          <button onclick="selectLocalCodeTab('ollama')" data-tab="ollama" class="local-code-tab px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            ollama_openai_client.py
+          </button>
+        </div>
+
+        <pre class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] overflow-x-auto font-mono text-xs text-gray-200 max-h-[450px] leading-relaxed"><code id="local-code-display"></code></pre>
+      </div>
+
+      <!-- Part C: 5-Question Quiz -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex items-center justify-between border-b border-[#233044] pb-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part C: 第 15 章本地模型与微调测验 (5-Question Quiz)</h4>
+            <p class="text-xs text-gray-400">检验对 Ollama/vLLM、显存公式、LoRA 数学性质与微调决策的掌握</p>
+          </div>
+          <span id="local-quiz-score" class="px-3 py-1 rounded-full bg-[#c084fc]/15 border border-[#c084fc]/30 text-[#c084fc] text-xs font-mono font-bold">
+            得分: 0 / 5
+          </span>
+        </div>
+        <div id="local-quiz-container" class="space-y-4"></div>
+      </div>
+
+      <!-- Part D: 12-Point Chapter Summary Grid -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <h4 class="text-sm font-semibold text-white">Part D: 第 15 章 12 条核心要点总结矩阵</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">1. 本地部署的四大收益</div>
+            <div class="text-gray-400">数据不出内网、边际成本趋近 0、局域网低延迟、模型版本完全可控。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">2. Ollama vs vLLM 选型</div>
+            <div class="text-gray-400">个人开发/CPU/离线用 Ollama；对外高并发生产 API 必选 vLLM。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">3. vLLM 两大核心加速</div>
+            <div class="text-gray-400">PagedAttention 消除 KV 显存碎片，Continuous Batching 把 GPU 利用率提到 80%+。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">4. Q4_K_M 性价比之王</div>
+            <div class="text-gray-400">7B 模型 Q4 仅需 ~6GB 显存且质量损失很小；Q2 质量断崖下降不推荐。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">5. OpenAI 兼容层零迁移</div>
+            <div class="text-gray-400">Ollama 与 vLLM 均提供 /v1/chat/completions，旧代码只改 base_url 即可切换。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#f0b429]/40 space-y-1">
+            <div class="font-bold text-[#f0b429]">6. do_sample=False 陷阱</div>
+            <div class="text-gray-400">Transformers 中贪心解码时 temperature 和 top_p 完全不会生效。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#c084fc]/40 space-y-1">
+            <div class="font-bold text-[#c084fc]">7. LoRA 省 87% 训练显存</div>
+            <div class="text-gray-400">冻结原权重只训低秩旁路 B·A，7B 训练显存从 112GB 骤降至 14.3GB。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#c084fc]/40 space-y-1">
+            <div class="font-bold text-[#c084fc]">8. B=0 初始化零偏移</div>
+            <div class="text-gray-400">矩阵 B 全 0 初始化保证加载 LoRA 初始输出与原模型 100% 一致，训练更稳。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#c084fc]/40 space-y-1">
+            <div class="font-bold text-[#c084fc]">9. 权重合并推理零开销</div>
+            <div class="text-gray-400">部署前执行 W' = W₀ + (α/r)BA 合并，线上推理无任何额外延迟。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">10. QLoRA 单卡 8G 训 7B</div>
+            <div class="text-gray-400">NF4 4bit 量化基座 + 二次量化 + BF16 LoRA 适配器，消费级显卡即可微调 7B。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#4ade80]/40 space-y-1">
+            <div class="font-bold text-[#4ade80]">11. 知识用 RAG，风格用微调</div>
+            <div class="text-gray-400">动态知识库千万别用微调硬塞，优先顺序永远是 Prompt → RAG → Fine-tuning。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#ff6b6b]/40 space-y-1">
+            <div class="font-bold text-[#ff6b6b]">12. 数据质量决定微调上限</div>
+            <div class="text-gray-400">500~2000 条高质量精修对话远胜海量脏数据，且 epoch 控制在 1~3 轮防过拟合。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-[#233044] bg-[#0d1117] py-6 px-4 text-center text-xs text-gray-500">
+    <div class="max-w-7xl mx-auto space-y-1">
+      <p>第 15 章：本地模型与微调入门 —— Ollama / vLLM 本地部署、显存估算与 LoRA / QLoRA 实战</p>
+      <p>3Blue1Brown Mathematical &amp; Engineering Style Interactive Tutorial</p>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // CANVAS HELPERS (High-DPI Retina + Custom RoundedRect + Arrow)
+    // =========================================================================
+    function setupCanvas(canvas) {
+      if (!canvas) return null;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(rect.width || 600, 300);
+      const height = rect.height || 220;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width, height };
+    }
+
+    function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke, lw = 1.5) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+    }
+
+    // =========================================================================
+    // MODULE 15.1: vLLM CONTINUOUS BATCHING CANVAS & VRAM CALCULATOR
+    // =========================================================================
+    let servingMode = 'vllm';
+
+    function setServingMode(mode) {
+      servingMode = mode;
+      const bSt = document.getElementById('srv-btn-static');
+      const bVl = document.getElementById('srv-btn-vllm');
+      if (mode === 'static') {
+        bSt.className = 'px-3 py-1.5 rounded-lg bg-[#ff6b6b] text-black font-bold transition';
+        bVl.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+      } else {
+        bVl.className = 'px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-bold transition';
+        bSt.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition';
+      }
+      renderVllmCanvas();
+    }
+
+    function renderVllmCanvas() {
+      const canvas = document.getElementById('canvas-vllm-batch');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const padL = 78, padR = 24, padT = 32, padB = 34;
+      const plotW = width - padL - padR;
+      const plotH = height - padT - padB;
+      const lanes = 4;
+      const rowH = plotH / lanes;
+
+      ctx.fillStyle = servingMode === 'vllm' ? '#58c4dd' : '#ff6b6b';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        servingMode === 'vllm'
+          ? 'vLLM Continuous Batching：短请求结束瞬间立刻插入新请求，零等待气泡！'
+          : '传统 Static Batching：所有短请求必须干等最长的 Req #2 跑完，GPU 大量空转！',
+        14, 18
+      );
+
+      for (let i = 0; i < lanes; i++) {
+        const y = padT + i * rowH;
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Slot #${i + 1}`, padL - 10, y + rowH / 2 + 4);
+      }
+
+      if (servingMode === 'static') {
+        const lens = [0.35, 0.92, 0.48, 0.28];
+        const cols = ['#58c4dd', '#f0b429', '#c084fc', '#4ade80'];
+        lens.forEach((frac, i) => {
+          const y = padT + i * rowH + 6;
+          const bh = rowH - 12;
+          const wAct = plotW * frac;
+          const wIdle = plotW * (0.92 - frac);
+
+          drawRoundedRect(ctx, padL, y, wAct, bh, 5, cols[i], null);
+          ctx.fillStyle = '#0d1117'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+          ctx.fillText(`Req #${i + 1}`, padL + wAct / 2, y + bh / 2 + 3);
+
+          if (wIdle > 8) {
+            drawRoundedRect(ctx, padL + wAct + 3, y, wIdle - 3, bh, 5, 'rgba(255,107,107,0.16)', '#ff6b6b', 1);
+            ctx.fillStyle = '#ff6b6b'; ctx.font = '10px monospace';
+            ctx.fillText('IDLE 气泡空等', padL + wAct + wIdle / 2, y + bh / 2 + 3);
+          }
+        });
+        ctx.fillStyle = '#ff6b6b'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('GPU 算力利用率 ≈ 35%  |  连续 KV 显存预留浪费严重', width / 2, height - 10);
+      } else {
+        const schedule = [
+          [{ s: 0.0, d: 0.34, t: 'Req #1', c: '#58c4dd' }, { s: 0.35, d: 0.38, t: 'Req #5', c: '#4ade80' }, { s: 0.74, d: 0.25, t: 'Req #9', c: '#f0b429' }],
+          [{ s: 0.0, d: 0.88, t: 'Req #2 (长生成)', c: '#f0b429' }, { s: 0.89, d: 0.10, t: '#10', c: '#58c4dd' }],
+          [{ s: 0.0, d: 0.46, t: 'Req #3', c: '#c084fc' }, { s: 0.47, d: 0.52, t: 'Req #6', c: '#58c4dd' }],
+          [{ s: 0.0, d: 0.26, t: 'Req #4', c: '#4ade80' }, { s: 0.27, d: 0.35, t: 'Req #7', c: '#c084fc' }, { s: 0.63, d: 0.36, t: 'Req #8', c: '#4ade80' }]
+        ];
+        schedule.forEach((lane, i) => {
+          const y = padT + i * rowH + 6;
+          const bh = rowH - 12;
+          lane.forEach(item => {
+            const x = padL + plotW * item.s;
+            const w = plotW * item.d;
+            drawRoundedRect(ctx, x, y, w, bh, 5, item.c, null);
+            ctx.fillStyle = '#0d1117'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+            ctx.fillText(item.t, x + w / 2, y + bh / 2 + 3);
+          });
+        });
+        ctx.fillStyle = '#4ade80'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('GPU 算力利用率 ≈ 88%  |  PagedAttention 按页分配 KV Cache，无显存碎片', width / 2, height - 10);
+      }
+    }
+
+    function updateVramLab() {
+      const paramsB = parseFloat(document.getElementById('sel-vram-size').value);
+      const quant = document.getElementById('sel-vram-quant').value;
+      const ctxLen = parseInt(document.getElementById('sl-vram-ctx').value, 10);
+      const bs = parseInt(document.getElementById('sl-vram-bs').value, 10);
+
+      document.getElementById('val-vram-ctx').textContent = ctxLen.toLocaleString();
+      document.getElementById('val-vram-bs').textContent = bs;
+
+      const bitsMap = { fp16: 16, q8: 8, q4: 4, q2: 2 };
+      const layerMap = { 3: [28, 3072], 7: [32, 4096], 13: [40, 5120], 32: [64, 5120], 70: [80, 8192] };
+      const [nLayers, dModel] = layerMap[paramsB] || [32, 4096];
+
+      const weights = (paramsB * 1e9 * bitsMap[quant]) / 8 / 1e9;
+      // GQA approx factor 0.5 for modern models like Qwen2.5 / Llama3, keep textbook formula clear
+      const kvCache = (2 * nLayers * dModel * ctxLen * bs * 2) / 1e9 * 0.5;
+      const overhead = weights * 0.1 + 0.3;
+      const total = weights + kvCache + overhead;
+
+      document.getElementById('vram-total-pill').textContent = `总显存需求：${total.toFixed(1)} GB`;
+      document.getElementById('vram-breakdown-text').textContent = `${weights.toFixed(1)}G + ${kvCache.toFixed(1)}G + ${overhead.toFixed(1)}G = ${total.toFixed(1)}G`;
+      document.getElementById('lbl-w').textContent = weights.toFixed(1) + ' GB';
+      document.getElementById('lbl-kv').textContent = kvCache.toFixed(1) + ' GB';
+      document.getElementById('lbl-oh').textContent = overhead.toFixed(1) + ' GB';
+
+      document.getElementById('bar-vram-w').style.width = ((weights / total) * 100).toFixed(1) + '%';
+      document.getElementById('bar-vram-kv').style.width = ((kvCache / total) * 100).toFixed(1) + '%';
+      document.getElementById('bar-vram-oh').style.width = ((overhead / total) * 100).toFixed(1) + '%';
+
+      const gpus = [
+        { name: 'RTX 4060', gb: 8 },
+        { name: 'RTX 4070 Ti', gb: 16 },
+        { name: 'RTX 4090', gb: 24 },
+        { name: 'L40S / A6000', gb: 48 },
+        { name: 'A100 / H100', gb: 80 },
+        { name: '2× A100', gb: 160 }
+      ];
+      document.getElementById('gpu-fit-grid').innerHTML = gpus.map(g => {
+        const ok = total <= g.gb * 0.92;
+        return `
+          <div class="p-2 rounded-lg border ${ok ? 'border-[#4ade80]/40 bg-[#4ade80]/10 text-[#4ade80]' : 'border-[#ff6b6b]/30 bg-[#141b26] text-gray-500'}">
+            <div class="font-bold">${g.name} (${g.gb}G)</div>
+            <div class="text-[10px] mt-0.5">${ok ? '✅ [OK 可运行]' : '❌ [OOM 爆显存]'}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // =========================================================================
+    // MODULE 15.2: SAMPLING CLINIC
+    // =========================================================================
+    function updateSamplingClinic() {
+      const doSample = document.getElementById('chk-dosample').checked;
+      const temp = parseFloat(document.getElementById('sl-gen-temp').value);
+      const topP = parseFloat(document.getElementById('sl-gen-topp').value);
+      const rep = parseFloat(document.getElementById('sl-gen-rep').value);
+
+      document.getElementById('val-gen-temp').textContent = temp.toFixed(2);
+      document.getElementById('val-gen-topp').textContent = topP.toFixed(2);
+      document.getElementById('val-gen-rep').textContent = rep.toFixed(2);
+
+      const lbl = document.getElementById('lbl-dosample');
+      lbl.textContent = doSample ? 'do_sample = True (概率采样)' : 'do_sample = False (贪心解码)';
+      lbl.className = doSample ? 'text-[#4ade80] font-bold' : 'text-[#ff6b6b] font-bold';
+
+      document.getElementById('gen-code-preview').textContent =
+`out = model.generate(
+    **inputs,
+    max_new_tokens=256,
+    do_sample=${doSample ? 'True' : 'False'},
+    temperature=${temp.toFixed(1)},   ${!doSample ? '# ⚠️ 无效！贪心模式会忽略此参数' : ''}
+    top_p=${topP.toFixed(2)},         ${!doSample ? '# ⚠️ 无效！' : ''}
+    repetition_penalty=${rep.toFixed(2)},
+)`;
+
+      const alertEl = document.getElementById('gen-clinic-alert');
+      if (!doSample && temp > 0) {
+        alertEl.className = 'p-3 rounded-xl border border-[#ff6b6b]/40 bg-[#ff6b6b]/10 text-[#ff6b6b] text-xs leading-relaxed';
+        alertEl.innerHTML = `<strong>🚨 踩坑预警：</strong>当前 <code class="font-mono">do_sample=False</code>，Transformers 会强制走贪心解码（每步取 argmax），你设置的 <code class="font-mono">temperature=${temp.toFixed(1)}</code> 与 <code class="font-mono">top_p=${topP.toFixed(2)}</code> <strong>完全不会生效</strong>，并会在终端抛出 UserWarning！`;
+      } else if (doSample && temp === 0) {
+        alertEl.className = 'p-3 rounded-xl border border-[#f0b429]/40 bg-[#f0b429]/10 text-[#f0b429] text-xs leading-relaxed';
+        alertEl.innerHTML = '<strong>⚠️ 参数冲突：</strong>在 HuggingFace 中 <code class="font-mono">do_sample=True</code> 且 <code class="font-mono">temperature=0</code> 会直接抛 ValueError（除以 0）！需要确定性抽取时请设 <code class="font-mono">do_sample=False</code>。';
+      } else {
+        alertEl.className = 'p-3 rounded-xl border border-[#4ade80]/40 bg-[#4ade80]/10 text-[#4ade80] text-xs leading-relaxed';
+        alertEl.innerHTML = doSample
+          ? `<strong>✅ 推荐对话配置：</strong>采样模式已开启，temperature=${temp.toFixed(1)} + top_p=${topP.toFixed(2)} 兼顾流畅度与多样性，repetition_penalty=${rep.toFixed(2)} 有效抑制车轱辘话。`
+          : '<strong>✅ 推荐抽取/代码配置：</strong>贪心解码（do_sample=False）速度最快且 100% 可复现，适合结构化 JSON 抽取与代码补全。';
+      }
+    }
+
+    // =========================================================================
+    // MODULE 15.3: LoRA LOW-RANK MATRIX & 3-WAY VRAM COMPARISON CANVAS
+    // =========================================================================
+    function updateLoraLab() {
+      const r = parseInt(document.getElementById('sl-lora-r').value, 10);
+      const alpha = parseInt(document.getElementById('sl-lora-alpha').value, 10);
+      const targets = document.getElementById('sel-lora-targets').value;
+
+      const scale = (alpha / r).toFixed(2);
+      document.getElementById('val-lora-r').textContent = `r = ${r}`;
+      document.getElementById('val-lora-alpha').textContent = `α = ${alpha} (scale = ${scale})`;
+
+      const d = 4096;
+      const baseParams = d * d; // 16,777,216
+      const loraParams = 2 * d * r;
+      const ratioPct = ((loraParams / baseParams) * 100).toFixed(2);
+      const compressX = Math.round(baseParams / loraParams);
+
+      document.getElementById('lora-compress-pill').textContent = `单层参数压缩 ${compressX}× (仅占 ${ratioPct}%)`;
+
+      // Estimate 7B training VRAM (Full vs LoRA vs QLoRA)
+      const targetMult = targets === 'qv' ? 2 : (targets === 'qkvo' ? 4 : 7);
+      const trainableB = (32 * targetMult * loraParams) / 1e9;
+      const fullVram = 112.0; // 7B BF16 + Adam
+      const loraVram = 14.0 + trainableB * 16 + 0.5;
+      const qloraVram = 3.5 + trainableB * 16 + 2.2; // NF4 weights + temp bf16 + activations
+
+      renderLoraCanvas(r, scale, baseParams, loraParams, fullVram, loraVram, qloraVram);
+    }
+
+    function renderLoraCanvas(r, scale, baseParams, loraParams, fullVram, loraVram, qloraVram) {
+      const canvas = document.getElementById('canvas-lora-math');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const midX = width * 0.54;
+
+      // Left Zone: Matrix W0 vs B * A visual
+      ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+      ctx.fillText('1. 单层矩阵低秩分解 (d = 4096)', 16, 20);
+
+      const boxSize = Math.min(115, height - 95);
+      const xW0 = 26, yW0 = 46;
+      drawRoundedRect(ctx, xW0, yW0, boxSize, boxSize, 8, '#141b26', '#58c4dd', 1.8);
+      ctx.fillStyle = '#58c4dd'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('W₀ (冻结)', xW0 + boxSize / 2, yW0 + boxSize / 2 - 6);
+      ctx.fillStyle = '#9ca3af'; ctx.font = '10px monospace';
+      ctx.fillText('4096 × 4096', xW0 + boxSize / 2, yW0 + boxSize / 2 + 12);
+      ctx.fillText('16.78M 参数', xW0 + boxSize / 2, yW0 + boxSize + 16);
+
+      // Plus sign
+      const xPlus = xW0 + boxSize + 20;
+      ctx.fillStyle = '#f0b429'; ctx.font = 'bold 18px monospace';
+      ctx.fillText('+', xPlus, yW0 + boxSize / 2 + 6);
+
+      // Narrow B (4096 x r) & Flat A (r x 4096)
+      const rVisual = Math.max(14, Math.min(34, 10 + r * 0.35));
+      const xB = xPlus + 22;
+      drawRoundedRect(ctx, xB, yW0, rVisual, boxSize, 5, '#c084fc30', '#c084fc', 2);
+      ctx.fillStyle = '#c084fc'; ctx.font = 'bold 11px monospace';
+      ctx.fillText('B', xB + rVisual / 2, yW0 + boxSize / 2 + 4);
+      ctx.fillStyle = '#9ca3af'; ctx.font = '9px monospace';
+      ctx.fillText(`4096×${r}`, xB + rVisual / 2, yW0 + boxSize + 16);
+
+      const xDot = xB + rVisual + 14;
+      ctx.fillStyle = '#c084fc'; ctx.font = 'bold 14px monospace';
+      ctx.fillText('×', xDot, yW0 + boxSize / 2 + 5);
+
+      const xA = xDot + 14;
+      const yA = yW0 + (boxSize - rVisual) / 2;
+      const wA = Math.min(boxSize, midX - xA - 18);
+      drawRoundedRect(ctx, xA, yA, wA, rVisual, 5, '#4ade8030', '#4ade80', 2);
+      ctx.fillStyle = '#4ade80'; ctx.font = 'bold 11px monospace';
+      ctx.fillText('A', xA + wA / 2, yA + rVisual / 2 + 4);
+      ctx.fillStyle = '#9ca3af'; ctx.font = '9px monospace';
+      ctx.fillText(`${r}×4096`, xA + wA / 2, yA + rVisual + 14);
+
+      ctx.fillStyle = '#f0b429'; ctx.font = '10px monospace'; ctx.textAlign = 'left';
+      ctx.fillText(`可训练参数: ${(loraParams / 1000).toFixed(1)}K  |  缩放 α/r = ${scale}`, 16, height - 14);
+
+      // Divider
+      ctx.strokeStyle = '#233044'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(midX, 14); ctx.lineTo(midX, height - 14); ctx.stroke();
+
+      // Right Zone: 7B Training VRAM Bar Chart
+      ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+      ctx.fillText('2. 7B 模型微调显存对比 (GB)', midX + 18, 20);
+
+      const bars = [
+        { label: '全量微调', val: fullVram, col: '#ff6b6b' },
+        { label: 'LoRA (BF16)', val: loraVram, col: '#c084fc' },
+        { label: 'QLoRA (NF4)', val: qloraVram, col: '#4ade80' }
+      ];
+      const rightW = width - midX - 28;
+      const maxBarH = height - 80;
+      const bw = Math.min(54, rightW / 4.2);
+      const gap = (rightW - bw * 3) / 4;
+
+      bars.forEach((b, i) => {
+        const bx = midX + 14 + gap + i * (bw + gap);
+        const bh = Math.max(12, (b.val / 120) * maxBarH);
+        const by = height - 34 - bh;
+        drawRoundedRect(ctx, bx, by, bw, bh, 5, b.col, null);
+
+        ctx.fillStyle = b.col; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(b.val.toFixed(1) + 'G', bx + bw / 2, by - 6);
+        ctx.fillStyle = '#cbd5e1'; ctx.font = '10px sans-serif';
+        ctx.fillText(b.label, bx + bw / 2, height - 14);
+      });
+    }
+
+    // =========================================================================
+    // MODULE 15.4: PROMPT vs RAG vs FINE-TUNING DECISION LAB
+    // =========================================================================
+    const DECISION_CASES = [
+      {
+        route: '✅ 首选：RAG（检索增强生成）',
+        col: '#58c4dd',
+        why: '公司报销/售后制度频繁更新。微调把知识写死在权重里，每次改文档都要重训且容易产生幻觉；RAG 只需更新向量库（秒级生效）还能附带来源引用 [1]。',
+        cost: '开发周期：1~2 天 · 运维成本：极低'
+      },
+      {
+        route: '✅ 首选：Prompt + Few-Shot + Function Calling',
+        col: '#f0b429',
+        why: '只是偶尔格式不对，完全不需要动用微调！用第 9 章的 Function Calling + Pydantic 强制约束 Schema，再加 3~5 个边界 Few-Shot 示例，准确率立刻拉满。',
+        cost: '开发周期：2 小时 · 成本：几乎为 0'
+      },
+      {
+        route: '✅ 首选：LoRA / QLoRA 微调',
+        col: '#c084fc',
+        why: '7B 小模型指令遵循弱、靠超长 System Prompt 既费 Token 又不稳。用 1,000 条标准风格+JSON 对话做 QLoRA 微调，能把规则内化进权重，省去 80% 提示词 Token。',
+        cost: '训练耗时：单卡 30 分钟 · 效果：风格高度稳定'
+      },
+      {
+        route: '✅ 首选：领域 LoRA 微调 + 评测集',
+        col: '#c084fc',
+        why: '垂直行业（医疗、法律、金融代码）包含大量通用预训练语料中稀缺的推理范式与术语习惯，需要针对性 SFT 微调注入领域推理能力。',
+        cost: '核心难点：收集高质量专家标注数据（2,000+ 条）'
+      },
+      {
+        route: '✅ 首选：RAG + LoRA 黄金组合',
+        col: '#4ade80',
+        why: '两者并不互斥！用 RAG 负责实时查出最新商品与库存事实（防幻觉），用轻量 LoRA 负责教会模型统一的品牌客服语气与拒答风格。',
+        cost: '企业级生产最佳实践架构'
+      },
+      {
+        route: '✅ 首选：教师蒸馏 + QLoRA 微调 + vLLM 部署',
+        col: '#4ade80',
+        why: '先用云端 GPT-4o / Claude 跑出 3,000 条高分样本（经人工/Eval 过滤），再用这批数据 QLoRA 微调 Qwen2.5-7B，合并权重后上 vLLM，单次成本直降 90%+！',
+        cost: '高频固定任务降本终极杀招'
+      }
+    ];
+
+    function selectDecCase(idx) {
+      for (let i = 0; i < 6; i++) {
+        const b = document.getElementById('dc-btn-' + i);
+        if (i === idx) {
+          b.className = 'p-3 rounded-xl border border-[#4ade80] bg-[#4ade80]/15 text-[#4ade80] text-left transition';
+        } else {
+          b.className = 'p-3 rounded-xl border border-[#233044] bg-[#0d1117] text-gray-300 hover:border-[#58c4dd] text-left transition';
+        }
+      }
+      const c = DECISION_CASES[idx];
+      const box = document.getElementById('dec-result-card');
+      box.style.borderColor = c.col + '80';
+      box.innerHTML = `
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span class="text-base font-bold" style="color: ${c.col}">${c.route}</span>
+          <span class="text-[11px] font-mono px-2.5 py-1 rounded bg-[#141b26] border border-[#233044] text-gray-300">${c.cost}</span>
+        </div>
+        <p class="text-xs text-gray-200 leading-relaxed">${c.why}</p>
+      `;
+    }
+
+    // =========================================================================
+    // MODULE 15.5: CLI SIMULATOR, CODE REPO & QUIZ
+    // =========================================================================
+    function runLocalCli(cmd) {
+      const screen = document.getElementById('local-cli-screen');
+      if (cmd === 'ollama') {
+        screen.textContent =
+`$ ollama run qwen2.5:7b "用一句话解释RAG"
+>>> RAG（检索增强生成）是在大模型回答前先从外部知识库检索相关资料拼进提示词，从而显著降低幻觉并引入最新私有知识。
+
+total duration:       1.12s
+load duration:        42.1ms
+eval count:           48 tokens
+eval rate:            58.4 tokens/s  (本地 GPU Q4_K_M 零 API 费用!)`;
+      } else if (cmd === 'lora') {
+        screen.textContent =
+`$ python lora_from_scratch.py
+原权重参数量: 16,781,312
+LoRA 可训练 :     65,536 (A: 8×4096=32,768, B: 4096×8=32,768)
+可训练占比  : 0.3905%  |  压缩倍数: 256x
+[验证 1] B=0 初始输出与原层完全一致: True
+[验证 2] 训练 5 步后 merge_lora 合并前后输出一致: True (推理零额外延迟!)`;
+      } else {
+        screen.textContent =
+`$ vllm serve Qwen/Qwen2.5-7B-Instruct --host 0.0.0.0 --port 8000 --dtype bfloat16 --gpu-memory-utilization 0.9
+INFO: Initializing vLLM engine (PagedAttention + Continuous Batching)...
+INFO: Loading weights took 4.82s (14.2 GB VRAM)
+INFO: # GPU blocks: 1842, max concurrency for 4096 tokens: 28.4x
+INFO: Uvicorn running on http://0.0.0.0:8000 (OpenAI Compatible /v1/chat/completions)`;
+      }
+    }
+
+    const LOCAL_CODE_FILES = {
+      lora: [
+        '"""lora_from_scratch.py: 纯 PyTorch 手写 LoRALinear + 两大核心性质验证（离线可跑）"""',
+        'import torch',
+        'import torch.nn as nn',
+        '',
+        'class LoRALinear(nn.Module):',
+        '    """将 nn.Linear 替换为低秩适配器：h = W0*x + (alpha / r) * B * A * x"""',
+        '    def __init__(self, base: nn.Linear, r: int = 8, alpha: int = 16):',
+        '        super().__init__()',
+        '        self.base = base',
+        '        self.r = r',
+        '        self.scaling = alpha / r',
+        '        # 冻结原始基座权重',
+        '        for p in self.base.parameters():',
+        '            p.requires_grad = False',
+        '        # A 随机初始化，B 严格全 0 初始化（保证初始输出零偏移）',
+        '        self.lora_A = nn.Parameter(torch.randn(r, base.in_features) * 0.01)',
+        '        self.lora_B = nn.Parameter(torch.zeros(base.out_features, r))',
+        '',
+        '    def forward(self, x: torch.Tensor) -> torch.Tensor:',
+        '        base_out = self.base(x)',
+        '        lora_out = (x @ self.lora_A.T) @ self.lora_B.T',
+        '        return base_out + lora_out * self.scaling',
+        '',
+        'def merge_lora(lora_layer: LoRALinear) -> nn.Linear:',
+        '    """部署前把 LoRA 权重合并回原权重，实现线上推理零额外延迟。"""',
+        '    merged = nn.Linear(',
+        '        lora_layer.base.in_features,',
+        '        lora_layer.base.out_features,',
+        '        bias=lora_layer.base.bias is not None,',
+        '    )',
+        '    with torch.no_grad():',
+        '        delta_w = (lora_layer.lora_B @ lora_layer.lora_A) * lora_layer.scaling',
+        '        merged.weight.copy_(lora_layer.base.weight + delta_w)',
+        '        if lora_layer.base.bias is not None:',
+        '            merged.bias.copy_(lora_layer.base.bias)',
+        '    return merged',
+        '',
+        'if __name__ == "__main__":',
+        '    torch.manual_seed(0)',
+        '    base = nn.Linear(4096, 4096)',
+        '    lora = LoRALinear(base, r=8, alpha=16)',
+        '    n_base = sum(p.numel() for p in base.parameters())',
+        '    n_train = sum(p.numel() for p in lora.parameters() if p.requires_grad)',
+        '    print(f"原权重: {n_base:,} | LoRA 可训练: {n_train:,} ({n_train/n_base:.4%}, 压缩 {n_base/n_train:.0f}x)")',
+        '',
+        '    # 性质 1：初始化零偏移验证',
+        '    x = torch.randn(2, 5, 4096)',
+        '    with torch.no_grad():',
+        '        print("性质 1 - 初始输出完全一致:", torch.allclose(base(x), lora(x)))',
+        '',
+        '    # 性质 2：训练 3 步后合并验证',
+        '    opt = torch.optim.SGD([p for p in lora.parameters() if p.requires_grad], lr=0.05)',
+        '    for _ in range(3):',
+        '        loss = (lora(x) ** 2).mean()',
+        '        opt.zero_grad(); loss.backward(); opt.step()',
+        '    with torch.no_grad():',
+        '        print("性质 2 - 合并前后输出一致:", torch.allclose(lora(x), merge_lora(lora)(x), atol=1e-5))'
+      ].join('\n'),
+
+      vram: [
+        '"""vram_estimator.py: 本地推理与全量 / LoRA / QLoRA 训练显存估算（离线可跑）"""',
+        '',
+        'def estimate_inference_vram(',
+        '    params_b: float, quant: str = "q4", context_len: int = 4096,',
+        '    batch_size: int = 1, n_layers: int = 32, d_model: int = 4096',
+        ') -> dict:',
+        '    bits = {"fp16": 16, "q8": 8, "q4": 4, "q2": 2}[quant]',
+        '    weights = (params_b * 1e9 * bits / 8) / 1e9',
+        '    kv_cache = (2 * n_layers * d_model * context_len * batch_size * 2) / 1e9',
+        '    overhead = weights * 0.1',
+        '    return {"weights": weights, "kv_cache": kv_cache, "total": weights + kv_cache + overhead}',
+        '',
+        'def compare_finetune_vram(params_b: float, lora_ratio: float = 0.002) -> dict:',
+        '    n = params_b * 1e9',
+        '    full_gb = (n * 2 + n * 2 + n * 4 * 3) / 1e9  # BF16 权重+梯度 + Adam FP32 状态',
+        '    trainable = n * lora_ratio',
+        '    lora_gb = (n * 2 + trainable * 16) / 1e9',
+        '    qlora_gb = (n * 0.5 + trainable * 16 + 2.0) / 1e9  # NF4 4bit 基座 + 临时反量化缓冲',
+        '    return {"full_gb": full_gb, "lora_gb": lora_gb, "qlora_gb": qlora_gb}',
+        '',
+        'if __name__ == "__main__":',
+        '    for p in (3, 7, 13, 70):',
+        '        inf = estimate_inference_vram(p, "q4")',
+        '        ft = compare_finetune_vram(p)',
+        '        print(f"{p:>2}B | 推理Q4: {inf[\'total\']:>5.1f}G | 全量训: {ft[\'full_gb\']:>6.1f}G | LoRA: {ft[\'lora_gb\']:>5.1f}G | QLoRA: {ft[\'qlora_gb\']:>5.1f}G")'
+      ].join('\n'),
+
+      qlora: [
+        '"""qlora_sft_peft.py: 使用 Transformers + BitsAndBytes + PEFT 进行 QLoRA 4bit 微调（需 CUDA GPU）"""',
+        'import torch',
+        'from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments',
+        'from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training',
+        '',
+        'MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"',
+        '',
+        '# 1. NF4 4bit 量化 + 二次量化配置（14GB 权重压缩至 ~3.5GB）',
+        'bnb_config = BitsAndBytesConfig(',
+        '    load_in_4bit=True,',
+        '    bnb_4bit_quant_type="nf4",',
+        '    bnb_4bit_compute_dtype=torch.bfloat16,',
+        '    bnb_4bit_use_double_quant=True,',
+        ')',
+        '',
+        '# 2. 加载量化基座模型',
+        'tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)',
+        'model = AutoModelForCausalLM.from_pretrained(',
+        '    MODEL_NAME,',
+        '    quantization_config=bnb_config,',
+        '    device_map="auto",',
+        ')',
+        '',
+        '# 3. 为 kbit 量化训练做准备（确保 LayerNorm 与输入梯度数值稳定）',
+        'model = prepare_model_for_kbit_training(model)',
+        '',
+        '# 4. 注入 LoRA 适配器（中小型数据集优先 q/k/v/o_proj）',
+        'lora_config = LoraConfig(',
+        '    r=16,',
+        '    lora_alpha=32,',
+        '    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],',
+        '    lora_dropout=0.05,',
+        '    bias="none",',
+        '    task_type="CAUSAL_LM",',
+        ')',
+        'model = get_peft_model(model, lora_config)',
+        'model.print_trainable_parameters()',
+        '',
+        '# 5. 训练超参数推荐（LoRA 学习率比全量高，通常 1e-4 ~ 3e-4，epoch 1~3 轮防过拟合）',
+        'training_args = TrainingArguments(',
+        '    output_dir="./qwen2.5-7b-qlora-out",',
+        '    per_device_train_batch_size=2,',
+        '    gradient_accumulation_steps=8,',
+        '    num_train_epochs=2,',
+        '    learning_rate=2e-4,',
+        '    warmup_ratio=0.03,',
+        '    lr_scheduler_type="cosine",',
+        '    bf16=True,',
+        '    logging_steps=10,',
+        '    save_strategy="epoch",',
+        ')',
+        '# 后续接入 trl.SFTTrainer(model=model, args=training_args, train_dataset=dataset).train()'
+      ].join('\n'),
+
+      ollama: [
+        '"""ollama_openai_client.py: 用 OpenAI SDK 零改动直连本地 Ollama 或 vLLM"""',
+        'import os',
+        'from openai import OpenAI',
+        '',
+        '# 本地 Ollama 默认地址: http://localhost:11434/v1',
+        '# 本地 vLLM   默认地址: http://localhost:8000/v1',
+        'BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")',
+        'API_KEY = os.getenv("LLM_API_KEY", "ollama")  # 本地服务不校验 Key',
+        'MODEL = os.getenv("LLM_MODEL", "qwen2.5:7b")',
+        '',
+        'client = OpenAI(base_url=BASE_URL, api_key=API_KEY)',
+        '',
+        'def chat_local(prompt: str) -> str:',
+        '    resp = client.chat.completions.create(',
+        '        model=MODEL,',
+        '        messages=[',
+        '            {"role": "system", "content": "你是部署在本地内网的 AI 助手，回答简洁准确。"},',
+        '            {"role": "user", "content": prompt},',
+        '        ],',
+        '        temperature=0.3,',
+        '    )',
+        '    return resp.choices[0].message.content',
+        '',
+        'if __name__ == "__main__":',
+        '    print(chat_local("用两句话说明为什么 QLoRA 能在 8GB 显卡上微调 7B 模型？"))'
+      ].join('\n')
+    };
+
+    let currentLocalCodeTab = 'lora';
+
+    function selectLocalCodeTab(key) {
+      currentLocalCodeTab = key;
+      document.querySelectorAll('.local-code-tab').forEach(btn => {
+        const active = (btn.dataset.tab === key);
+        btn.classList.toggle('active-code-tab', active);
+        btn.classList.toggle('text-gray-400', !active);
+      });
+      const el = document.getElementById('local-code-display');
+      if (el && LOCAL_CODE_FILES[key]) el.textContent = LOCAL_CODE_FILES[key];
+    }
+
+    function copyLocalCode() {
+      const text = LOCAL_CODE_FILES[currentLocalCodeTab] || '';
+      const label = document.getElementById('copy-local-label');
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        label.textContent = '✅ 已复制到剪贴板';
+      } catch (e) {
+        label.textContent = '❌ 复制失败';
+      }
+      document.body.removeChild(ta);
+      setTimeout(() => { label.textContent = '📋 复制当前代码'; }, 2000);
+    }
+
+    const LOCAL_QUIZ = [
+      {
+        q: '1. 团队要在公司内网部署 Qwen2.5-7B 对外提供 50 并发的 API 服务，应该选择哪种本地推理方案？',
+        options: [
+          'A. 原生 HuggingFace model.generate() 写个 for 循环',
+          'B. Ollama 默认单机串行模式',
+          'C. vLLM（PagedAttention + Continuous Batching）',
+          'D. 纯 CPU 跑 FP32 权重'
+        ],
+        ans: 2,
+        exp: 'vLLM 通过 PagedAttention 消除 KV Cache 显存碎片，并通过 Continuous Batching 把 GPU 利用率拉到 80%+，高并发吞吐是原生推理的 10~24 倍。'
+      },
+      {
+        q: '2. 在 LoRA（h = W₀x + (α/r)BAx）中，为什么矩阵 B 必须初始化为全 0 矩阵？',
+        options: [
+          'A. 为了节省硬盘空间',
+          'B. 确保训练第 0 步时 BAx = 0，加载 LoRA 后模型输出与原模型完全一致，不会破坏预训练知识',
+          'C. 因为 PyTorch 不支持对矩阵 B 做随机初始化',
+          'D. 让模型永远不更新权重'
+        ],
+        ans: 1,
+        exp: 'B=0 保证了初始化时的零偏移（Zero-Initialization），使微调从原模型的最佳状态平稳起步。'
+      },
+      {
+        q: '3. LoRA 微调完成后，如何做到线上推理“零额外延迟”？',
+        options: [
+          'A. 把 LoRA 权重删掉不用',
+          'B. 部署前将 ΔW = (α/r)·B@A 直接加回原基座权重 W₀，合并为一个标准线性层导出',
+          'C. 把 batch_size 改成 100',
+          'D. 把 temperature 调成 0'
+        ],
+        ans: 1,
+        exp: '由于线性运算满足分配律 W₀x + ΔWx = (W₀ + ΔW)x，部署前合并权重后，推理计算量与原模型完全一致。'
+      },
+      {
+        q: '4. QLoRA 为什么能让单张 8GB 消费级显卡微调 7B 参数量的大模型？',
+        options: [
+          'A. 它把 7B 模型删掉了 90% 的层',
+          'B. 它把冻结的基座权重用 NF4 4bit 量化存储（14GB → 3.5GB），计算时按层临时反量化为 BF16，且只训练极小的 LoRA 适配器',
+          'C. 它完全不用 GPU，全靠硬盘计算',
+          'D. 它把词表缩小到 100 个字'
+        ],
+        ans: 1,
+        exp: 'QLoRA 结合了 NF4 4bit 量化、二次量化和 LoRA，大幅压缩基座权重与优化器显存，使 7B 微调总显存降至 ~6GB。'
+      },
+      {
+        q: '5. 公司每天都会更新新的商品价格和售后政策文档，想让 AI 客服准确回答用户，最合理的技术路线是？',
+        options: [
+          'A. 每天晚上把新文档拿去全量微调一遍 7B 模型',
+          'B. 每天重新做一次 QLoRA 微调',
+          'C. 优先用 RAG 检索动态知识库（秒级更新 + 可溯源引用）；若还需统一客服口吻，再辅以轻量 LoRA',
+          'D. 把所有文档写死在 Python if/else 里'
+        ],
+        ans: 2,
+        exp: '黄金原则：动态知识用 RAG，固定风格/格式/领域能力用微调。切忌用微调去“背诵”频繁变化的业务事实。'
+      }
+    ];
+
+    let localQuizAnswers = {};
+
+    function renderLocalQuiz() {
+      const box = document.getElementById('local-quiz-container');
+      box.innerHTML = LOCAL_QUIZ.map((item, qIdx) => `
+        <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+          <div class="text-xs font-bold text-white">${item.q}</div>
+          <div class="space-y-1.5 text-xs">
+            ${item.options.map((opt, oIdx) => `
+              <button onclick="answerLocalQuiz(${qIdx}, ${oIdx})" id="lq-${qIdx}-o-${oIdx}" class="w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] hover:border-[#c084fc] text-gray-300 transition">
+                ${opt}
+              </button>
+            `).join('')}
+          </div>
+          <div id="lq-${qIdx}-exp" class="hidden p-3 rounded-lg text-xs leading-relaxed"></div>
+        </div>
+      `).join('');
+    }
+
+    function answerLocalQuiz(qIdx, oIdx) {
+      localQuizAnswers[qIdx] = oIdx;
+      const item = LOCAL_QUIZ[qIdx];
+      item.options.forEach((_, i) => {
+        const btn = document.getElementById(`lq-${qIdx}-o-${i}`);
+        if (i === item.ans) {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#4ade80]/20 border border-[#4ade80] text-[#4ade80] font-bold';
+        } else if (i === oIdx && oIdx !== item.ans) {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#ff6b6b]/20 border border-[#ff6b6b] text-[#ff6b6b]';
+        } else {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] text-gray-500 opacity-60';
+        }
+      });
+      const exp = document.getElementById(`lq-${qIdx}-exp`);
+      exp.classList.remove('hidden');
+      if (oIdx === item.ans) {
+        exp.className = 'p-3 rounded-lg bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80] text-xs leading-relaxed';
+        exp.innerHTML = `<strong>✅ 回答正确！</strong> ${item.exp}`;
+      } else {
+        exp.className = 'p-3 rounded-lg bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 text-[#ff6b6b] text-xs leading-relaxed';
+        exp.innerHTML = `<strong>❌ 解析：</strong> ${item.exp}`;
+      }
+      const score = Object.keys(localQuizAnswers).filter(k => localQuizAnswers[k] === LOCAL_QUIZ[k].ans).length;
+      document.getElementById('local-quiz-score').textContent = `得分: ${score} / ${LOCAL_QUIZ.length}`;
+    }
+
+    // =========================================================================
+    // INIT ON DOM READY
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      setServingMode('vllm');
+      updateVramLab();
+      updateSamplingClinic();
+      updateLoraLab();
+      selectDecCase(0);
+      runLocalCli('ollama');
+      selectLocalCodeTab('lora');
+      renderLocalQuiz();
+
+      window.addEventListener('resize', () => {
+        renderVllmCanvas();
+        updateLoraLab();
+      });
+    });
+  </script>
+</body>
+</html>

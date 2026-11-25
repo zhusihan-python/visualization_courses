@@ -1,0 +1,1842 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 12 章：Agent 与工具调用 —— Function Calling 协议、ReAct 循环与安全护栏</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0d1117',
+            cardDark: '#141b26',
+            panelDark: '#0f1622',
+            borderDark: '#233044',
+            cyanAccent: '#58c4dd',
+            goldAccent: '#f0b429',
+            emeraldAccent: '#4ade80',
+            coralAccent: '#ff6b6b',
+            violetAccent: '#c084fc',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #233044; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #58c4dd; }
+    .math-symbol { font-family: 'Times New Roman', serif; font-style: italic; }
+    .active-code-tab {
+      border-bottom: 2px solid #58c4dd;
+      color: #58c4dd;
+      font-weight: 700;
+    }
+    .glow-cyan { box-shadow: 0 0 18px rgba(88, 196, 221, 0.16); }
+    .glow-gold { box-shadow: 0 0 18px rgba(240, 180, 41, 0.16); }
+    .glow-emerald { box-shadow: 0 0 18px rgba(74, 222, 128, 0.16); }
+    .glow-coral { box-shadow: 0 0 18px rgba(255, 107, 107, 0.16); }
+    .glow-violet { box-shadow: 0 0 18px rgba(192, 132, 252, 0.16); }
+    canvas { display: block; width: 100%; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-[#58c4dd]/30 selection:text-[#58c4dd]">
+
+  <!-- Sticky Navigation Header -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur-md border-b border-[#233044] px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="flex items-center space-x-3">
+        <span class="px-2.5 py-1 text-xs font-mono font-bold uppercase tracking-wider bg-[#58c4dd]/15 text-[#58c4dd] border border-[#58c4dd]/40 rounded-full">
+          CHAPTER 12
+        </span>
+        <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">Agent 与工具调用：协议、ReAct 循环与安全护栏</h1>
+      </div>
+      <nav class="flex items-center space-x-1 text-xs font-medium overflow-x-auto max-w-full pb-1 md:pb-0">
+        <a href="#module-12-1" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#58c4dd] hover:bg-[#141b26] transition">12.1 协议握手</a>
+        <a href="#module-12-2" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#f0b429] hover:bg-[#141b26] transition">12.2 工具注册表</a>
+        <a href="#module-12-3" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#4ade80] hover:bg-[#141b26] transition">12.3 ReAct 剧场</a>
+        <a href="#module-12-4" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#ff6b6b] hover:bg-[#141b26] transition">12.4 安全护栏</a>
+        <a href="#module-12-5" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-[#c084fc] hover:bg-[#141b26] transition">12.5 源码与测验</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="border-b border-[#233044] bg-gradient-to-b from-[#141b26] to-[#0d1117] py-12 px-4 relative overflow-hidden">
+    <div class="absolute -top-24 -right-24 w-96 h-96 bg-[#58c4dd]/10 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-[#c084fc]/10 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="max-w-7xl mx-auto space-y-6 relative z-10">
+      <div class="space-y-3">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80] text-xs font-mono">
+          <span class="w-2 h-2 rounded-full bg-[#4ade80] animate-pulse"></span>
+          Autonomous LLM Agent · From Passive QA to Active Execution
+        </div>
+        <h2 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+          第 12 章：Agent 与工具调用 —— 让模型自己决定调用什么
+        </h2>
+        <p class="text-sm sm:text-base text-gray-400 max-w-3xl leading-relaxed">
+          第 11 章的 RAG 让模型“能查资料”，本章的 Agent 让模型长出“手和脚”：通过 <span class="text-[#58c4dd] font-semibold">Function Calling</span> 协议输出结构化意图，由宿主机代码执行真实工具，并在 <span class="text-[#4ade80] font-semibold">ReAct 推理循环</span> 中自主观察、纠错、直至完成复杂多步任务。
+        </p>
+      </div>
+
+      <!-- 4 KPI Pills -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-cyan">
+          <div class="text-xs text-gray-400">核心公式</div>
+          <div class="text-lg font-bold text-[#58c4dd] font-mono">Agent = LLM + Tools + Loop</div>
+          <div class="text-xs text-gray-500">模型只做决策，代码负责执行</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-gold">
+          <div class="text-xs text-gray-400">消息配对协议</div>
+          <div class="text-lg font-bold text-[#f0b429] font-mono">tool_call_id 严格对齐</div>
+          <div class="text-xs text-gray-500">assistant(tool_calls) ↔ role: "tool"</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-emerald">
+          <div class="text-xs text-gray-400">主流推理范式</div>
+          <div class="text-lg font-bold text-[#4ade80] font-mono">Thought → Action → Obs</div>
+          <div class="text-xs text-gray-500">ReAct 动态多步编排与自愈</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1 glow-coral">
+          <div class="text-xs text-gray-400">生产级安全底线</div>
+          <div class="text-lg font-bold text-[#ff6b6b] font-mono">max_steps &amp; HITL 审批</div>
+          <div class="text-xs text-gray-500">防死循环、防 eval 注入、预算熔断</div>
+        </div>
+      </div>
+
+      <!-- 5-Stage Interactive Navigation Strip -->
+      <div class="p-4 rounded-xl bg-[#0d1117]/70 border border-[#233044] space-y-3">
+        <div class="text-xs font-mono uppercase text-gray-400 tracking-wider">Agent 工程核心五步曲 (点击跳转)</div>
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-2 text-center text-xs">
+          <a href="#module-12-1" class="p-2.5 rounded-lg bg-[#141b26] border border-[#58c4dd]/40 hover:border-[#58c4dd] text-white font-medium transition">
+            1. Function Calling 握手
+          </a>
+          <a href="#module-12-2" class="p-2.5 rounded-lg bg-[#141b26] border border-[#f0b429]/40 hover:border-[#f0b429] text-white font-medium transition">
+            2. Schema 与注册表
+          </a>
+          <a href="#module-12-3" class="p-2.5 rounded-lg bg-[#141b26] border border-[#4ade80]/40 hover:border-[#4ade80] text-white font-medium transition">
+            3. ReAct 自主循环
+          </a>
+          <a href="#module-12-4" class="p-2.5 rounded-lg bg-[#141b26] border border-[#ff6b6b]/40 hover:border-[#ff6b6b] text-white font-medium transition">
+            4. 熔断与安全护栏
+          </a>
+          <a href="#module-12-5" class="p-2.5 rounded-lg bg-[#141b26] border border-[#c084fc]/40 hover:border-[#c084fc] text-white font-medium transition">
+            5. 实战 CLI 与测验
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 py-10 space-y-16 flex-grow w-full">
+
+    <!-- ==================== MODULE 12.1 ==================== -->
+    <section id="module-12-1" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#58c4dd] font-mono">12.1</span> 什么是 Agent？Workflow vs Agent 与 Function Calling 协议
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          厘清普通对话、固定工作流与自主智能体的本质差异，深入拆解 OpenAI 兼容协议的四步工具调用握手报文。
+        </p>
+      </div>
+
+      <!-- Part A: Architecture Topology Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 三种 LLM 应用架构拓扑对比 (High-DPI 动态画布)</h4>
+            <p class="text-xs text-gray-400">切换模式，观察控制权（Control Flow）是如何从程序员硬编码逐步移交给大模型的</p>
+          </div>
+          <div class="flex space-x-2 bg-[#0d1117] p-1 rounded-xl border border-[#233044]">
+            <button onclick="setArchMode('chat')" id="btn-arch-chat" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition">1. 纯对话 (Chat)</button>
+            <button onclick="setArchMode('workflow')" id="btn-arch-workflow" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition">2. 工作流 (Workflow)</button>
+            <button onclick="setArchMode('agent')" id="btn-arch-agent" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#58c4dd] text-black transition">3. 智能体 (Agent)</button>
+          </div>
+        </div>
+
+        <div class="w-full overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-arch-compare" class="w-full h-[240px]"></canvas>
+        </div>
+
+        <div id="arch-desc-panel" class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] text-xs text-gray-300 leading-relaxed">
+          <!-- Dynamically injected -->
+        </div>
+      </div>
+
+      <!-- Part B: Function Calling 4-Step Protocol Handshake -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: Function Calling 四步握手协议剧场 (Protocol Inspector)</h4>
+            <p class="text-xs text-gray-400">点击下方 4 个阶段，查看每一步真实的 HTTP JSON 报文结构与核心字段高亮</p>
+          </div>
+          <span class="px-2.5 py-1 rounded-full bg-[#f0b429]/15 border border-[#f0b429]/30 text-[#f0b429] text-[11px] font-mono">
+            核心真相：模型不执行代码，只吐出 JSON 意图
+          </span>
+        </div>
+
+        <!-- 4 Step Buttons -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs font-mono">
+          <button onclick="selectHandshakeStep(0)" id="hs-btn-0" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">Step 1 · App → LLM</div>
+            <div class="text-[11px] opacity-80 mt-0.5">发送问题 + tools 清单</div>
+          </button>
+          <button onclick="selectHandshakeStep(1)" id="hs-btn-1" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">Step 2 · LLM → App</div>
+            <div class="text-[11px] opacity-80 mt-0.5">返回 tool_calls 意图</div>
+          </button>
+          <button onclick="selectHandshakeStep(2)" id="hs-btn-2" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">Step 3 · App 本地执行</div>
+            <div class="text-[11px] opacity-80 mt-0.5">跑函数 + 回传 role:tool</div>
+          </button>
+          <button onclick="selectHandshakeStep(3)" id="hs-btn-3" class="p-3 rounded-xl border text-left transition">
+            <div class="font-bold">Step 4 · LLM → User</div>
+            <div class="text-[11px] opacity-80 mt-0.5">结合观察生成最终回答</div>
+          </button>
+        </div>
+
+        <!-- Synchronized Inspector -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div class="lg:col-span-7 space-y-2">
+            <div class="flex justify-between items-center text-xs font-mono text-gray-400">
+              <span id="hs-json-label">REQUEST PAYLOAD (JSON)</span>
+              <span id="hs-direction-badge" class="px-2 py-0.5 rounded bg-[#58c4dd]/20 text-[#58c4dd]">POST /v1/chat/completions</span>
+            </div>
+            <pre id="hs-json-code" class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] font-mono text-xs text-gray-200 overflow-x-auto max-h-[300px] leading-relaxed"></pre>
+          </div>
+          <div class="lg:col-span-5 flex flex-col justify-between space-y-3 bg-[#0d1117] p-4 rounded-xl border border-[#233044]">
+            <div class="space-y-3">
+              <div id="hs-title" class="text-sm font-bold text-[#58c4dd]"></div>
+              <p id="hs-explain" class="text-xs text-gray-300 leading-relaxed"></p>
+              <div id="hs-key-points" class="space-y-2 text-xs"></div>
+            </div>
+            <div class="p-3 rounded-lg bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 text-[11px] text-[#ff6b6b]">
+              <strong>⚠️ 工程高频踩坑：</strong><span id="hs-pitfall"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 12.2 ==================== -->
+    <section id="module-12-2" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#f0b429] font-mono">12.2</span> 工具定义、JSON Schema 与 ToolRegistry 注册表
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          工具描述就是写给大模型的“API 文档”。探索 Pydantic 自动生成 Schema，以及工具执行异常时的“错误回传自愈”机制。
+        </p>
+      </div>
+
+      <!-- Part A: Python to JSON Schema Generator & Description Quality Lab -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: Python 函数 → OpenAI Tool Schema 映射实验室</h4>
+            <p class="text-xs text-gray-400">切换不同工具，并尝试切换“清晰描述”与“偷懒描述”对比模型传参准确率</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex bg-[#0d1117] p-1 rounded-lg border border-[#233044] text-xs font-mono">
+              <button onclick="selectSchemaTool('calculator')" id="st-btn-calculator" class="px-2.5 py-1 rounded bg-[#f0b429] text-black font-bold">calculator</button>
+              <button onclick="selectSchemaTool('weather')" id="st-btn-weather" class="px-2.5 py-1 rounded text-gray-400 hover:text-white">get_weather</button>
+              <button onclick="selectSchemaTool('search_kb')" id="st-btn-search_kb" class="px-2.5 py-1 rounded text-gray-400 hover:text-white">search_kb</button>
+            </div>
+            <button onclick="toggleSchemaQuality()" id="btn-toggle-schema-qual" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#4ade80]/15 border border-[#4ade80]/40 text-[#4ade80] hover:bg-[#4ade80]/25 transition">
+              当前：✅ 优质 Description
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <div class="text-xs font-mono text-gray-400">Python 定义 (Pydantic BaseModel + 函数签名)</div>
+            <pre id="schema-py-view" class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] font-mono text-xs text-[#58c4dd] overflow-x-auto h-[260px] leading-relaxed"></pre>
+          </div>
+          <div class="space-y-1.5">
+            <div class="text-xs font-mono text-gray-400">自动导出的 OpenAI JSON Schema</div>
+            <pre id="schema-json-view" class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] font-mono text-xs text-[#f0b429] overflow-x-auto h-[260px] leading-relaxed"></pre>
+          </div>
+        </div>
+
+        <div id="schema-quality-banner" class="p-3.5 rounded-xl border text-xs leading-relaxed">
+          <!-- Dynamic feedback -->
+        </div>
+      </div>
+
+      <!-- Part B: ToolRegistry Fault Injection Sandbox -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: ToolRegistry 分发与异常自愈沙盒 (Fault Injection)</h4>
+            <p class="text-xs text-gray-400">点击测试 5 种真实调用载荷，观察注册表如何拦截异常并把错误转化为 <code class="text-[#58c4dd]">role: "tool"</code> 喂回大模型</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 text-xs font-mono">
+          <button onclick="runRegistryTest('valid')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#4ade80]/50 text-[#4ade80] hover:bg-[#4ade80]/10 transition">
+            ① 正常调用: calculator("28 * 3 * 0.85")
+          </button>
+          <button onclick="runRegistryTest('missing_arg')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#f0b429]/50 text-[#f0b429] hover:bg-[#f0b429]/10 transition">
+            ② 缺少必填参数: get_weather({})
+          </button>
+          <button onclick="runRegistryTest('bad_json')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/50 text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition">
+            ③ 非法 JSON 字符串: "{expr: 1+1"
+          </button>
+          <button onclick="runRegistryTest('unknown_tool')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#c084fc]/50 text-[#c084fc] hover:bg-[#c084fc]/10 transition">
+            ④ 幻觉工具名: send_rocket()
+          </button>
+          <button onclick="runRegistryTest('runtime_err')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/50 text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition">
+            ⑤ 运行时除零异常: calculator("100 / 0")
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-2">
+            <div class="text-xs font-mono text-gray-400">1. 模型发来的 tool_call 载荷</div>
+            <pre id="reg-input-view" class="text-xs font-mono text-gray-200 whitespace-pre-wrap leading-relaxed"></pre>
+          </div>
+          <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-2">
+            <div class="flex justify-between items-center text-xs font-mono">
+              <span class="text-gray-400">2. Registry 捕获并返回给 LLM 的 role: "tool" 消息</span>
+              <span id="reg-status-badge" class="px-2 py-0.5 rounded font-bold text-[10px]"></span>
+            </div>
+            <pre id="reg-output-view" class="text-xs font-mono whitespace-pre-wrap leading-relaxed"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 12.3 ==================== -->
+    <section id="module-12-3" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#4ade80] font-mono">12.3</span> ReAct 推理循环剧场 (Thought → Action → Observation)
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          单次工具调用只是“函数封装”，把工具调用放进 <code class="text-[#4ade80]">while step &lt; max_steps</code> 循环里，才诞生了能自主规划、多步串联、出错自愈的真正 Agent。
+        </p>
+      </div>
+
+      <!-- ReAct State Machine Canvas + Interactive Step Debugger -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <!-- Scenario & Playback Controls -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#233044] pb-4">
+          <div class="flex flex-wrap gap-2 text-xs">
+            <button onclick="selectReactScenario(0)" id="sc-btn-0" class="px-3 py-1.5 rounded-lg bg-[#4ade80] text-black font-bold transition">
+              场景 1: 天气 + 冰美式折扣 (多工具串联)
+            </button>
+            <button onclick="selectReactScenario(1)" id="sc-btn-1" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">
+              场景 2: 查 RAG 政策 + 算截止日
+            </button>
+            <button onclick="selectReactScenario(2)" id="sc-btn-2" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">
+              场景 3: 除零报错 → 模型自我纠错
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2 text-xs font-mono">
+            <button onclick="toggleReactAutoPlay()" id="btn-react-play" class="px-3 py-1.5 rounded-lg bg-[#58c4dd] text-black font-bold hover:bg-[#58c4dd]/90 transition">
+              ▶ 自动播放
+            </button>
+            <button onclick="nextReactStep()" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-white hover:border-[#4ade80] transition">
+              ⏭ 下一步
+            </button>
+            <button onclick="resetReactScenario()" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition">
+              ↺ 重置
+            </button>
+            <span id="react-step-badge" class="px-2.5 py-1 rounded bg-[#0d1117] border border-[#233044] text-[#4ade80] font-bold">
+              Step 0 / 5
+            </span>
+          </div>
+        </div>
+
+        <!-- High-DPI State Machine Canvas -->
+        <div class="w-full overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-react-loop" class="w-full h-[210px]"></canvas>
+        </div>
+
+        <!-- Trace Timeline + Live messages[] Inspector -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <!-- Left: ReAct Execution Trace -->
+          <div class="lg:col-span-7 bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+            <div class="flex justify-between items-center border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-white">ReAct 执行轨迹 (Execution Trace)</span>
+              <span id="react-user-goal" class="text-[11px] text-[#58c4dd] truncate max-w-[320px]"></span>
+            </div>
+            <div id="react-trace-log" class="space-y-2.5 max-h-[300px] overflow-y-auto pr-1 text-xs">
+              <!-- Dynamically injected steps -->
+            </div>
+          </div>
+
+          <!-- Right: Live messages[] Context Stack -->
+          <div class="lg:col-span-5 bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+            <div class="flex justify-between items-center border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-[#f0b429]">实时 messages[] 上下文栈</span>
+              <span id="react-msg-count" class="text-[11px] font-mono text-gray-400">2 条消息</span>
+            </div>
+            <div id="react-messages-stack" class="space-y-1.5 max-h-[300px] overflow-y-auto text-[11px] font-mono">
+              <!-- Dynamically injected message pills -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 12.4 ==================== -->
+    <section id="module-12-4" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#ff6b6b] font-mono">12.4</span> 生产级安全护栏与熔断实验室 (Guardrails &amp; Safety Lab)
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          失控的 Agent 会烧光你的 API 余额，甚至误删生产数据。掌握步数上限、Token 预算熔断、AST 安全沙盒与人工审批（HITL）。
+        </p>
+      </div>
+
+      <!-- Part A: Loop & Token Budget Circuit Breaker Simulator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part A: 死循环与 Token 爆炸熔断模拟器 (Circuit Breaker)</h4>
+            <p class="text-xs text-gray-400">当工具反复失败且 Agent 执着重试时，每轮重传完整历史会导致输入 Token 呈 <span class="math-symbol">O(N²)</span> 二次方增长</p>
+          </div>
+          <div id="breaker-verdict-pill" class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#ff6b6b]/20 text-[#ff6b6b] border border-[#ff6b6b]/40">
+            熔断触发：Step 5 达到 max_steps
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#0d1117] p-4 rounded-xl border border-[#233044]">
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs font-mono">
+              <span class="text-gray-300">最大步数护栏 (max_steps):</span>
+              <span id="val-max-steps" class="text-[#58c4dd] font-bold">6 步</span>
+            </div>
+            <input type="range" id="slider-max-steps" min="2" max="12" step="1" value="6" oninput="updateBreakerLab()" class="w-full accent-[#58c4dd] bg-gray-800 h-1.5 rounded cursor-pointer">
+          </div>
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs font-mono">
+              <span class="text-gray-300">单次任务 Token 预算上限 (token_budget):</span>
+              <span id="val-token-budget" class="text-[#f0b429] font-bold">4,500 Tokens</span>
+            </div>
+            <input type="range" id="slider-token-budget" min="1500" max="12000" step="500" value="4500" oninput="updateBreakerLab()" class="w-full accent-[#f0b429] bg-gray-800 h-1.5 rounded cursor-pointer">
+          </div>
+        </div>
+
+        <div class="w-full overflow-hidden rounded-xl bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-breaker-chart" class="w-full h-[230px]"></canvas>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044]">
+            <span class="text-gray-400 block">实际停机步数</span>
+            <span id="stat-stop-step" class="text-lg font-bold text-[#58c4dd]">Step 5</span>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044]">
+            <span class="text-gray-400 block">累计消耗 Token</span>
+            <span id="stat-cum-tokens" class="text-lg font-bold text-[#f0b429]">4,650</span>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044]">
+            <span class="text-gray-400 block">无护栏跑满 12 步将消耗</span>
+            <span id="stat-unbounded-tokens" class="text-lg font-bold text-[#ff6b6b]">22,800 (约 4.9x)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: 4 Production Safety Guardrails Clinic -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="p-5 rounded-xl bg-[#141b26] border border-[#ff6b6b]/30 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-[#ff6b6b]">🛡️ 护栏 1：严禁直接 eval() 执行模型参数</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#ff6b6b]/15 text-[#ff6b6b]">防 RCE 注入</span>
+          </div>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            Prompt 注入可能诱导模型传入 <code class="text-[#ff6b6b]">__import__('os').system('rm -rf /')</code>。数学计算器必须用 Python <code class="text-[#4ade80]">ast.parse</code> 白名单节点解析，严禁裸跑 <code class="text-[#ff6b6b]">eval()</code>。
+          </p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#141b26] border border-[#f0b429]/30 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-[#f0b429]">✋ 护栏 2：写操作强制人工确认 (HITL)</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#f0b429]/15 text-[#f0b429]">Human-in-the-Loop</span>
+          </div>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            将工具划分为 <strong>只读工具</strong>（查天气、搜知识库，自动放行）与 <strong>副作用工具</strong>（退款、发邮件、改数据库，挂起执行并弹窗等待人工点击“批准”）。
+          </p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#141b26] border border-[#58c4dd]/30 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-[#58c4dd]">✂️ 护栏 3：Observation 长度截断与超时</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#58c4dd]/15 text-[#58c4dd]">防上下文撑爆</span>
+          </div>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            网页抓取或数据库查询可能返回 50KB 巨型 JSON。必须设置单工具 <code class="text-[#58c4dd]">timeout=10s</code> 并将返回值截断在 2000 字符以内，附带“内容已截断”提示。
+          </p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#141b26] border border-[#4ade80]/30 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-[#4ade80]">🔁 护栏 4：重复调用检测与优雅降级</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#4ade80]/15 text-[#4ade80]">防死循环</span>
+          </div>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            记录历史调用指纹 <code class="text-[#4ade80]">(tool_name, args_hash)</code>。若模型连续 2 次以完全相同的参数调用同一工具，主动注入提示词强制模型换思路或直接总结回答。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== MODULE 12.5 ==================== -->
+    <section id="module-12-5" class="space-y-6 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#c084fc] font-mono">12.5</span> 实战项目、完整 Python 代码库与章末测验
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          离线可跑的多工具 ReAct Agent 命令行演示、4 个核心工程模块完整源码，以及 5 题核心概念测验。
+        </p>
+      </div>
+
+      <!-- Part A: CLI Terminal Simulator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-semibold text-white">Part A: CLI 智能体终端模拟器 (<code class="text-[#c084fc] font-mono">playground_ch12.py</code>)</h4>
+          <div class="flex space-x-1.5">
+            <span class="w-3 h-3 rounded-full bg-red-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-yellow-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-green-500/80 inline-block"></span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 text-xs font-mono">
+          <button onclick="runCliDemo('weather_calc')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#58c4dd]/40 text-[#58c4dd] hover:bg-[#58c4dd]/10 transition">
+            $ python playground_ch12.py --ask "北京天气和3杯冰美式85折价格"
+          </button>
+          <button onclick="runCliDemo('self_heal')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#f0b429]/40 text-[#f0b429] hover:bg-[#f0b429]/10 transition">
+            $ python playground_ch12.py --ask "算一下 100/0，不行就改为 100/4"
+          </button>
+          <button onclick="runCliDemo('hitl')" class="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/40 text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition">
+            $ python playground_ch12.py --ask "帮我给订单 #9021 办理全额退款" (HITL)
+          </button>
+        </div>
+
+        <pre id="cli-screen" class="p-4 rounded-xl bg-[#070a0f] border border-[#233044] font-mono text-xs text-gray-200 min-h-[180px] max-h-[300px] overflow-y-auto leading-relaxed whitespace-pre-wrap"></pre>
+      </div>
+
+      <!-- Part B: Complete Python Code Repository -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part B: 完整 Python 代码库 (Complete Production Code Repository)</h4>
+            <p class="text-xs text-gray-400">切换标签查看 4 个模块完整可运行代码，支持一键复制</p>
+          </div>
+          <button onclick="copyCurrentCode()" id="btn-copy-code" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#58c4dd] text-black hover:bg-[#58c4dd]/90 transition flex items-center gap-1.5">
+            <span id="copy-btn-label">📋 复制当前代码</span>
+          </button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-[#233044] space-x-1 overflow-x-auto text-xs font-mono">
+          <button onclick="selectCodeTab('tool_schema')" data-tab="tool_schema" class="code-tab-btn px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            tool_schema.py
+          </button>
+          <button onclick="selectCodeTab('tool_registry')" data-tab="tool_registry" class="code-tab-btn px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            tool_registry.py
+          </button>
+          <button onclick="selectCodeTab('react_agent')" data-tab="react_agent" class="code-tab-btn px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            react_agent.py
+          </button>
+          <button onclick="selectCodeTab('playground_ch12')" data-tab="playground_ch12" class="code-tab-btn px-4 py-2 text-gray-400 hover:text-white transition border-b-2 border-transparent">
+            playground_ch12.py
+          </button>
+        </div>
+
+        <pre class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] overflow-x-auto font-mono text-xs text-gray-200 max-h-[440px] leading-relaxed"><code id="code-display"></code></pre>
+      </div>
+
+      <!-- Part C: 5-Question Quiz -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-5">
+        <div class="flex items-center justify-between border-b border-[#233044] pb-3">
+          <div>
+            <h4 class="text-sm font-semibold text-white">Part C: 第 12 章核心概念测验 (5-Question Quiz)</h4>
+            <p class="text-xs text-gray-400">检验对 Function Calling 协议、ReAct 循环与安全护栏的掌握</p>
+          </div>
+          <span id="quiz-score-pill" class="px-3 py-1 rounded-full bg-[#c084fc]/15 border border-[#c084fc]/30 text-[#c084fc] text-xs font-mono font-bold">
+            得分: 0 / 5
+          </span>
+        </div>
+        <div id="quiz-container" class="space-y-4"></div>
+      </div>
+
+      <!-- Part D: 12-Point Chapter Summary Grid -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <h4 class="text-sm font-semibold text-white">Part D: 第 12 章 12 条核心要点总结矩阵</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">1. 模型不执行代码</div>
+            <div class="text-gray-400">LLM 只返回结构化 tool_calls JSON，真正运行函数并把结果喂回去的是你的宿主机程序。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">2. Workflow vs Agent</div>
+            <div class="text-gray-400">确定性流程用 Workflow（稳定便宜），开放性多步任务才用 Agent（动态路由）。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">3. tool_call_id 必须配对</div>
+            <div class="text-gray-400">每条 role="tool" 消息必须携带与 assistant.tool_calls 严格一致的 tool_call_id。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#f0b429]">4. arguments 是字符串</div>
+            <div class="text-gray-400">协议中 function.arguments 是 JSON 字符串而非字典，解析时必须 try json.loads()。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#f0b429]">5. Schema 即 Prompt</div>
+            <div class="text-gray-400">清晰的参数 description 和 enum 枚举约束，比在 system prompt 里写十条规则更有效。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#f0b429]">6. 工具异常要喂回模型</div>
+            <div class="text-gray-400">捕获工具报错并作为 role="tool" 返回，LLM 往往能根据错误信息自动修正参数重试。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#4ade80]">7. ReAct 循环本质</div>
+            <div class="text-gray-400">while 循环驱动 Thought → Action → Observation，直到 finish_reason == "stop"。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#4ade80]">8. RAG 就是 Agent 的一个工具</div>
+            <div class="text-gray-400">把第 11 章的检索封装成 search_kb 工具，Agent 就能按需检索，无需每轮强行拼资料。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#ff6b6b]">9. 必须设 max_steps 与预算</div>
+            <div class="text-gray-400">没有步数上限和 Token 熔断的 Agent，一旦陷入死循环会在几分钟内烧干额度。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#ff6b6b]">10. 严禁裸跑 eval()</div>
+            <div class="text-gray-400">数学计算用 AST 白名单解析，代码执行放进 Docker/沙盒，严防 Prompt 注入 RCE。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#c084fc]">11. 写操作接入 HITL 审批</div>
+            <div class="text-gray-400">发邮件、退款、删数据等不可逆工具调用，必须挂起等待人类确认后再执行。</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#c084fc]">12. 下一站：MCP 协议</div>
+            <div class="text-gray-400">当工具数量增长到几十上百个，第 13 章的 MCP 将统一工具发现与跨应用复用标准。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-[#233044] bg-[#0d1117] py-6 px-4 text-center text-xs text-gray-500">
+    <div class="max-w-7xl mx-auto space-y-1">
+      <p>第 12 章：Agent 与工具调用 —— Function Calling 协议、ReAct 循环与安全护栏</p>
+      <p>3Blue1Brown Mathematical &amp; Engineering Style Interactive Tutorial</p>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // CANVAS HELPERS (High-DPI Retina + Custom RoundedRect)
+    // =========================================================================
+    function setupCanvas(canvas) {
+      if (!canvas) return null;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(rect.width || 600, 300);
+      const height = rect.height || 220;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width, height };
+    }
+
+    function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke, lw = 1.5) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+    }
+
+    function drawArrow(ctx, x1, y1, x2, y2, color, lw = 2) {
+      const head = 8;
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // =========================================================================
+    // MODULE 12.1: ARCHITECTURE TOPOLOGY & HANDSHAKE INSPECTOR
+    // =========================================================================
+    let currentArchMode = 'agent';
+
+    const ARCH_DESCS = {
+      chat: '<strong class="text-[#58c4dd]">1. 纯对话 (Chat)：</strong>单次请求-响应，模型仅依赖预训练记忆作答。无法获取实时天气、无法做精确数学运算、无法查询私有数据库。',
+      workflow: '<strong class="text-[#f0b429]">2. 固定工作流 (Workflow)：</strong>程序员用代码写死执行顺序（如：先检索 RAG → 再格式化 → 再调 LLM）。优点是高度确定、延迟可控；缺点是遇到预期外分支无法灵活变通。',
+      agent: '<strong class="text-[#4ade80]">3. 自主智能体 (Agent)：</strong>把决策权交给 LLM。模型根据目标自行决定“调哪个工具、传什么参数、是否需要继续下一步”，直到收集齐信息才输出最终答案。'
+    };
+
+    function setArchMode(mode) {
+      currentArchMode = mode;
+      ['chat', 'workflow', 'agent'].forEach(m => {
+        const btn = document.getElementById('btn-arch-' + m);
+        if (m === mode) {
+          btn.className = 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#58c4dd] text-black transition';
+        } else {
+          btn.className = 'px-3 py-1.5 text-xs font-semibold rounded-lg text-gray-400 hover:text-white transition';
+        }
+      });
+      document.getElementById('arch-desc-panel').innerHTML = ARCH_DESCS[mode];
+      renderArchCanvas();
+    }
+
+    function renderArchCanvas() {
+      const canvas = document.getElementById('canvas-arch-compare');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const cy = height / 2;
+      ctx.font = 'bold 12px Inter, sans-serif';
+      ctx.textAlign = 'center';
+
+      if (currentArchMode === 'chat') {
+        const w = 120, h = 48;
+        const x1 = width * 0.2 - w / 2;
+        const x2 = width * 0.5 - w / 2;
+        const x3 = width * 0.8 - w / 2;
+
+        drawRoundedRect(ctx, x1, cy - h / 2, w, h, 10, '#141b26', '#58c4dd', 1.5);
+        ctx.fillStyle = '#ffffff'; ctx.fillText('User Query', x1 + w / 2, cy + 4);
+
+        drawRoundedRect(ctx, x2, cy - h / 2, w, h, 10, '#141b26', '#c084fc', 2);
+        ctx.fillStyle = '#c084fc'; ctx.fillText('LLM (静态记忆)', x2 + w / 2, cy + 4);
+
+        drawRoundedRect(ctx, x3, cy - h / 2, w, h, 10, '#141b26', '#4ade80', 1.5);
+        ctx.fillStyle = '#ffffff'; ctx.fillText('Final Answer', x3 + w / 2, cy + 4);
+
+        drawArrow(ctx, x1 + w + 6, cy, x2 - 6, cy, '#58c4dd');
+        drawArrow(ctx, x2 + w + 6, cy, x3 - 6, cy, '#4ade80');
+
+        ctx.fillStyle = '#9ca3af'; ctx.font = '11px monospace';
+        ctx.fillText('单次前向推理 · 无外部交互 · 控制权 = 无分支', width / 2, height - 22);
+      } else if (currentArchMode === 'workflow') {
+        const nodes = [
+          { label: 'User Input', x: 0.12, col: '#58c4dd' },
+          { label: 'Step 1: RAG', x: 0.36, col: '#f0b429' },
+          { label: 'Step 2: LLM', x: 0.62, col: '#c084fc' },
+          { label: 'Output', x: 0.86, col: '#4ade80' }
+        ];
+        const w = Math.min(115, width * 0.2), h = 48;
+        nodes.forEach((n, idx) => {
+          const nx = width * n.x - w / 2;
+          drawRoundedRect(ctx, nx, cy - h / 2, w, h, 10, '#141b26', n.col, 1.8);
+          ctx.fillStyle = '#ffffff'; ctx.fillText(n.label, nx + w / 2, cy + 4);
+          if (idx < nodes.length - 1) {
+            const nextX = width * nodes[idx + 1].x - w / 2;
+            drawArrow(ctx, nx + w + 5, cy, nextX - 5, cy, '#f0b429');
+          }
+        });
+        ctx.fillStyle = '#f0b429'; ctx.font = '11px monospace';
+        ctx.fillText('DAG 固定流水线 · 控制权在程序员代码 (if/else 写死路径)', width / 2, height - 22);
+      } else {
+        const w = Math.min(130, width * 0.22), h = 46;
+        const xUser = width * 0.14 - w / 2;
+        const xLLM = width * 0.48 - w / 2;
+        const xOut = width * 0.84 - w / 2;
+        const yTop = height * 0.32;
+        const yBot = height * 0.72;
+
+        drawRoundedRect(ctx, xUser, yTop - h / 2, w, h, 10, '#141b26', '#58c4dd', 1.8);
+        ctx.fillStyle = '#ffffff'; ctx.fillText('User Goal', xUser + w / 2, yTop + 4);
+
+        drawRoundedRect(ctx, xLLM, yTop - h / 2, w, h, 10, '#141b26', '#c084fc', 2.2);
+        ctx.fillStyle = '#c084fc'; ctx.fillText('LLM 大脑 (决策)', xLLM + w / 2, yTop + 4);
+
+        drawRoundedRect(ctx, xOut, yTop - h / 2, w, h, 10, '#141b26', '#4ade80', 1.8);
+        ctx.fillStyle = '#4ade80'; ctx.fillText('Final Answer', xOut + w / 2, yTop + 4);
+
+        drawRoundedRect(ctx, xLLM - 20, yBot - h / 2, w + 40, h, 10, '#141b26', '#f0b429', 2);
+        ctx.fillStyle = '#f0b429'; ctx.fillText('Tools (天气/计算/RAG)', xLLM + w / 2, yBot + 4);
+
+        drawArrow(ctx, xUser + w + 5, yTop, xLLM - 5, yTop, '#58c4dd');
+        drawArrow(ctx, xLLM + w + 5, yTop, xOut - 5, yTop, '#4ade80');
+
+        // Bidirectional Loop between LLM and Tools
+        drawArrow(ctx, xLLM + w * 0.3, yTop + h / 2 + 4, xLLM + w * 0.3, yBot - h / 2 - 4, '#f0b429');
+        drawArrow(ctx, xLLM + w * 0.7, yBot - h / 2 - 4, xLLM + w * 0.7, yTop + h / 2 + 4, '#4ade80');
+
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#f0b429';
+        ctx.fillText('Action (tool_calls)', xLLM + w * 0.3 - 58, (yTop + yBot) / 2 + 3);
+        ctx.fillStyle = '#4ade80';
+        ctx.fillText('Observation (role: tool)', xLLM + w * 0.7 + 72, (yTop + yBot) / 2 + 3);
+
+        ctx.fillStyle = '#9ca3af'; ctx.font = '11px monospace';
+        ctx.fillText('动态循环 (while step < max_steps) · 控制权在 LLM，直到主动输出 stop', width / 2, height - 10);
+      }
+    }
+
+    const HANDSHAKE_STEPS = [
+      {
+        label: 'STEP 1 · REQUEST PAYLOAD (App → LLM)',
+        badge: 'POST /v1/chat/completions',
+        title: '第一步：把问题和“工具菜单”一起发给模型',
+        explain: '除了常规的 messages，我们在请求体中新增了 tools 数组（描述每个可用工具的名称、用途和 JSON Schema 参数）以及 tool_choice: "auto"。',
+        points: [
+          '• tools 里的 description 会被注入模型上下文，消耗 prompt_tokens',
+          '• tool_choice="auto" 表示由模型自己决定：直接回答，还是调用工具'
+        ],
+        pitfall: '一次性塞入 50+ 个工具会让 Schema 占用数千 Token，且严重稀释模型选择工具的准确率（建议控制在 5~15 个核心工具）。',
+        code: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'user', content: '北京今天多少度？' }
+          ],
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'get_weather',
+                description: '查询指定城市的实时天气与温度',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    city: { type: 'string', description: '城市中文名，如 北京' }
+                  },
+                  required: ['city']
+                }
+              }
+            }
+          ],
+          tool_choice: 'auto'
+        }, null, 2)
+      },
+      {
+        label: 'STEP 2 · RESPONSE PAYLOAD (LLM → App)',
+        badge: 'finish_reason: "tool_calls"',
+        title: '第二步：模型停止自然语言生成，输出 tool_calls 意图',
+        explain: '模型判断自己不知道今天天气，于是返回 finish_reason="tool_calls"。此时 message.content 为 null，取而代之的是结构化的 tool_calls 列表。',
+        points: [
+          '• 每个调用都有全局唯一 id（如 call_9f8a2b），后续回传必须严格配对',
+          '• 现代模型支持 Parallel Tool Calls，一次可返回多个待执行工具'
+        ],
+        pitfall: 'function.arguments 是一个 JSON 字符串（"{\\"city\\":\\"北京\\"}"），不是原生字典！必须先 json.loads() 再校验参数。',
+        code: JSON.stringify({
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                role: 'assistant',
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_9f8a2b',
+                    type: 'function',
+                    function: {
+                      name: 'get_weather',
+                      arguments: '{"city": "北京"}'
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }, null, 2)
+      },
+      {
+        label: 'STEP 3 · SECOND REQUEST (App 本地执行后回传)',
+        badge: 'role: "tool" + tool_call_id',
+        title: '第三步：宿主机代码执行函数，将结果以 role="tool" 追加进历史',
+        explain: '你的 Python 程序解析 arguments，调用真实的天气 API 拿到 {"temp": 27, "cond": "晴"}，然后把 Step 2 的 assistant 消息 + 新的 tool 结果消息一起发回给 LLM。',
+        points: [
+          '• 必须保留 Step 2 的 assistant(tool_calls) 消息，不能丢弃',
+          '• role="tool" 的 content 必须是字符串（通常 json.dumps 序列化）'
+        ],
+        pitfall: '如果漏掉了 tool_call_id，或者 id 与上一步不匹配，OpenAI / DeepSeek 接口会直接返回 HTTP 400 Bad Request 报错！',
+        code: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'user', content: '北京今天多少度？' },
+            {
+              role: 'assistant',
+              content: null,
+              tool_calls: [{ id: 'call_9f8a2b', type: 'function', function: { name: 'get_weather', arguments: '{"city": "北京"}' } }]
+            },
+            {
+              role: 'tool',
+              tool_call_id: 'call_9f8a2b',
+              content: '{"city": "北京", "temp_c": 27, "condition": "晴朗"}'
+            }
+          ]
+        }, null, 2)
+      },
+      {
+        label: 'STEP 4 · FINAL RESPONSE (LLM → User)',
+        badge: 'finish_reason: "stop"',
+        title: '第四步：模型读取 Observation，生成面向用户的最终回答',
+        explain: '模型看到 tool 消息里已经有了准确气温（27°C），不再需要调用工具，于是输出自然语言回答，finish_reason 变为 "stop"，循环结束。',
+        points: [
+          '• 如果任务需要多步，Step 4 仍可能再次返回 tool_calls 进入下一轮循环',
+          '• 整个过程对终端用户透明，用户只看到精准、实时的最终答案'
+        ],
+        pitfall: '不要在循环外只硬写 2 次请求！封装成 while 循环才能自然支持 1 步、2 步乃至 N 步的多工具串联。',
+        code: JSON.stringify({
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: {
+                role: 'assistant',
+                content: '北京今天天气晴朗，当前气温为 27°C，体感偏热，建议穿着轻薄衣物。'
+              }
+            }
+          ],
+          usage: { prompt_tokens: 218, completion_tokens: 34, total_tokens: 252 }
+        }, null, 2)
+      }
+    ];
+
+    function selectHandshakeStep(idx) {
+      for (let i = 0; i < 4; i++) {
+        const b = document.getElementById('hs-btn-' + i);
+        if (i === idx) {
+          b.className = 'p-3 rounded-xl border border-[#58c4dd] bg-[#58c4dd]/15 text-[#58c4dd] text-left transition shadow';
+        } else {
+          b.className = 'p-3 rounded-xl border border-[#233044] bg-[#0d1117] text-gray-400 hover:text-white text-left transition';
+        }
+      }
+      const s = HANDSHAKE_STEPS[idx];
+      document.getElementById('hs-json-label').textContent = s.label;
+      document.getElementById('hs-direction-badge').textContent = s.badge;
+      document.getElementById('hs-json-code').textContent = s.code;
+      document.getElementById('hs-title').textContent = s.title;
+      document.getElementById('hs-explain').textContent = s.explain;
+      document.getElementById('hs-key-points').innerHTML = s.points.map(p => `<div class="p-2 rounded bg-[#141b26] border border-[#233044] text-gray-300">${p}</div>`).join('');
+      document.getElementById('hs-pitfall').textContent = s.pitfall;
+    }
+
+    // =========================================================================
+    // MODULE 12.2: SCHEMA LAB & REGISTRY FAULT INJECTION
+    // =========================================================================
+    let currentSchemaTool = 'calculator';
+    let isGoodSchema = true;
+
+    const SCHEMA_TOOLS = {
+      calculator: {
+        goodPy: `class CalcArgs(BaseModel):\n    expression: str = Field(\n        ..., \n        description="标准四则运算表达式，仅支持 + - * / ()，例如 '(28 * 3) * 0.85'"\n    )\n\ndef calculator(args: CalcArgs) -> dict:\n    """安全计算数学表达式，严禁传入自然语言。"""\n    return {"result": safe_eval_ast(args.expression)}`,
+        badPy: `class CalcArgs(BaseModel):\n    expr: str  # ❌ 没有任何描述\n\ndef calculator(args: CalcArgs):\n    """算东西"""  # ❌ 描述模糊\n    return eval(args.expr)  # ❌ 严重安全漏洞`,
+        goodJson: {
+          type: 'function',
+          function: {
+            name: 'calculator',
+            description: '安全计算数学表达式，严禁传入自然语言。',
+            parameters: {
+              type: 'object',
+              properties: {
+                expression: { type: 'string', description: "标准四则运算表达式，仅支持 + - * / ()，例如 '(28 * 3) * 0.85'" }
+              },
+              required: ['expression']
+            }
+          }
+        },
+        badJson: {
+          type: 'function',
+          function: {
+            name: 'calculator',
+            description: '算东西',
+            parameters: {
+              type: 'object',
+              properties: { expr: { type: 'string' } },
+              required: ['expr']
+            }
+          }
+        },
+        goodNote: '✅ 优质 Schema 效果：模型能严格输出 "(28 * 3) * 0.85"，不会把“三杯打八五折”这种中文直接塞进表达式参数。',
+        badNote: '❌ 偷懒 Schema 后果：模型经常把自然语言 "28元乘3打85折" 传给 expr，导致解析报错并白白浪费重试 Token！'
+      },
+      weather: {
+        goodPy: `class WeatherArgs(BaseModel):\n    city: str = Field(..., description="中国城市中文名，如 '北京'、'上海'，不要带'市'字")\n    unit: Literal["celsius", "fahrenheit"] = Field(\n        default="celsius",\n        description="温度单位，默认摄氏度"\n    )`,
+        badPy: `class WeatherArgs(BaseModel):\n    c: str\n    u: str = "C"  # ❌ 没有 enum 枚举约束`,
+        goodJson: {
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            description: '查询指定城市的实时天气、温度与穿衣建议。',
+            parameters: {
+              type: 'object',
+              properties: {
+                city: { type: 'string', description: "中国城市中文名，如 '北京'、'上海'，不要带'市'字" },
+                unit: { type: 'string', enum: ['celsius', 'fahrenheit'], default: 'celsius', description: '温度单位，默认摄氏度' }
+              },
+              required: ['city']
+            }
+          }
+        },
+        badJson: {
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            description: 'weather',
+            parameters: {
+              type: 'object',
+              properties: { c: { type: 'string' }, u: { type: 'string' } },
+              required: ['c']
+            }
+          }
+        },
+        goodNote: '✅ 优质 Schema 效果：通过 enum 限定 unit 只能为 celsius/fahrenheit，服务端采样阶段就会强制约束，零格式错误。',
+        badNote: '❌ 偷懒 Schema 后果：模型可能传入 c="Beijing" 或 u="摄氏度"，导致下游 API 查无此城或单位解析失败。'
+      },
+      search_kb: {
+        goodPy: `class SearchKBArgs(BaseModel):\n    query: str = Field(..., description="用于向量检索的精炼中文关键词或短句")\n    top_k: int = Field(default=3, ge=1, le=5, description="返回最相关的文档片段数 (1~5)")`,
+        badPy: `class SearchKBArgs(BaseModel):\n    q: str\n    k: int = 3  # ❌ 无范围约束，模型可能传 k=100`,
+        goodJson: {
+          type: 'function',
+          function: {
+            name: 'search_kb',
+            description: '检索公司内部政策知识库（退款、发票、会员制度）。仅当涉及公司业务规则时调用。',
+            parameters: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: '用于向量检索的精炼中文关键词或短句' },
+                top_k: { type: 'integer', minimum: 1, maximum: 5, default: 3, description: '返回最相关的文档片段数 (1~5)' }
+              },
+              required: ['query']
+            }
+          }
+        },
+        badJson: {
+          type: 'function',
+          function: {
+            name: 'search_kb',
+            description: '搜东西',
+            parameters: {
+              type: 'object',
+              properties: { q: { type: 'string' }, k: { type: 'integer' } },
+              required: ['q']
+            }
+          }
+        },
+        goodNote: '✅ 优质 Schema 效果：明确写出了“仅当涉及公司业务规则时调用”，防止用户聊闲天时模型误触发 RAG 检索。',
+        badNote: '❌ 偷懒 Schema 后果：描述写成“搜东西”，用户问“李白是谁”模型都会去搜公司退款政策库！'
+      }
+    };
+
+    function selectSchemaTool(toolKey) {
+      currentSchemaTool = toolKey;
+      ['calculator', 'weather', 'search_kb'].forEach(k => {
+        const b = document.getElementById('st-btn-' + k);
+        b.className = (k === toolKey) ? 'px-2.5 py-1 rounded bg-[#f0b429] text-black font-bold' : 'px-2.5 py-1 rounded text-gray-400 hover:text-white';
+      });
+      renderSchemaLab();
+    }
+
+    function toggleSchemaQuality() {
+      isGoodSchema = !isGoodSchema;
+      const btn = document.getElementById('btn-toggle-schema-qual');
+      if (isGoodSchema) {
+        btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#4ade80]/15 border border-[#4ade80]/40 text-[#4ade80] hover:bg-[#4ade80]/25 transition';
+        btn.textContent = '当前：✅ 优质 Description';
+      } else {
+        btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#ff6b6b]/15 border border-[#ff6b6b]/40 text-[#ff6b6b] hover:bg-[#ff6b6b]/25 transition';
+        btn.textContent = '当前：❌ 偷懒 Description';
+      }
+      renderSchemaLab();
+    }
+
+    function renderSchemaLab() {
+      const t = SCHEMA_TOOLS[currentSchemaTool];
+      document.getElementById('schema-py-view').textContent = isGoodSchema ? t.goodPy : t.badPy;
+      document.getElementById('schema-json-view').textContent = JSON.stringify(isGoodSchema ? t.goodJson : t.badJson, null, 2);
+      const banner = document.getElementById('schema-quality-banner');
+      if (isGoodSchema) {
+        banner.className = 'p-3.5 rounded-xl border border-[#4ade80]/40 bg-[#4ade80]/10 text-[#4ade80] text-xs leading-relaxed';
+        banner.textContent = t.goodNote;
+      } else {
+        banner.className = 'p-3.5 rounded-xl border border-[#ff6b6b]/40 bg-[#ff6b6b]/10 text-[#ff6b6b] text-xs leading-relaxed';
+        banner.textContent = t.badNote;
+      }
+    }
+
+    const REGISTRY_TESTS = {
+      valid: {
+        input: { id: 'call_101', name: 'calculator', arguments: '{"expression": "28 * 3 * 0.85"}' },
+        ok: true,
+        badge: 'SUCCESS · 正常执行',
+        output: { role: 'tool', tool_call_id: 'call_101', content: '{"ok": true, "result": 71.4}' }
+      },
+      missing_arg: {
+        input: { id: 'call_102', name: 'get_weather', arguments: '{}' },
+        ok: false,
+        badge: 'CAUGHT · Pydantic 拦截',
+        output: { role: 'tool', tool_call_id: 'call_102', content: '{"ok": false, "error": "参数校验失败: 缺少必填字段 city。请补充城市名后重试。"}' }
+      },
+      bad_json: {
+        input: { id: 'call_103', name: 'calculator', arguments: '{expression: 1+1' },
+        ok: false,
+        badge: 'CAUGHT · JSONDecodeError',
+        output: { role: 'tool', tool_call_id: 'call_103', content: '{"ok": false, "error": "arguments 不是合法 JSON 字符串，请输出标准双引号 JSON。"}' }
+      },
+      unknown_tool: {
+        input: { id: 'call_104', name: 'send_rocket', arguments: '{"target": "mars"}' },
+        ok: false,
+        badge: 'CAUGHT · 未知工具名',
+        output: { role: 'tool', tool_call_id: 'call_104', content: '{"ok": false, "error": "未知工具 \'send_rocket\'。可用工具仅有: [calculator, get_weather, search_kb]。"}' }
+      },
+      runtime_err: {
+        input: { id: 'call_105', name: 'calculator', arguments: '{"expression": "100 / 0"}' },
+        ok: false,
+        badge: 'CAUGHT · ZeroDivisionError',
+        output: { role: 'tool', tool_call_id: 'call_105', content: '{"ok": false, "error": "执行失败: ZeroDivisionError (除数不能为 0)。请告知用户或调整表达式。"}' }
+      }
+    };
+
+    function runRegistryTest(key) {
+      const t = REGISTRY_TESTS[key];
+      document.getElementById('reg-input-view').textContent = JSON.stringify(t.input, null, 2);
+      const outEl = document.getElementById('reg-output-view');
+      const badge = document.getElementById('reg-status-badge');
+      outEl.textContent = JSON.stringify(t.output, null, 2);
+      if (t.ok) {
+        outEl.className = 'text-xs font-mono text-[#4ade80] whitespace-pre-wrap leading-relaxed';
+        badge.className = 'px-2 py-0.5 rounded font-bold text-[10px] bg-[#4ade80]/20 text-[#4ade80]';
+      } else {
+        outEl.className = 'text-xs font-mono text-[#ff6b6b] whitespace-pre-wrap leading-relaxed';
+        badge.className = 'px-2 py-0.5 rounded font-bold text-[10px] bg-[#ff6b6b]/20 text-[#ff6b6b]';
+      }
+      badge.textContent = t.badge;
+    }
+
+    // =========================================================================
+    // MODULE 12.3: REACT LOOP CANVAS & STEP-BY-STEP DEBUGGER
+    // =========================================================================
+    const REACT_SCENARIOS = [
+      {
+        goal: '查一下北京今天天气，若高于 25°C 就算 3 杯冰美式（28元/杯）打 85 折多少钱',
+        steps: [
+          { node: 'thought', tag: 'Thought (Round 1)', color: '#c084fc', text: '我需要先查北京今天的实时气温，再根据是否高于 25°C 决定是否调用计算器。', msg: { role: 'user', preview: '北京今天天气...冰美式打折' } },
+          { node: 'action', tag: 'Action → get_weather', color: '#f0b429', text: 'tool_calls: get_weather(city="北京")  [id: call_1]', msg: { role: 'assistant', preview: 'tool_calls: get_weather("北京")' } },
+          { node: 'obs', tag: 'Observation (Tool Result)', color: '#58c4dd', text: '{"city": "北京", "temp_c": 27, "condition": "晴朗"}', msg: { role: 'tool', preview: 'call_1 -> temp_c: 27°C, 晴朗' } },
+          { node: 'action', tag: 'Thought & Action → calculator', color: '#f0b429', text: '27°C > 25°C，触发冰美式计算！调用 calculator(expression="28 * 3 * 0.85") [id: call_2]', msg: { role: 'assistant', preview: 'tool_calls: calculator("28*3*0.85")' } },
+          { node: 'obs', tag: 'Observation (Tool Result)', color: '#58c4dd', text: '{"ok": true, "result": 71.4}', msg: { role: 'tool', preview: 'call_2 -> result: 71.4' } },
+          { node: 'final', tag: 'Final Answer (finish_reason: stop)', color: '#4ade80', text: '北京今天晴朗，气温 27°C（高于 25°C）。3 杯冰美式原价 84 元，打 85 折后共需 71.4 元。', msg: { role: 'assistant', preview: '最终回答：27°C，折后 71.4 元' } }
+        ]
+      },
+      {
+        goal: '查公司退款政策规定几天内可退，再算 5 月 10 日收货的截止日期',
+        steps: [
+          { node: 'thought', tag: 'Thought (Round 1)', color: '#c084fc', text: '涉及公司内部政策，先调用 search_kb 检索退款时限规定。', msg: { role: 'user', preview: '查退款政策并算 5/10 收货截止日' } },
+          { node: 'action', tag: 'Action → search_kb', color: '#f0b429', text: 'tool_calls: search_kb(query="无理由退款时限", top_k=2) [id: call_a]', msg: { role: 'assistant', preview: 'tool_calls: search_kb("无理由退款时限")' } },
+          { node: 'obs', tag: 'Observation (RAG Result)', color: '#58c4dd', text: '[1] refund_policy.md: 自收货之日起 7 天内可申请无理由退款。', msg: { role: 'tool', preview: 'call_a -> 7 天内可申请无理由退款' } },
+          { node: 'action', tag: 'Thought & Action → date_add', color: '#f0b429', text: '已知时限为 7 天，调用日期工具 date_add(start="2026-05-10", days=7) [id: call_b]', msg: { role: 'assistant', preview: 'tool_calls: date_add("2026-05-10", 7)' } },
+          { node: 'obs', tag: 'Observation (Tool Result)', color: '#58c4dd', text: '{"deadline": "2026-05-17"}', msg: { role: 'tool', preview: 'call_b -> deadline: 2026-05-17' } },
+          { node: 'final', tag: 'Final Answer (finish_reason: stop)', color: '#4ade80', text: '根据公司《退款政策》[1]，收货后 7 天内可申请无理由退款。5 月 10 日收货的申请截止日期为 2026 年 5 月 17 日。', msg: { role: 'assistant', preview: '最终回答：7 天内，截止 5 月 17 日' } }
+        ]
+      },
+      {
+        goal: '帮我算 100 除以 0，如果不行就说明原因并改为除以 4',
+        steps: [
+          { node: 'thought', tag: 'Thought (Round 1)', color: '#c084fc', text: '先按用户要求尝试计算 100 / 0，验证工具反馈。', msg: { role: 'user', preview: '算 100/0，不行就改 100/4' } },
+          { node: 'action', tag: 'Action → calculator', color: '#f0b429', text: 'tool_calls: calculator(expression="100 / 0") [id: call_x]', msg: { role: 'assistant', preview: 'tool_calls: calculator("100 / 0")' } },
+          { node: 'obs', tag: 'Observation (Error Feedback!)', color: '#ff6b6b', text: '{"ok": false, "error": "ZeroDivisionError: 除数不能为 0"}', msg: { role: 'tool', preview: 'call_x -> Error: ZeroDivisionError' } },
+          { node: 'action', tag: 'Self-Correction → calculator', color: '#f0b429', text: '捕获到除零错误！遵照用户指令自动修正，调用 calculator(expression="100 / 4") [id: call_y]', msg: { role: 'assistant', preview: 'tool_calls: calculator("100 / 4")' } },
+          { node: 'obs', tag: 'Observation (Tool Result)', color: '#58c4dd', text: '{"ok": true, "result": 25.0}', msg: { role: 'tool', preview: 'call_y -> result: 25.0' } },
+          { node: 'final', tag: 'Final Answer (finish_reason: stop)', color: '#4ade80', text: '100 除以 0 在数学上无定义（触发 ZeroDivisionError，除数不能为 0）。已按要求改为计算 100 / 4，结果为 25。', msg: { role: 'assistant', preview: '最终回答：除零错误，改算得 25' } }
+        ]
+      }
+    ];
+
+    let reactScenarioIdx = 0;
+    let reactStepIdx = 0;
+    let reactTimer = null;
+
+    function selectReactScenario(idx) {
+      stopReactAutoPlay();
+      reactScenarioIdx = idx;
+      reactStepIdx = 0;
+      for (let i = 0; i < 3; i++) {
+        const b = document.getElementById('sc-btn-' + i);
+        b.className = (i === idx)
+          ? 'px-3 py-1.5 rounded-lg bg-[#4ade80] text-black font-bold transition'
+          : 'px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 hover:text-white transition';
+      }
+      renderReactState();
+    }
+
+    function nextReactStep() {
+      const total = REACT_SCENARIOS[reactScenarioIdx].steps.length;
+      if (reactStepIdx < total) {
+        reactStepIdx++;
+        renderReactState();
+      } else {
+        stopReactAutoPlay();
+      }
+    }
+
+    function resetReactScenario() {
+      stopReactAutoPlay();
+      reactStepIdx = 0;
+      renderReactState();
+    }
+
+    function stopReactAutoPlay() {
+      if (reactTimer) {
+        clearInterval(reactTimer);
+        reactTimer = null;
+      }
+      const btn = document.getElementById('btn-react-play');
+      if (btn) btn.textContent = '▶ 自动播放';
+    }
+
+    function toggleReactAutoPlay() {
+      const total = REACT_SCENARIOS[reactScenarioIdx].steps.length;
+      if (reactTimer) {
+        stopReactAutoPlay();
+        return;
+      }
+      if (reactStepIdx >= total) reactStepIdx = 0;
+      document.getElementById('btn-react-play').textContent = '⏸ 暂停';
+      nextReactStep();
+      reactTimer = setInterval(() => {
+        if (reactStepIdx >= total) {
+          stopReactAutoPlay();
+        } else {
+          nextReactStep();
+        }
+      }, 1100);
+    }
+
+    function renderReactState() {
+      const sc = REACT_SCENARIOS[reactScenarioIdx];
+      const total = sc.steps.length;
+      document.getElementById('react-step-badge').textContent = `Step ${reactStepIdx} / ${total}`;
+      document.getElementById('react-user-goal').textContent = 'Goal: ' + sc.goal;
+
+      const activeNode = reactStepIdx > 0 ? sc.steps[reactStepIdx - 1].node : 'idle';
+      renderReactCanvas(activeNode);
+
+      // Render Trace Log
+      const traceEl = document.getElementById('react-trace-log');
+      if (reactStepIdx === 0) {
+        traceEl.innerHTML = `<div class="p-3 rounded-lg bg-[#141b26] border border-[#233044] text-gray-400">点击上方「▶ 自动播放」或「⏭ 下一步」，逐步观察 Agent 的 ReAct 思考与工具调用过程...</div>`;
+      } else {
+        traceEl.innerHTML = sc.steps.slice(0, reactStepIdx).map((st, i) => `
+          <div class="p-3 rounded-lg bg-[#141b26] border-l-4 border border-[#233044]" style="border-left-color: ${st.color}">
+            <div class="flex justify-between items-center mb-1">
+              <span class="font-mono font-bold" style="color: ${st.color}">[${i + 1}] ${st.tag}</span>
+            </div>
+            <div class="text-gray-200 leading-relaxed font-mono text-[11px]">${st.text}</div>
+          </div>
+        `).join('');
+        traceEl.scrollTop = traceEl.scrollHeight;
+      }
+
+      // Render messages[] stack
+      const msgs = [{ role: 'system', preview: '你是带工具的智能助手，按需调用工具...' }];
+      for (let i = 0; i < reactStepIdx; i++) {
+        msgs.push(sc.steps[i].msg);
+      }
+      document.getElementById('react-msg-count').textContent = `${msgs.length} 条消息`;
+      const roleColors = {
+        system: 'text-gray-400 border-gray-600/40 bg-gray-800/30',
+        user: 'text-[#58c4dd] border-[#58c4dd]/40 bg-[#58c4dd]/10',
+        assistant: 'text-[#f0b429] border-[#f0b429]/40 bg-[#f0b429]/10',
+        tool: 'text-[#4ade80] border-[#4ade80]/40 bg-[#4ade80]/10'
+      };
+      document.getElementById('react-messages-stack').innerHTML = msgs.map((m, idx) => `
+        <div class="p-2 rounded-lg border ${roleColors[m.role] || ''} flex items-center justify-between gap-2">
+          <span class="font-bold shrink-0">#${idx} [${m.role}]</span>
+          <span class="truncate text-gray-200">${m.preview}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderReactCanvas(activeNode) {
+      const canvas = document.getElementById('canvas-react-loop');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const nodes = [
+        { id: 'thought', label: '1. Thought (LLM 推理)', x: 0.22, y: 0.34, col: '#c084fc' },
+        { id: 'action', label: '2. Action (tool_calls)', x: 0.54, y: 0.34, col: '#f0b429' },
+        { id: 'obs', label: '3. Observation (执行结果)', x: 0.38, y: 0.76, col: '#58c4dd' },
+        { id: 'final', label: '4. Final Answer (stop)', x: 0.84, y: 0.34, col: '#4ade80' }
+      ];
+
+      const bw = Math.min(156, width * 0.24), bh = 44;
+
+      // Arrows
+      drawArrow(ctx, width * 0.22 + bw / 2 + 4, height * 0.34, width * 0.54 - bw / 2 - 4, height * 0.34, activeNode === 'action' ? '#f0b429' : '#334155', 2);
+      drawArrow(ctx, width * 0.54, height * 0.34 + bh / 2 + 4, width * 0.38 + bw * 0.3, height * 0.76 - bh / 2 - 4, activeNode === 'obs' ? '#58c4dd' : '#334155', 2);
+      drawArrow(ctx, width * 0.38 - bw * 0.3, height * 0.76 - bh / 2 - 4, width * 0.22, height * 0.34 + bh / 2 + 4, activeNode === 'thought' ? '#c084fc' : '#334155', 2);
+      drawArrow(ctx, width * 0.54 + bw / 2 + 4, height * 0.34, width * 0.84 - bw / 2 - 4, height * 0.34, activeNode === 'final' ? '#4ade80' : '#334155', 2);
+
+      // Draw Nodes
+      ctx.textAlign = 'center';
+      nodes.forEach(n => {
+        const isActive = (n.id === activeNode);
+        const nx = width * n.x - bw / 2;
+        const ny = height * n.y - bh / 2;
+        drawRoundedRect(ctx, nx, ny, bw, bh, 10, isActive ? n.col + '28' : '#141b26', isActive ? n.col : '#233044', isActive ? 2.5 : 1.2);
+        ctx.fillStyle = isActive ? '#ffffff' : '#9ca3af';
+        ctx.font = isActive ? 'bold 11px Inter, sans-serif' : '11px Inter, sans-serif';
+        ctx.fillText(n.label, nx + bw / 2, ny + bh / 2 + 4);
+      });
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px monospace';
+      ctx.fillText('ReAct 循环：Observation 自动追加到 messages[] 并回到 LLM 下一轮 Thought', width * 0.38, height - 10);
+    }
+
+    // =========================================================================
+    // MODULE 12.4: CIRCUIT BREAKER & TOKEN GROWTH SIMULATOR
+    // =========================================================================
+    function updateBreakerLab() {
+      const maxSteps = parseInt(document.getElementById('slider-max-steps').value, 10);
+      const budget = parseInt(document.getElementById('slider-token-budget').value, 10);
+      document.getElementById('val-max-steps').textContent = maxSteps + ' 步';
+      document.getElementById('val-token-budget').textContent = budget.toLocaleString() + ' Tokens';
+
+      // Simulate quadratic token accumulation when agent keeps retrying
+      // Per round prompt grows by ~300 tokens (tool_call + error observation)
+      const totalPossible = 12;
+      const stepTokens = [];
+      let cum = 0;
+      let stopStep = totalPossible;
+      let stopReason = '未触发熔断';
+      let stopCum = 0;
+
+      for (let s = 1; s <= totalPossible; s++) {
+        const roundCost = 350 + (s - 1) * 320;
+        cum += roundCost;
+        stepTokens.push({ step: s, roundCost, cum });
+        if (stopCum === 0) {
+          if (cum >= budget) {
+            stopStep = s;
+            stopCum = cum;
+            stopReason = `Step ${s} 触发 Token 预算熔断 (≥ ${budget.toLocaleString()})`;
+          } else if (s >= maxSteps) {
+            stopStep = s;
+            stopCum = cum;
+            stopReason = `Step ${s} 达到 max_steps=${maxSteps} 上限熔断`;
+          }
+        }
+      }
+
+      const unbounded = stepTokens[totalPossible - 1].cum;
+      document.getElementById('breaker-verdict-pill').textContent = '🛑 ' + stopReason;
+      document.getElementById('stat-stop-step').textContent = `Step ${stopStep}`;
+      document.getElementById('stat-cum-tokens').textContent = stopCum.toLocaleString();
+      document.getElementById('stat-unbounded-tokens').textContent = `${unbounded.toLocaleString()} (省 ${(100 - (stopCum / unbounded) * 100).toFixed(0)}%)`;
+
+      // Render Canvas Bar/Curve Chart
+      const canvas = document.getElementById('canvas-breaker-chart');
+      const setup = setupCanvas(canvas);
+      if (!setup) return;
+      const { ctx, width, height } = setup;
+      ctx.clearRect(0, 0, width, height);
+
+      const padL = 52, padR = 24, padT = 24, padB = 34;
+      const plotW = width - padL - padR;
+      const plotH = height - padT - padB;
+      const maxY = Math.max(unbounded, budget) * 1.1;
+
+      // Grid & Y labels
+      ctx.strokeStyle = '#233044'; ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = padT + (plotH * i) / 4;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(width - padR, y); ctx.stroke();
+        const val = Math.round(maxY * (1 - i / 4));
+        ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+        ctx.fillText(val >= 1000 ? (val / 1000).toFixed(1) + 'k' : val, padL - 6, y + 3);
+      }
+
+      // Budget horizontal dashed line
+      const budgetY = padT + plotH * (1 - budget / maxY);
+      ctx.strokeStyle = '#f0b429'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(padL, budgetY); ctx.lineTo(width - padR, budgetY); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#f0b429'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
+      ctx.fillText(`Token Budget = ${budget.toLocaleString()}`, padL + 6, budgetY - 5);
+
+      // Bars
+      const barGap = plotW / totalPossible;
+      const barW = Math.min(28, barGap * 0.58);
+
+      stepTokens.forEach((pt, idx) => {
+        const bx = padL + idx * barGap + (barGap - barW) / 2;
+        const bh = (pt.cum / maxY) * plotH;
+        const by = padT + plotH - bh;
+
+        let col = '#58c4dd';
+        if (pt.step === stopStep) col = '#ff6b6b';
+        else if (pt.step > stopStep) col = 'rgba(255, 107, 107, 0.22)';
+
+        drawRoundedRect(ctx, bx, by, barW, bh, 4, col, null);
+
+        ctx.fillStyle = pt.step <= stopStep ? '#e2e8f0' : '#475569';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('S' + pt.step, bx + barW / 2, height - 12);
+      });
+    }
+
+    // =========================================================================
+    // MODULE 12.5: CLI DEMO, CODE REPO & QUIZ
+    // =========================================================================
+    function runCliDemo(mode) {
+      const screen = document.getElementById('cli-screen');
+      if (mode === 'weather_calc') {
+        screen.textContent =
+`$ python playground_ch12.py --ask "北京天气和3杯冰美式85折价格"
+[Step 1] Thought: 先查北京气温，确认高于 25°C 后再计算咖啡折后价。
+[Step 1] Action : get_weather({"city": "北京"})
+[Step 1] Obs    : {"city": "北京", "temp_c": 27, "condition": "晴朗"}
+[Step 2] Thought: 27°C > 25°C，调用安全计算器算 28 * 3 * 0.85。
+[Step 2] Action : calculator({"expression": "28 * 3 * 0.85"})
+[Step 2] Obs    : {"ok": true, "result": 71.4}
+[Step 3] Final  : 北京今天晴朗 27°C，3 杯冰美式打 85 折后总计 71.4 元。
+[Stats ] Steps=3 | PromptTokens=412 | CompletionTokens=68 | Status=STOP`;
+      } else if (mode === 'self_heal') {
+        screen.textContent =
+`$ python playground_ch12.py --ask "算一下 100/0，不行就改为 100/4"
+[Step 1] Action : calculator({"expression": "100 / 0"})
+[Step 1] Obs    : {"ok": false, "error": "ZeroDivisionError: 除数不能为 0"}
+[Step 2] Thought: 工具返回除零错误，按用户要求改算 100 / 4。
+[Step 2] Action : calculator({"expression": "100 / 4"})
+[Step 2] Obs    : {"ok": true, "result": 25.0}
+[Step 3] Final  : 100/0 触发除零错误无法计算，已改算 100/4 = 25.0。
+[Stats ] Steps=3 | Self-Correction=1 | Status=STOP`;
+      } else {
+        screen.textContent =
+`$ python playground_ch12.py --ask "帮我给订单 #9021 办理全额退款"
+[Step 1] Action : issue_refund({"order_id": "9021", "amount": 299.0})
+[GUARD ] ⚠️ 检测到高危写操作工具 [issue_refund]，已触发 HITL 人工审批拦截！
+[GUARD ] 待执行参数: {"order_id": "9021", "amount": 299.0}
+[PROMPT] 是否批准执行？(y/N): N
+[Step 1] Obs    : {"ok": false, "error": "操作被人工审批拒绝 (User Denied)。"}
+[Step 2] Final  : 管理员已取消订单 #9021 的退款操作，未产生资金变动。`;
+      }
+    }
+
+    const CODE_FILES = {
+      tool_schema: [
+        '"""tool_schema.py: Pydantic 自动导出 OpenAI Tool Schema + AST 安全计算器"""',
+        'import ast',
+        'import operator as op',
+        'from pydantic import BaseModel, Field',
+        '',
+        'SAFE_OPS = {',
+        '    ast.Add: op.add, ast.Sub: op.sub,',
+        '    ast.Mult: op.mul, ast.Div: op.truediv,',
+        '    ast.USub: op.neg,',
+        '}',
+        '',
+        'def safe_eval_ast(expr: str) -> float:',
+        '    """仅允许四则运算 AST 节点，彻底杜绝 eval() 代码注入风险。"""',
+        '    def _eval(node):',
+        '        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):',
+        '            return node.value',
+        '        if isinstance(node, ast.BinOp) and type(node.op) in SAFE_OPS:',
+        '            return SAFE_OPS[type(node.op)](_eval(node.left), _eval(node.right))',
+        '        if isinstance(node, ast.UnaryOp) and type(node.op) in SAFE_OPS:',
+        '            return SAFE_OPS[type(node.op)](_eval(node.operand))',
+        '        raise ValueError(f"不允许的表达式节点: {type(node).__name__}")',
+        '    tree = ast.parse(expr, mode="eval")',
+        '    return round(float(_eval(tree.body)), 4)',
+        '',
+        'class CalcArgs(BaseModel):',
+        '    expression: str = Field(..., description="标准四则运算表达式，例如 (28 * 3) * 0.85")',
+        '',
+        'def to_openai_tool(name: str, desc: str, schema_cls: type[BaseModel]) -> dict:',
+        '    """将 Pydantic 模型转为 OpenAI tools 协议格式。"""',
+        '    return {',
+        '        "type": "function",',
+        '        "function": {',
+        '            "name": name,',
+        '            "description": desc,',
+        '            "parameters": schema_cls.model_json_schema(),',
+        '        },',
+        '    }',
+        '',
+        'if __name__ == "__main__":',
+        '    print("AST 计算结果:", safe_eval_ast("(28 * 3) * 0.85"))',
+        '    print("Tool Schema:", to_openai_tool("calculator", "安全四则运算", CalcArgs))'
+      ].join('\n'),
+
+      tool_registry: [
+        '"""tool_registry.py: 工具注册表与异常回传自愈封装"""',
+        'import json',
+        'from dataclasses import dataclass',
+        'from typing import Callable',
+        'from pydantic import BaseModel, ValidationError',
+        '',
+        '@dataclass',
+        'class ToolSpec:',
+        '    name: str',
+        '    description: str',
+        '    args_model: type[BaseModel]',
+        '    func: Callable',
+        '    require_approval: bool = False  # 高危写操作开启 HITL 审批',
+        '',
+        'class ToolRegistry:',
+        '    def __init__(self):',
+        '        self._tools: dict[str, ToolSpec] = {}',
+        '',
+        '    def register(self, name: str, description: str, args_model: type[BaseModel], require_approval: bool = False):',
+        '        def decorator(fn: Callable):',
+        '            self._tools[name] = ToolSpec(name, description, args_model, fn, require_approval)',
+        '            return fn',
+        '        return decorator',
+        '',
+        '    def schemas(self) -> list[dict]:',
+        '        return [{',
+        '            "type": "function",',
+        '            "function": {',
+        '                "name": t.name,',
+        '                "description": t.description,',
+        '                "parameters": t.args_model.model_json_schema(),',
+        '            }',
+        '        } for t in self._tools.values()]',
+        '',
+        '    def execute(self, name: str, raw_arguments: str) -> str:',
+        '        """永不抛未捕获异常：任何错误都转为 JSON 字符串喂回 LLM 自我纠错。"""',
+        '        if name not in self._tools:',
+        '            return json.dumps({"ok": False, "error": f"未知工具 {name}，可用: {list(self._tools)}"}, ensure_ascii=False)',
+        '        spec = self._tools[name]',
+        '        try:',
+        '            parsed = json.loads(raw_arguments)',
+        '            validated = spec.args_model.model_validate(parsed)',
+        '        except (json.JSONDecodeError, ValidationError) as e:',
+        '            return json.dumps({"ok": False, "error": f"参数格式错误: {e}"}, ensure_ascii=False)',
+        '',
+        '        if spec.require_approval:',
+        '            return json.dumps({"ok": False, "error": "该工具需要人工审批 (HITL)，操作已拦截。"}, ensure_ascii=False)',
+        '',
+        '        try:',
+        '            result = spec.func(validated)',
+        '            text = json.dumps({"ok": True, "result": result}, ensure_ascii=False)',
+        '            return text[:2000]  # 防止超长 Observation 撑爆上下文',
+        '        except Exception as e:',
+        '            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}, ensure_ascii=False)'
+      ].join('\n'),
+
+      react_agent: [
+        '"""react_agent.py: 带 max_steps 与 Token 预算护栏的 ReAct Agent 循环"""',
+        'import hashlib',
+        'from dataclasses import dataclass, field',
+        '',
+        '@dataclass',
+        'class AgentConfig:',
+        '    max_steps: int = 6',
+        '    token_budget: int = 8000',
+        '    system_prompt: str = "你是严谨的智能体助手，按需调用工具，拿到结果后再作答。"',
+        '',
+        'class ReActAgent:',
+        '    def __init__(self, llm_client, registry, config: AgentConfig | None = None):',
+        '        self.llm = llm_client',
+        '        self.registry = registry',
+        '        self.config = config or AgentConfig()',
+        '',
+        '    def run(self, user_query: str) -> str:',
+        '        messages = [',
+        '            {"role": "system", "content": self.config.system_prompt},',
+        '            {"role": "user", "content": user_query},',
+        '        ]',
+        '        seen_calls: set[str] = set()',
+        '        total_tokens = 0',
+        '',
+        '        for step in range(1, self.config.max_steps + 1):',
+        '            resp = self.llm.chat(messages=messages, tools=self.registry.schemas())',
+        '            total_tokens += resp.get("usage", {}).get("total_tokens", 0)',
+        '            if total_tokens > self.config.token_budget:',
+        '                return f"[熔断] 已超出单次 Token 预算上限 ({total_tokens} > {self.config.token_budget})。"',
+        '',
+        '            msg = resp["message"]',
+        '            messages.append(msg)',
+        '',
+        '            tool_calls = msg.get("tool_calls") or []',
+        '            if not tool_calls:',
+        '                return msg.get("content") or ""  # finish_reason == "stop"',
+        '',
+        '            for tc in tool_calls:',
+        '                fn_name = tc["function"]["name"]',
+        '                raw_args = tc["function"]["arguments"]',
+        '                fingerprint = hashlib.md5(f"{fn_name}:{raw_args}".encode()).hexdigest()',
+        '                if fingerprint in seen_calls:',
+        '                    obs = \'{"ok": false, "error": "检测到重复调用相同工具与参数，请更换思路或直接回答。"}\'',
+        '                else:',
+        '                    seen_calls.add(fingerprint)',
+        '                    obs = self.registry.execute(fn_name, raw_args)',
+        '',
+        '                messages.append({',
+        '                    "role": "tool",',
+        '                    "tool_call_id": tc["id"],',
+        '                    "content": obs,',
+        '                })',
+        '',
+        '        return f"[熔断] 达到最大推理步数上限 (max_steps={self.config.max_steps})，任务终止。"'
+      ].join('\n'),
+
+      playground_ch12: [
+        '"""playground_ch12.py: 离线可跑的多工具 ReAct Agent 实战演示"""',
+        'import argparse',
+        'import json',
+        'from pydantic import BaseModel, Field',
+        'from tool_schema import safe_eval_ast',
+        'from tool_registry import ToolRegistry',
+        'from react_agent import ReActAgent, AgentConfig',
+        '',
+        'registry = ToolRegistry()',
+        '',
+        'class WeatherArgs(BaseModel):',
+        '    city: str = Field(..., description="城市名，如 北京")',
+        '',
+        'class CalcArgs(BaseModel):',
+        '    expression: str = Field(..., description="四则运算表达式")',
+        '',
+        '@registry.register("get_weather", "查询城市实时天气", WeatherArgs)',
+        'def get_weather(args: WeatherArgs) -> dict:',
+        '    db = {"北京": {"temp_c": 27, "condition": "晴朗"}, "上海": {"temp_c": 22, "condition": "多云"}}',
+        '    return db.get(args.city, {"temp_c": 20, "condition": "未知"})',
+        '',
+        '@registry.register("calculator", "安全计算数学表达式", CalcArgs)',
+        'def calculator(args: CalcArgs) -> float:',
+        '    return safe_eval_ast(args.expression)',
+        '',
+        'class MockAgentLLM:',
+        '    """离线模拟多步 ReAct 决策流（接真实模型替换为 OpenAI SDK 即可）。"""',
+        '    def chat(self, messages: list[dict], tools: list[dict]) -> dict:',
+        '        tool_msgs = [m for m in messages if m["role"] == "tool"]',
+        '        if len(tool_msgs) == 0:',
+        '            return {',
+        '                "usage": {"total_tokens": 180},',
+        '                "message": {',
+        '                    "role": "assistant", "content": None,',
+        '                    "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": \'{"city": "北京"}\'}}]',
+        '                }',
+        '            }',
+        '        if len(tool_msgs) == 1:',
+        '            return {',
+        '                "usage": {"total_tokens": 240},',
+        '                "message": {',
+        '                    "role": "assistant", "content": None,',
+        '                    "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "calculator", "arguments": \'{"expression": "28 * 3 * 0.85"}\'}}]',
+        '                }',
+        '            }',
+        '        res = json.loads(tool_msgs[-1]["content"])["result"]',
+        '        return {',
+        '            "usage": {"total_tokens": 290},',
+        '            "message": {"role": "assistant", "content": f"北京今天晴朗 27°C，3 杯冰美式打 85 折共需 {res} 元。"}',
+        '        }',
+        '',
+        'if __name__ == "__main__":',
+        '    parser = argparse.ArgumentParser()',
+        '    parser.add_argument("--ask", default="北京天气和3杯冰美式85折价格")',
+        '    args = parser.parse_args()',
+        '    agent = ReActAgent(MockAgentLLM(), registry, AgentConfig(max_steps=5))',
+        '    print("🤖 Agent 最终回答:", agent.run(args.ask))'
+      ].join('\n')
+    };
+
+    let currentCodeTab = 'tool_schema';
+
+    function selectCodeTab(tabKey) {
+      currentCodeTab = tabKey;
+      document.querySelectorAll('.code-tab-btn').forEach(btn => {
+        const active = (btn.dataset.tab === tabKey);
+        btn.classList.toggle('active-code-tab', active);
+        btn.classList.toggle('text-gray-400', !active);
+      });
+      const el = document.getElementById('code-display');
+      if (el && CODE_FILES[tabKey]) {
+        el.textContent = CODE_FILES[tabKey];
+      }
+    }
+
+    function copyCurrentCode() {
+      const text = CODE_FILES[currentCodeTab] || '';
+      const label = document.getElementById('copy-btn-label');
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        label.textContent = '✅ 已复制到剪贴板';
+      } catch (e) {
+        label.textContent = '❌ 复制失败';
+      }
+      document.body.removeChild(ta);
+      setTimeout(() => { label.textContent = '📋 复制当前代码'; }, 2000);
+    }
+
+    const QUIZ_DATA = [
+      {
+        q: '1. 在 Function Calling 流程中，真正执行 Python 函数（如查天气、查数据库）的是谁？',
+        options: [
+          'A. 大模型服务端内部的 Python 解释器',
+          'B. 你的宿主机应用程序代码；大模型只负责输出结构化的调用意图（JSON）',
+          'C. 向量数据库 ChromaDB',
+          'D. 浏览器的 JavaScript 引擎'
+        ],
+        ans: 1,
+        exp: '大模型永远不会直接访问你的本地函数或内网数据库。它只根据 Schema 返回 tool_calls，由你的宿主机代码执行后再把结果以 role="tool" 传回。'
+      },
+      {
+        q: '2. 当本地工具执行抛出异常（例如 ZeroDivisionError 或参数校验失败）时，生产级 Agent 的最佳处理方式是？',
+        options: [
+          'A. 直接让程序崩溃抛出 Traceback',
+          'B. 静默吞掉异常，返回一个空字符串给用户',
+          'C. 捕获异常，将清晰的错误信息封装为 role="tool" 消息喂回给 LLM，让模型尝试自我纠错',
+          'D. 无限 while True 重试直到成功'
+        ],
+        ans: 2,
+        exp: '将结构化错误信息回传给 LLM 是 Agent 自愈（Self-Correction）的核心机制，模型通常能看懂错误原因并修正参数重试。'
+      },
+      {
+        q: '3. 在 OpenAI 兼容协议中，回传工具结果消息 (role="tool") 时最容易触发 HTTP 400 报错的坑是？',
+        options: [
+          'A. 温度参数 temperature 设为了 0',
+          'B. 忘记保留上一条 assistant(tool_calls) 消息，或 tool_call_id 未严格配对',
+          'C. 使用了流式输出 stream=True',
+          'D. 工具名称包含下划线'
+        ],
+        ans: 1,
+        exp: '协议严格要求：每条 role="tool" 消息前必须存在对应的 assistant(tool_calls) 消息，且 tool_call_id 必须一一对应。'
+      },
+      {
+        q: '4. 为什么 Agent 必须配置 max_steps 步数上限与 Token 预算熔断器？',
+        options: [
+          'A. 因为 Python 的 for 循环不能超过 10 次',
+          'B. 一旦 Agent 陷入死循环反复调用失败的工具，每轮重传完整历史会导致 Token 呈 O(N²) 爆炸，迅速烧光额度',
+          'C. 为了提高 Embedding 的向量维度',
+          'D. OpenAI 强制规定每个对话只能有 3 步'
+        ],
+        ans: 1,
+        exp: '多步 Agent 每轮都会把历史消息连同工具结果重新发给模型，没有熔断保护极易导致账单失控。'
+      },
+      {
+        q: '5. 当 Agent 需要调用“给用户退款”或“删除生产数据库记录”这类高危写操作工具时，最合理的工程护栏是？',
+        options: [
+          'A. 把 temperature 调到 1.5 增加多样性',
+          'B. 在 system prompt 里写一句“请小心操作”即可',
+          'C. 引入 Human-in-the-Loop (HITL) 人工审批拦截，挂起执行并等待人类确认后再真正调用',
+          'D. 用 eval() 动态执行 SQL 语句'
+        ],
+        ans: 2,
+        exp: '提示词约束不能保证 100% 安全，不可逆的高危副作用操作必须在代码层做 HITL 审批拦截。'
+      }
+    ];
+
+    let quizAnswers = {};
+
+    function renderQuiz() {
+      const box = document.getElementById('quiz-container');
+      box.innerHTML = QUIZ_DATA.map((item, qIdx) => `
+        <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+          <div class="text-xs font-bold text-white">${item.q}</div>
+          <div class="space-y-1.5 text-xs">
+            ${item.options.map((opt, oIdx) => `
+              <button onclick="answerQuiz(${qIdx}, ${oIdx})" id="q-${qIdx}-o-${oIdx}" class="w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] hover:border-[#c084fc] text-gray-300 transition">
+                ${opt}
+              </button>
+            `).join('')}
+          </div>
+          <div id="q-${qIdx}-exp" class="hidden p-3 rounded-lg text-xs leading-relaxed"></div>
+        </div>
+      `).join('');
+    }
+
+    function answerQuiz(qIdx, oIdx) {
+      quizAnswers[qIdx] = oIdx;
+      const item = QUIZ_DATA[qIdx];
+      item.options.forEach((_, i) => {
+        const btn = document.getElementById(`q-${qIdx}-o-${i}`);
+        if (i === item.ans) {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#4ade80]/20 border border-[#4ade80] text-[#4ade80] font-bold';
+        } else if (i === oIdx && oIdx !== item.ans) {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#ff6b6b]/20 border border-[#ff6b6b] text-[#ff6b6b]';
+        } else {
+          btn.className = 'w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] text-gray-500 opacity-60';
+        }
+      });
+      const exp = document.getElementById(`q-${qIdx}-exp`);
+      exp.classList.remove('hidden');
+      if (oIdx === item.ans) {
+        exp.className = 'p-3 rounded-lg bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80] text-xs leading-relaxed';
+        exp.innerHTML = `<strong>✅ 回答正确！</strong> ${item.exp}`;
+      } else {
+        exp.className = 'p-3 rounded-lg bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 text-[#ff6b6b] text-xs leading-relaxed';
+        exp.innerHTML = `<strong>❌ 解析：</strong> ${item.exp}`;
+      }
+      const score = Object.keys(quizAnswers).filter(k => quizAnswers[k] === QUIZ_DATA[k].ans).length;
+      document.getElementById('quiz-score-pill').textContent = `得分: ${score} / ${QUIZ_DATA.length}`;
+    }
+
+    // =========================================================================
+    // INIT ON DOM READY
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      setArchMode('agent');
+      selectHandshakeStep(0);
+      selectSchemaTool('calculator');
+      runRegistryTest('valid');
+      selectReactScenario(0);
+      updateBreakerLab();
+      runCliDemo('weather_calc');
+      selectCodeTab('tool_schema');
+      renderQuiz();
+
+      window.addEventListener('resize', () => {
+        renderArchCanvas();
+        const sc = REACT_SCENARIOS[reactScenarioIdx];
+        const activeNode = reactStepIdx > 0 ? sc.steps[reactStepIdx - 1].node : 'idle';
+        renderReactCanvas(activeNode);
+        updateBreakerLab();
+      });
+    });
+  </script>
+</body>
+</html>

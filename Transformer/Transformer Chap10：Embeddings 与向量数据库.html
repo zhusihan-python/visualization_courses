@@ -1,0 +1,2252 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 10 章：Embeddings 与向量数据库 —— 文本向量化、相似度度量与语义检索实战</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              dark: '#0d1117',
+              card: '#141b26',
+              border: '#233044',
+              hover: '#1c2638',
+              cyan: '#58c4dd',
+              gold: '#f0b429',
+              emerald: '#4ade80',
+              coral: '#ff6b6b',
+              violet: '#c084fc',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'sans-serif'],
+            mono: ['Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #233044; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3b4d6b; }
+
+    /* Pure HTML/CSS Math formatting - NO RAW LATEX */
+    .math {
+      font-family: 'Times New Roman', Times, serif;
+      font-style: italic;
+      color: #58c4dd;
+      padding: 0 2px;
+    }
+    .math-block {
+      font-family: 'Times New Roman', Times, serif;
+      background: rgba(13, 17, 23, 0.7);
+      border: 1px solid #233044;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      margin: 0.75rem 0;
+      text-align: center;
+      color: #e2e8f0;
+      overflow-x: auto;
+    }
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 4px;
+    }
+    .frac .num { border-bottom: 1px solid #58c4dd; padding-bottom: 1px; font-size: 0.9em; }
+    .frac .den { padding-top: 1px; font-size: 0.9em; }
+    
+    /* Dynamic UI Glow Effects */
+    .glow-cyan { box-shadow: 0 0 20px rgba(88, 196, 221, 0.15); }
+    .glow-gold { box-shadow: 0 0 20px rgba(240, 180, 41, 0.15); }
+    .glow-violet { box-shadow: 0 0 20px rgba(192, 132, 252, 0.15); }
+    .glow-emerald { box-shadow: 0 0 20px rgba(74, 222, 128, 0.15); }
+
+    /* Transitions */
+    .transition-vibe {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+  </style>
+</head>
+<body class="bg-[#0d1117] text-gray-200 font-sans antialiased selection:bg-brand-cyan/30 selection:text-brand-cyan">
+
+  <!-- STICKY TOP NAVIGATION BAR WITH SCROLL-SPY -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur-md border-b border-[#233044]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-cyan via-brand-violet to-brand-gold flex items-center justify-center font-bold text-slate-950 text-base shadow-lg">
+            10
+          </div>
+          <span class="font-bold text-lg text-white tracking-wide">LLM Agent 教程</span>
+        </div>
+        <nav class="hidden lg:flex space-x-1 text-xs font-medium text-gray-400" id="nav-menu">
+          <a href="#hero" class="nav-item px-3 py-2 rounded-md hover:text-white hover:bg-[#141b26] transition">首页</a>
+          <a href="#module-10-1" class="nav-item px-3 py-2 rounded-md hover:text-white hover:bg-[#141b26] transition">10.1 向量概念与度量</a>
+          <a href="#module-10-2" class="nav-item px-3 py-2 rounded-md hover:text-white hover:bg-[#141b26] transition">10.2 模型选型与截断</a>
+          <a href="#module-10-3" class="nav-item px-3 py-2 rounded-md hover:text-white hover:bg-[#141b26] transition">10.3 向量库与四大索引</a>
+          <a href="#module-10-4" class="nav-item px-3 py-2 rounded-md hover:text-white hover:bg-[#141b26] transition">10.4 Chroma 操作实战</a>
+          <a href="#module-10-5" class="nav-item px-3 py-2 rounded-md hover:text-white hover:bg-[#141b26] transition">10.5 切块与混合检索</a>
+          <a href="#module-10-6" class="nav-item px-3 py-2 rounded-md hover:text-white hover:bg-[#141b26] transition">10.6 代码库与测验</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-24">
+
+    <!-- HERO SECTION -->
+    <section id="hero" class="relative overflow-hidden rounded-3xl bg-gradient-to-b from-[#141b26] to-[#0d1117] border border-[#233044] p-8 md:p-12 shadow-2xl">
+      <div class="absolute -top-24 -right-24 w-96 h-96 bg-brand-cyan/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-brand-violet/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="relative z-10 space-y-6">
+        <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan text-xs font-semibold tracking-wide">
+          <span class="w-2 h-2 rounded-full bg-brand-cyan animate-pulse"></span>
+          RAG 检索增强生成 · 核心基础设施篇
+        </div>
+
+        <h1 class="text-3xl md:text-5xl font-extrabold text-white tracking-tight leading-tight">
+          第 10 章：Embeddings 与向量数据库
+        </h1>
+        
+        <p class="text-lg md:text-xl text-gray-300 max-w-4xl font-normal leading-relaxed">
+          把文档变成向量、存进向量库、按语义检索 —— 搭建 <span class="text-brand-gold font-semibold">RAG（第 11 章）</span> 的坚实地基。
+        </p>
+
+        <!-- 4 KPI PILL BADGES -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4">
+          <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#0d1117]/80 border border-[#233044]">
+            <div class="w-3 h-3 rounded-full bg-brand-cyan"></div>
+            <div class="text-xs">
+              <div class="text-gray-400">主流中文模型</div>
+              <div class="font-mono text-white font-semibold">bge-small-zh-v1.5 <span class="text-brand-cyan">(512维)</span></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#0d1117]/80 border border-[#233044]">
+            <div class="w-3 h-3 rounded-full bg-brand-gold"></div>
+            <div class="text-xs">
+              <div class="text-gray-400">数学恒等式</div>
+              <div class="font-mono text-white font-semibold">L2归一化后: <span class="text-brand-gold">内积 = 余弦</span></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#0d1117]/80 border border-[#233044]">
+            <div class="w-3 h-3 rounded-full bg-brand-emerald"></div>
+            <div class="text-xs">
+              <div class="text-gray-400">分层图索引</div>
+              <div class="font-mono text-white font-semibold">HNSW: <span class="text-brand-emerald">O(log n) · 99%召回</span></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#0d1117]/80 border border-[#233044]">
+            <div class="w-3 h-3 rounded-full bg-brand-violet"></div>
+            <div class="text-xs">
+              <div class="text-gray-400">Chroma Cosine 转化</div>
+              <div class="font-mono text-white font-semibold">sim = <span class="text-brand-violet">1 - dist</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 10.1: Embedding 概念与三种相似度度量实验室 -->
+    <section id="module-10-1" class="space-y-8 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-4">
+        <h2 class="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+          <span class="text-brand-cyan font-mono">10.1</span> Embedding 概念与三种相似度度量实验室
+        </h2>
+        <p class="text-gray-400 text-sm mt-1">理解文本向量化机制，在 2D 投影与向量坐标系中探究 Cosine、Dot Product 与 Euclidean 距离。</p>
+      </div>
+
+      <!-- Part A: 语义空间 2D 投影可视化 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+              <span>Part A: 语义空间 2D 降维投影可视化</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">交互式</span>
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">鼠标悬停或点击任意节点，查看该文本与其他文本在高维映射后的语义余弦相似度及 4 维伪向量预览。</p>
+          </div>
+          <div class="flex flex-wrap gap-3 text-xs">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-brand-cyan"></span>退款类</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-brand-gold"></span>发票/会员类</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-brand-violet"></span>无关杂项</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 relative bg-[#0d1117] rounded-xl border border-[#233044] p-2 min-h-[380px] flex items-center justify-center">
+            <canvas id="canvas-2d-scatter" class="w-full h-80 block"></canvas>
+            <div id="scatter-hint" class="absolute bottom-3 left-3 text-[11px] text-gray-400 bg-[#141b26]/90 px-2.5 py-1 rounded border border-[#233044]">
+              💡 提示：悬停节点展示与各句子的相似度连线
+            </div>
+          </div>
+          
+          <div class="space-y-4 flex flex-col justify-between">
+            <div class="bg-[#0d1117] rounded-xl border border-[#233044] p-4 space-y-3">
+              <div class="text-xs font-semibold text-gray-400 border-b border-[#233044] pb-2 flex justify-between">
+                <span>当前选中节点详情</span>
+                <span id="selected-node-category" class="text-brand-cyan font-mono">点击画布节点</span>
+              </div>
+              <div id="selected-node-text" class="text-sm font-medium text-white min-h-[40px] flex items-center">
+                请选择左侧 2D 空间中的任意文本节点...
+              </div>
+              <div>
+                <div class="text-[11px] text-gray-400 mb-1">伪向量 4 维预览 (Float32)：</div>
+                <div id="selected-node-vector" class="font-mono text-xs text-brand-gold bg-[#141b26] p-2 rounded border border-[#233044]">
+                  [0.00, 0.00, 0.00, 0.00]
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-[#0d1117] rounded-xl border border-[#233044] p-4 space-y-2">
+              <div class="text-xs font-semibold text-brand-cyan mb-1">Top-3 最高相似度连线文本</div>
+              <div id="top-sim-list" class="space-y-1.5 text-xs text-gray-300">
+                <div class="text-gray-500 italic">暂无选中节点</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 Key Properties & 3 Real Scenarios -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+          <div class="space-y-3">
+            <h4 class="text-sm font-semibold text-brand-gold flex items-center gap-2">
+              <span>✦ Embedding 向量 4 大核心特征</span>
+            </h4>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="p-3 bg-[#0d1117] rounded-lg border border-[#233044]">
+                <div class="font-bold text-white mb-1">1. 维度固定</div>
+                <p class="text-gray-400">同模型输出维度恒定（如 bge-small 512 维，OpenAI 1536 维）。</p>
+              </div>
+              <div class="p-3 bg-[#0d1117] rounded-lg border border-[#233044]">
+                <div class="font-bold text-white mb-1">2. 稠密语义编码</div>
+                <p class="text-gray-400">非稀疏 One-Hot，连续浮点数空间承载近义词、同义词语义。</p>
+              </div>
+              <div class="p-3 bg-[#0d1117] rounded-lg border border-[#233044]">
+                <div class="font-bold text-white mb-1">3. 词序敏感解析</div>
+                <p class="text-gray-400">基于 Transformer Encoder，能精准识别“人咬狗”与“狗咬人”。</p>
+              </div>
+              <div class="p-3 bg-[#0d1117] rounded-lg border border-[#233044]">
+                <div class="font-bold text-white mb-1">4. 不含新事实</div>
+                <p class="text-gray-400">仅表示语义特征，不具备知识搜索推理能力（需配合检索）。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <h4 class="text-sm font-semibold text-brand-cyan flex items-center gap-2">
+              <span>✦ 3 大核心应用场景</span>
+            </h4>
+            <div class="space-y-2 text-xs">
+              <div class="p-2.5 bg-[#0d1117] rounded-lg border border-[#233044] flex items-start gap-3">
+                <span class="px-2 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan font-bold">1</span>
+                <div>
+                  <span class="font-bold text-white">语义检索 (Semantic Search): </span>
+                  <span class="text-gray-400">解决“退款条件”检索不到“怎么申请退货”的传统关键词错配难题。</span>
+                </div>
+              </div>
+              <div class="p-2.5 bg-[#0d1117] rounded-lg border border-[#233044] flex items-start gap-3">
+                <span class="px-2 py-0.5 rounded bg-brand-gold/20 text-brand-gold font-bold">2</span>
+                <div>
+                  <span class="font-bold text-white">聚类与去重 (Clustering/Deduplication): </span>
+                  <span class="text-gray-400">自动识别千万条 FAQ 中的重复问题，实现工案自动分类与合并。</span>
+                </div>
+              </div>
+              <div class="p-2.5 bg-[#0d1117] rounded-lg border border-[#233044] flex items-start gap-3">
+                <span class="px-2 py-0.5 rounded bg-brand-emerald/20 text-brand-emerald font-bold">3</span>
+                <div>
+                  <span class="font-bold text-white">RAG 知识库召回 (Retrieval-Augmented Gen): </span>
+                  <span class="text-gray-400">为 LLM 注入外部知识前，快速找出与用户 Query 最贴切的 Top-K 文本块。</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: 三种相似度度量几何实验室 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+              <span>Part B: 三种相似度度量几何实验室</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-brand-gold/20 text-brand-gold border border-brand-gold/30">数学可视化</span>
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">拖动滑动条改变向量长度与夹角，开启 L2 归一化观察“内积与余弦等价”的几何证明。</p>
+          </div>
+          <button id="btn-toggle-l2" class="px-4 py-2 rounded-xl bg-brand-cyan/20 border border-brand-cyan/40 text-brand-cyan hover:bg-brand-cyan/30 text-xs font-bold transition flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-brand-cyan" id="l2-indicator"></span>
+            <span id="l2-btn-text">开启 L2 归一化 (投影到单位圆)</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Left: Canvas Coordinates -->
+          <div class="lg:col-span-6 bg-[#0d1117] rounded-xl border border-[#233044] p-3 flex flex-col items-center justify-center">
+            <canvas id="canvas-geom-metrics" class="w-full h-80 block"></canvas>
+            <div class="flex items-center justify-center gap-4 text-xs font-mono mt-2">
+              <span class="text-brand-cyan">■ Query (q)</span>
+              <span class="text-brand-gold">■ Doc 1 (d1 - 同方向)</span>
+              <span class="text-brand-violet">■ Doc 2 (d2 - 变角度)</span>
+            </div>
+          </div>
+
+          <!-- Right: Sliders & Live Computation Table -->
+          <div class="lg:col-span-6 space-y-4 flex flex-col justify-between">
+            <div class="space-y-3 bg-[#0d1117] p-4 rounded-xl border border-[#233044]">
+              <div class="space-y-1">
+                <div class="flex justify-between text-xs font-mono">
+                  <span class="text-gray-300">d1 模长缩放系数:</span>
+                  <span id="val-d1-scale" class="text-brand-gold font-bold">2.4 x</span>
+                </div>
+                <input type="range" id="slider-d1-scale" min="0.5" max="3.0" step="0.1" value="2.4" class="w-full accent-brand-gold bg-gray-700 h-1.5 rounded cursor-pointer">
+              </div>
+
+              <div class="space-y-1">
+                <div class="flex justify-between text-xs font-mono">
+                  <span class="text-gray-300">d2 夹角旋转 (θ):</span>
+                  <span id="val-d2-angle" class="text-brand-violet font-bold">75°</span>
+                </div>
+                <input type="range" id="slider-d2-angle" min="0" max="180" step="1" value="75" class="w-full accent-brand-violet bg-gray-700 h-1.5 rounded cursor-pointer">
+              </div>
+            </div>
+
+            <!-- Live Readouts Table -->
+            <div class="bg-[#0d1117] rounded-xl border border-[#233044] overflow-hidden text-xs">
+              <table class="w-full text-left">
+                <thead class="bg-[#141b26] text-gray-400 border-b border-[#233044]">
+                  <tr>
+                    <th class="p-2.5">度量指标 (Metric)</th>
+                    <th class="p-2.5 text-brand-gold">q 与 d1 (同向长向量)</th>
+                    <th class="p-2.5 text-brand-violet">q 与 d2 (变角向量)</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[#233044] font-mono text-white">
+                  <tr>
+                    <td class="p-2.5 font-sans font-medium text-gray-300">余弦相似度 Cosine <br><span class="text-[10px] text-gray-500 font-normal">越大越相似 [-1, 1]</span></td>
+                    <td id="m-cos-d1" class="p-2.5 text-brand-gold font-bold">1.000</td>
+                    <td id="m-cos-d2" class="p-2.5 text-brand-violet font-bold">0.258</td>
+                  </tr>
+                  <tr>
+                    <td class="p-2.5 font-sans font-medium text-gray-300">点积/内积 Dot Product <br><span class="text-[10px] text-gray-500 font-normal">越大越相似 [-∞, +∞]</span></td>
+                    <td id="m-dot-d1" class="p-2.5 text-brand-gold font-bold">2.520</td>
+                    <td id="m-dot-d2" class="p-2.5 text-brand-violet font-bold">0.575</td>
+                  </tr>
+                  <tr>
+                    <td class="p-2.5 font-sans font-medium text-gray-300">欧氏距离 Euclidean <br><span class="text-[10px] text-gray-500 font-normal">越小越相似 [0, +∞]</span></td>
+                    <td id="m-euc-d1" class="p-2.5 text-brand-gold font-bold">1.460</td>
+                    <td id="m-euc-d2" class="p-2.5 text-brand-violet font-bold">1.940</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Math Formula Proof Banner -->
+            <div id="l2-math-banner" class="p-3 bg-brand-cyan/10 border border-brand-cyan/30 rounded-xl text-xs space-y-1">
+              <div class="font-bold text-brand-cyan flex items-center justify-between">
+                <span>💡 归一化核心恒等式：</span>
+                <span class="font-mono text-[11px]">||a|| = ||b|| = 1</span>
+              </div>
+              <div class="text-gray-300 font-mono text-[11px] leading-relaxed">
+                Dot(a, b) = Cosine(a, b) = 1 - <span class="frac"><span class="num">Euclidean(a, b)²</span><span class="den">2</span></span>
+              </div>
+              <p class="text-[10px] text-gray-400">当向量归一化后，三大度量在排序结果上完全等价！这也是向量库普遍首选内积加速的原因。</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric Selection Decision Table -->
+        <div class="border-t border-[#233044] pt-4">
+          <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">三种相似度度量选型判定表</h4>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <div class="p-3 bg-[#0d1117] rounded-xl border border-[#233044]">
+              <div class="font-bold text-brand-cyan mb-1">余弦相似度 (Cosine)</div>
+              <div class="text-gray-400">只关注语义方向，无视文本长度。适合未归一化的原始文本 embedding 匹配。</div>
+            </div>
+            <div class="p-3 bg-[#0d1117] rounded-xl border border-[#233044]">
+              <div class="font-bold text-brand-gold mb-1">内积 / 点积 (Dot Product)</div>
+              <div class="text-gray-400">计算速度极快 (无需除模长)。只要模型做了 L2 归一化，即为工业界检索首选。</div>
+            </div>
+            <div class="p-3 bg-[#0d1117] rounded-xl border border-[#233044]">
+              <div class="font-bold text-brand-violet mb-1">欧氏距离 (Euclidean / L2)</div>
+              <div class="text-gray-400">衡量绝对空间距离。适合图像特征、物理空间聚类等对幅度敏感的场景。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 10.2: Embedding 模型选型、批量处理与截断陷阱 -->
+    <section id="module-10-2" class="space-y-8 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-4">
+        <h2 class="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+          <span class="text-brand-gold font-mono">10.2</span> Embedding 模型选型、批量处理与截断陷阱
+        </h2>
+        <p class="text-gray-400 text-sm mt-1">剖析真实工程中的静默截断危险、Batch 批量流水线性能以及主流 Embedding 模型对比。</p>
+      </div>
+
+      <!-- Part A: 静默截断陷阱模拟器 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div>
+          <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+            <span>Part A: 危险的静默截断 (Silent Truncation) 模拟器</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-brand-coral/20 text-brand-coral border border-brand-coral/30">踩坑预警</span>
+          </h3>
+          <p class="text-xs text-gray-400 mt-0.5">当超长文本传入 Embedding API 时，大多模型<span class="text-brand-coral font-semibold">不报错且静默丢弃</span>超出 max_seq_length 限制的后缀 Token！</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-[#0d1117] p-4 rounded-xl border border-[#233044]">
+          <div class="space-y-2">
+            <label class="text-xs text-gray-300 font-semibold">选择 Embedding 模型：</label>
+            <div class="space-y-1.5" id="model-trunc-selector">
+              <button data-limit="512" data-name="BAAI/bge-small-zh-v1.5" class="btn-trunc-model w-full text-left px-3 py-2 rounded-lg border border-brand-cyan bg-brand-cyan/10 text-brand-cyan text-xs font-mono font-semibold flex justify-between items-center">
+                <span>bge-small-zh-v1.5</span>
+                <span class="text-[10px] px-1.5 py-0.5 bg-brand-cyan/20 rounded">512 Tok</span>
+              </button>
+              <button data-limit="512" data-name="BAAI/bge-large-zh-v1.5" class="btn-trunc-model w-full text-left px-3 py-2 rounded-lg border border-[#233044] hover:bg-[#141b26] text-gray-400 text-xs font-mono flex justify-between items-center">
+                <span>bge-large-zh-v1.5</span>
+                <span class="text-[10px] px-1.5 py-0.5 bg-gray-800 rounded">512 Tok</span>
+              </button>
+              <button data-limit="8191" data-name="text-embedding-3-small" class="btn-trunc-model w-full text-left px-3 py-2 rounded-lg border border-[#233044] hover:bg-[#141b26] text-gray-400 text-xs font-mono flex justify-between items-center">
+                <span>text-embedding-3-small</span>
+                <span class="text-[10px] px-1.5 py-0.5 bg-gray-800 rounded">8191 Tok</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="md:col-span-2 space-y-3 flex flex-col justify-between">
+            <div class="space-y-1">
+              <div class="flex justify-between text-xs font-mono">
+                <span class="text-gray-300">输入长文档 Token 数量:</span>
+                <span id="trunc-token-count" class="text-brand-gold font-bold">650 Tokens</span>
+              </div>
+              <input type="range" id="slider-trunc-tokens" min="50" max="1000" step="10" value="650" class="w-full accent-brand-gold bg-gray-700 h-1.5 rounded cursor-pointer">
+            </div>
+
+            <div id="trunc-alert-box" class="p-3 rounded-lg border bg-brand-coral/10 border-brand-coral/30 text-xs text-brand-coral flex items-center justify-between">
+              <span class="font-bold">⚠️ 超出模型上线限制 (650 &gt; 512 Tokens)</span>
+              <span>将被静默截断 138 个 Tokens (约 21.2%)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Simulated Document Token Flow -->
+        <div class="space-y-2">
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-gray-400">文档 Token 流视角预览：</span>
+            <span class="text-gray-500 font-mono text-[11px]" id="trunc-percent-label">前 512 编码 / 后 138 丢弃</span>
+          </div>
+          <div id="token-stream-container" class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] font-mono text-xs leading-relaxed max-h-48 overflow-y-auto flex flex-wrap gap-1">
+            <!-- Dynamically Rendered Tokens -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: 批量编码流水线与元数据锁 -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-4">
+          <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+            <span>Part B1: 批量编码流水线 (Batching Pipeline)</span>
+          </h3>
+          <p class="text-xs text-gray-400">100 篇待入库文档。单条 API 调用延迟极高，通过合适 batch_size 充分打满 GPU/内存吞吐。</p>
+          
+          <div class="flex items-center gap-4 bg-[#0d1117] p-3 rounded-xl border border-[#233044]">
+            <span class="text-xs text-gray-300">选择 Batch Size:</span>
+            <div class="flex gap-2" id="batch-size-selector">
+              <button data-size="8" class="btn-bs px-3 py-1 rounded bg-[#141b26] border border-[#233044] text-xs font-mono text-gray-300 hover:text-white">8</button>
+              <button data-size="16" class="btn-bs px-3 py-1 rounded bg-[#141b26] border border-[#233044] text-xs font-mono text-gray-300 hover:text-white">16</button>
+              <button data-size="32" class="btn-bs px-3 py-1 rounded bg-brand-cyan/20 border border-brand-cyan text-xs font-mono text-brand-cyan font-bold">32</button>
+              <button data-size="64" class="btn-bs px-3 py-1 rounded bg-[#141b26] border border-[#233044] text-xs font-mono text-gray-300 hover:text-white">64</button>
+            </div>
+            <button id="btn-run-batch" class="ml-auto px-4 py-1.5 rounded-lg bg-brand-cyan text-slate-950 font-bold text-xs hover:bg-brand-cyan/90 transition">
+              模拟分批编码
+            </button>
+          </div>
+
+          <!-- Progress Bar & Metrics -->
+          <div class="space-y-2 bg-[#0d1117] p-4 rounded-xl border border-[#233044]">
+            <div class="flex justify-between text-xs font-mono">
+              <span class="text-gray-400">处理进度 (Processed):</span>
+              <span id="batch-progress-text" class="text-brand-cyan">0 / 100 篇</span>
+            </div>
+            <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+              <div id="batch-progress-bar" class="bg-brand-cyan h-full w-0 transition-all duration-200"></div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 pt-2 text-xs font-mono">
+              <div class="bg-[#141b26] p-2 rounded border border-[#233044]">
+                <span class="text-gray-400 block text-[10px]">API / GPU 请求批次:</span>
+                <span id="batch-num-batches" class="text-brand-gold font-bold">4 批次</span>
+              </div>
+              <div class="bg-[#141b26] p-2 rounded border border-[#233044]">
+                <span class="text-gray-400 block text-[10px]">估算峰值 RAM / 显存:</span>
+                <span id="batch-ram-usage" class="text-brand-emerald font-bold">~1.2 GB</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- B2: 模型元数据锁 -->
+        <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-4 flex flex-col justify-between">
+          <div>
+            <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+              <span>Part B2: 向量索引的模型元数据锁</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-brand-violet/20 text-brand-violet border border-brand-violet/30">架构规约</span>
+            </h3>
+            <p class="text-xs text-gray-400 mt-1">向量数据库绝不能混用不同 Embedding 模型的向量！更换模型必须<span class="text-brand-coral font-bold">全量重新清洗与重新编码索引</span>。</p>
+          </div>
+
+          <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-2 font-mono text-xs">
+            <div class="text-gray-400 text-[11px] font-sans">📄 index_metadata.json (向量库全局元数据配置)</div>
+            <pre class="text-brand-cyan overflow-x-auto p-2 bg-[#141b26] rounded border border-[#233044]"><code>{
+  <span class="text-gray-400">"embedding_model"</span>: <span class="text-brand-gold">"BAAI/bge-small-zh-v1.5"</span>,
+  <span class="text-gray-400">"dimension"</span>: <span class="text-brand-emerald">512</span>,
+  <span class="text-gray-400">"normalized"</span>: <span class="text-brand-violet">true</span>,
+  <span class="text-gray-400">"distance_metric"</span>: <span class="text-brand-cyan">"cosine"</span>,
+  <span class="text-gray-400">"max_seq_length"</span>: <span class="text-brand-gold">512</span>
+}</code></pre>
+          </div>
+
+          <div class="p-3 bg-brand-gold/10 border border-brand-gold/30 rounded-xl text-xs text-brand-gold">
+            <span class="font-bold">⚠️ 致命错误警示：</span> 用 <code class="bg-[#0d1117] px-1 rounded">bge-small</code> 生成文档向量，查询时用 <code class="bg-[#0d1117] px-1 rounded">text-embedding-3</code> 编码 Query，相似度结果完全沦为无意义随机数！
+          </div>
+        </div>
+      </div>
+
+      <!-- Part C: 主流 Embedding 模型对比表 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-4">
+        <h3 class="text-lg font-semibold text-white">Part C: 2026 主流 Embedding 模型工程对比</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-[#0d1117] text-gray-400 border-b border-[#233044]">
+              <tr>
+                <th class="p-3">模型名称</th>
+                <th class="p-3">类型 / 部署</th>
+                <th class="p-3">向量维度</th>
+                <th class="p-3">Max Context</th>
+                <th class="p-3">中文综合能力</th>
+                <th class="p-3">推荐场景</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#233044] text-gray-300 font-mono">
+              <tr class="hover:bg-[#0d1117]/50">
+                <td class="p-3 font-bold text-brand-cyan">BAAI/bge-small-zh-v1.5</td>
+                <td class="p-3">开源 / 离线 (CPU/GPU)</td>
+                <td class="p-3">512 维</td>
+                <td class="p-3">512 Tokens</td>
+                <td class="p-3 text-brand-emerald">★★★★☆ (极强)</td>
+                <td class="p-3 font-sans text-gray-400">低延迟、私有化企业级 FAQ / 知识库</td>
+              </tr>
+              <tr class="hover:bg-[#0d1117]/50">
+                <td class="p-3 font-bold text-brand-gold">BAAI/bge-large-zh-v1.5</td>
+                <td class="p-3">开源 / 离线 (GPU)</td>
+                <td class="p-3">1024 维</td>
+                <td class="p-3">512 Tokens</td>
+                <td class="p-3 text-brand-emerald">★★★★★ (极致)</td>
+                <td class="p-3 font-sans text-gray-400">高精度学术/法律专业文档检索</td>
+              </tr>
+              <tr class="hover:bg-[#0d1117]/50">
+                <td class="p-3 font-bold text-brand-violet">text-embedding-3-small</td>
+                <td class="p-3">SaaS API (OpenAI)</td>
+                <td class="p-3">1536 维 (可降维)</td>
+                <td class="p-3">8191 Tokens</td>
+                <td class="p-3 text-brand-emerald">★★★★☆ (良好)</td>
+                <td class="p-3 font-sans text-gray-400">快速 MVP 验证、跨语言混合检索</td>
+              </tr>
+              <tr class="hover:bg-[#0d1117]/50">
+                <td class="p-3 font-bold text-white">text-embedding-3-large</td>
+                <td class="p-3">SaaS API (OpenAI)</td>
+                <td class="p-3">3072 维 (可降维)</td>
+                <td class="p-3">8191 Tokens</td>
+                <td class="p-3 text-brand-emerald">★★★★★ (顶级)</td>
+                <td class="p-3 font-sans text-gray-400">长文本分析、高维度严苛排序需求</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 10.3: 向量数据库选型与四大索引原理剧场 -->
+    <section id="module-10-3" class="space-y-8 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-4">
+        <h2 class="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+          <span class="text-brand-emerald font-mono">10.3</span> 向量数据库选型与四大索引原理剧场
+        </h2>
+        <p class="text-gray-400 text-sm mt-1">从 NumPy 暴力计算的瓶颈出发，深入 HNSW、IVF、PQ 与 Flat 四大 ANN 索引内部原理。</p>
+      </div>
+
+      <!-- Part A: 为什么不能用 NumPy 暴力算？ -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div>
+          <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+            <span>Part A: 为什么不能用 NumPy 暴力计算 (Flat Search)？</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-brand-coral/20 text-brand-coral border border-brand-coral/30">规模化瓶颈</span>
+          </h3>
+          <p class="text-xs text-gray-400 mt-0.5">拖动文档数据量与维度，实时观测线性扫描带来的内存爆炸与高延迟痛点。</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div class="lg:col-span-5 bg-[#0d1117] p-5 rounded-xl border border-[#233044] space-y-4">
+            <div class="space-y-1">
+              <div class="flex justify-between text-xs font-mono">
+                <span class="text-gray-300">文档向量条数 (N):</span>
+                <span id="calc-val-n" class="text-brand-cyan font-bold">1,000,000 条</span>
+              </div>
+              <input type="range" id="slider-calc-n" min="10000" max="10000000" step="10000" value="1000000" class="w-full accent-brand-cyan bg-gray-700 h-1.5 rounded cursor-pointer">
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex justify-between text-xs font-mono">
+                <span class="text-gray-300">向量维度 (d):</span>
+                <span id="calc-val-d" class="text-brand-gold font-bold">1,536 维 (OpenAI)</span>
+              </div>
+              <div class="grid grid-cols-3 gap-2 pt-1" id="dim-preset-btns">
+                <button data-dim="384" class="px-2 py-1 bg-[#141b26] border border-[#233044] text-xs font-mono text-gray-300 rounded hover:text-white">384 维</button>
+                <button data-dim="512" class="px-2 py-1 bg-[#141b26] border border-[#233044] text-xs font-mono text-gray-300 rounded hover:text-white">512 维</button>
+                <button data-dim="1536" class="px-2 py-1 bg-brand-gold/20 border border-brand-gold text-xs font-mono text-brand-gold font-bold rounded">1536 维</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] flex flex-col justify-between">
+              <span class="text-xs text-gray-400">Float32 原始向量内存占用</span>
+              <div id="calc-res-ram" class="text-2xl font-mono font-extrabold text-brand-coral my-2">5.72 GB</div>
+              <span class="text-[10px] text-gray-500">计算公式: N × d × 4 Bytes</span>
+            </div>
+            <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] flex flex-col justify-between">
+              <span class="text-xs text-gray-400">单次 CPU 暴力搜索估算延迟</span>
+              <div id="calc-res-latency" class="text-2xl font-mono font-extrabold text-brand-gold my-2">~184 ms</div>
+              <span class="text-[10px] text-gray-500">无法满足 API &lt; 50ms 要求</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 Callout Cards for Vector DB Value -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+          <div class="p-3 bg-[#0d1117] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-white flex items-center gap-1.5"><span class="text-brand-coral">✕</span> 内存线性增长</div>
+            <p class="text-gray-400 text-[11px]">千万级向量直接将服务器内存撑爆，NumPy 纯内存无法扩展。</p>
+          </div>
+          <div class="p-3 bg-[#0d1117] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-white flex items-center gap-1.5"><span class="text-brand-coral">✕</span> 延迟线性增长</div>
+            <p class="text-gray-400 text-[11px]">O(N·d) 复杂度，每次查询都要对比千万次内积，并发直接瘫痪。</p>
+          </div>
+          <div class="p-3 bg-[#0d1117] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-white flex items-center gap-1.5"><span class="text-brand-coral">✕</span> 无持久化与 WAL</div>
+            <p class="text-gray-400 text-[11px]">进程崩溃数据即丢失，缺乏落盘存储与事务保障。</p>
+          </div>
+          <div class="p-3 bg-[#0d1117] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-white flex items-center gap-1.5"><span class="text-brand-coral">✕</span> 无元数据过滤</div>
+            <p class="text-gray-400 text-[11px]">无法高效执行 "where category='退款'" 这种标量+向量混合联合检索。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: 四大索引原理可视化剧场 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+              <span>Part B: 四大 ANN 向量索引原理可视化剧场</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-brand-emerald/20 text-brand-emerald border border-brand-emerald/30">核心算法</span>
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">切换索引类型，在 Retina 画布中观察节点检索路径与空间划分算法。</p>
+          </div>
+          <!-- Tabs for Index Types -->
+          <div class="flex flex-wrap gap-1 bg-[#0d1117] p-1 rounded-xl border border-[#233044]" id="index-tabs">
+            <button data-idx="flat" class="tab-idx px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white transition">Flat (暴力)</button>
+            <button data-idx="hnsw" class="tab-idx px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-emerald text-slate-950 font-bold shadow">HNSW (分层图)</button>
+            <button data-idx="ivf" class="tab-idx px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white transition">IVF (倒排聚类)</button>
+            <button data-idx="pq" class="tab-idx px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white transition">PQ (乘积量化)</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div class="lg:col-span-8 bg-[#0d1117] rounded-xl border border-[#233044] p-3 relative flex items-center justify-center min-h-[380px]">
+            <canvas id="canvas-index-theater" class="w-full h-88 block"></canvas>
+            
+            <div id="hnsw-controls" class="absolute bottom-3 right-3 flex gap-2">
+              <button id="btn-animate-hnsw" class="px-3 py-1.5 rounded-lg bg-brand-emerald text-slate-950 text-xs font-bold hover:bg-brand-emerald/90 transition shadow-lg">
+                ▶ 运行 HNSW 分层贪婪跳跃路径
+              </button>
+            </div>
+
+            <div id="ivf-controls" class="absolute bottom-3 right-3 flex items-center gap-2 bg-[#141b26]/90 p-2 rounded-lg border border-[#233044] text-xs hidden">
+              <span class="text-gray-300">nprobe (探查聚类数):</span>
+              <input type="range" id="slider-nprobe" min="1" max="4" value="2" class="w-24 accent-brand-gold">
+              <span id="val-nprobe" class="font-mono text-brand-gold font-bold">2</span>
+            </div>
+          </div>
+
+          <!-- Description Sidebar -->
+          <div class="lg:col-span-4 space-y-4 flex flex-col justify-between bg-[#0d1117] p-5 rounded-xl border border-[#233044]">
+            <div class="space-y-3" id="idx-desc-card">
+              <h4 id="idx-title" class="text-base font-bold text-brand-emerald">HNSW (Hierarchical Navigable Small World)</h4>
+              <p id="idx-summary" class="text-xs text-gray-300 leading-relaxed">
+                借鉴“六度分隔”小世界理论与跳表 (SkipList) 思想。顶部稀疏层快速跨越超大空间距离，逐层向下精细化跳转，最终在底层找到最邻近节点。
+              </p>
+              <div class="space-y-1.5 text-xs font-mono pt-2 border-t border-[#233044]">
+                <div class="flex justify-between"><span class="text-gray-400">时间复杂度:</span><span id="idx-time" class="text-brand-emerald font-bold">O(log N)</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">召回率 (Recall):</span><span id="idx-recall" class="text-brand-gold font-bold">95% ~ 99%</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">内存开销:</span><span id="idx-memory" class="text-brand-coral font-bold">较高 (额外存储图边)</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">Chroma / FAISS 默认:</span><span class="text-brand-cyan font-bold">默认首选</span></div>
+              </div>
+            </div>
+
+            <!-- Tradeoff Alert -->
+            <div class="p-3 bg-[#141b26] rounded-lg border border-[#233044] text-xs space-y-1">
+              <div class="font-bold text-brand-gold flex items-center gap-1">
+                <span>⚡ 向量索引不可能三角：</span>
+              </div>
+              <p class="text-gray-400 text-[11px] leading-relaxed">
+                <span class="text-white font-semibold">准确率 (Recall)</span> · <span class="text-white font-semibold">查询速度 (QPS)</span> · <span class="text-white font-semibold">内存开销 (RAM)</span> <br>
+                任何索引算法本质上都是在这三者之间做工程权衡！
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part C: Chroma vs FAISS vs pgvector 互动决策树 & 对比表 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div>
+          <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+            <span>Part C: 向量数据库交互式决策树</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">选型指南</span>
+          </h3>
+          <p class="text-xs text-gray-400 mt-0.5">回答 3 个简单的架构问题，智能匹配最适合您业务场景的向量库。</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4" id="decision-steps">
+          <!-- Step 1 -->
+          <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+            <div class="text-xs font-bold text-brand-cyan">Q1. 团队已有基础设施？</div>
+            <div class="space-y-2">
+              <button data-q="1" data-val="pg" class="btn-dec w-full p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-left text-xs hover:border-brand-cyan text-gray-300">
+                已有成熟 PostgreSQL 运维集群
+              </button>
+              <button data-q="1" data-val="new" class="btn-dec w-full p-2.5 rounded-lg border border-brand-cyan bg-brand-cyan/10 text-left text-xs text-brand-cyan font-bold">
+                从零开始搭建轻量 / AI 专用库
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+            <div class="text-xs font-bold text-brand-gold">Q2. 数据量与硬件预算？</div>
+            <div class="space-y-2">
+              <button data-q="2" data-val="small" class="btn-dec w-full p-2.5 rounded-lg border border-brand-gold bg-brand-gold/10 text-left text-xs text-brand-gold font-bold">
+                &lt; 1,000 万条 (单机 CPU 可承载)
+              </button>
+              <button data-q="2" data-val="large" class="btn-dec w-full p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-left text-xs hover:border-brand-gold text-gray-300">
+                &gt; 1 亿条 (海量存储 + GPU 加速)
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 3 Winner Card -->
+          <div class="bg-gradient-to-br from-[#141b26] to-[#0d1117] p-4 rounded-xl border-2 border-brand-cyan space-y-2 flex flex-col justify-between glow-cyan">
+            <div class="text-xs font-bold text-gray-400">💡 推荐架构方案：</div>
+            <div id="dec-winner-title" class="text-xl font-bold text-brand-cyan">ChromaDB</div>
+            <p id="dec-winner-desc" class="text-xs text-gray-300 leading-relaxed">
+              轻量嵌入式向量库，Python 开箱即用。天然支持 SQLite 本地持久化与 HNSW 索引，极适合原型开发、中小规模 RAG 知识库。
+            </p>
+            <div id="dec-winner-badge" class="text-[10px] font-mono px-2 py-1 bg-brand-cyan/20 text-brand-cyan rounded self-start">
+              推荐方案：Chroma (单机/嵌入式)
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 10.4: Chroma 核心操作实验室 -->
+    <section id="module-10-4" class="space-y-8 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-4">
+        <h2 class="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+          <span class="text-brand-violet font-mono">10.4</span> Chroma 核心操作实验室 (Upsert · Query · Metadata 过滤)
+        </h2>
+        <p class="text-gray-400 text-sm mt-1">验证确定性 ID 幂等性，体验 Chroma 强大的 where 谓词逻辑过滤与 Cosine 距离转换。</p>
+      </div>
+
+      <!-- Part A: 确定性 ID vs 随机 UUID 幂等性实验 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+              <span>Part A: 确定性 ID vs 随机 UUID 幂等性对比实验</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-brand-coral/20 text-brand-coral border border-brand-coral/30">避坑实操</span>
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">连续点击“模拟重新入库 (Re-ingest)”按钮，观察两边的文档条数变化。</p>
+          </div>
+          <button id="btn-reingest" class="px-4 py-2 rounded-xl bg-brand-gold text-slate-950 font-bold text-xs hover:bg-brand-gold/90 transition flex items-center gap-2 shadow-lg">
+            <span>🔄 模拟重新入库 (Re-ingest 5 条文档)</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Left: Random UUID -->
+          <div class="bg-[#0d1117] p-5 rounded-xl border border-brand-coral/40 space-y-3">
+            <div class="flex justify-between items-center border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-brand-coral">❌ 错误示范：随机 UUID + add()</span>
+              <span id="count-random-uuid" class="text-xs font-mono font-bold px-2 py-0.5 bg-brand-coral/20 text-brand-coral rounded">当前总数: 5 条</span>
+            </div>
+            <pre class="text-[11px] font-mono text-gray-400 bg-[#141b26] p-2.5 rounded border border-[#233044]"><code>collection.add(
+  ids=[<span class="text-brand-coral">str(uuid.uuid4())</span> for _ in docs],
+  documents=docs
+)</code></pre>
+            <div id="uuid-bloat-warning" class="text-xs text-brand-coral space-y-1">
+              <p>每次重新入库都会生成新 UUID，导致向量库严重垃圾膨胀、出现重复冗余召回！</p>
+            </div>
+          </div>
+
+          <!-- Right: Deterministic ID + Upsert -->
+          <div class="bg-[#0d1117] p-5 rounded-xl border border-brand-emerald/40 space-y-3">
+            <div class="flex justify-between items-center border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-brand-emerald">✅ 最佳实践：确定性 ID + upsert()</span>
+              <span id="count-deterministic-id" class="text-xs font-mono font-bold px-2 py-0.5 bg-brand-emerald/20 text-brand-emerald rounded">当前总数: 5 条</span>
+            </div>
+            <pre class="text-[11px] font-mono text-gray-400 bg-[#141b26] p-2.5 rounded border border-[#233044]"><code>collection.<span class="text-brand-emerald">upsert</span>(
+  ids=[<span class="text-brand-emerald">f"{doc.source}::{i}"</span> for i, doc in enumerate(docs)],
+  documents=docs
+)</code></pre>
+            <div class="text-xs text-brand-emerald space-y-1">
+              <p>通过“文件名 + 切块索引”生成确定性 ID，重复执行自动覆盖更新，保持完全幂等！</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part B: 交互式 Chroma Query & where 元数据过滤沙盒 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div>
+          <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+            <span>Part B: 交互式 Chroma Query & where 元数据过滤沙盒</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-brand-violet/20 text-brand-violet border border-brand-violet/30">检索实战</span>
+          </h3>
+          <p class="text-xs text-gray-400 mt-0.5">选择不同预设查询与 where 谓词，观察 Chroma 候选过滤与余弦距离 (dist) 转换为相似度 (1 - dist) 的计算结果。</p>
+        </div>
+
+        <!-- Query & Filter Presets -->
+        <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+          <div class="text-xs font-bold text-gray-300">点击体验 Chroma Query 预设组合：</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" id="chroma-preset-btns">
+            <button data-preset="1" class="btn-chroma-p text-left p-2.5 rounded-lg border border-brand-cyan bg-brand-cyan/10 text-xs font-mono text-brand-cyan">
+              <div class="font-bold">1. 无过滤语义检索</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">query: "我要退钱"</div>
+            </button>
+            <button data-preset="2" class="btn-chroma-p text-left p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-xs font-mono text-gray-300 hover:border-brand-cyan">
+              <div class="font-bold">2. 精确匹配 where</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">where: {"category": "退款"}</div>
+            </button>
+            <button data-preset="3" class="btn-chroma-p text-left p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-xs font-mono text-gray-300 hover:border-brand-cyan">
+              <div class="font-bold">3. 多条件 AND 联合</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">category="退款" & source="policy.md"</div>
+            </button>
+            <button data-preset="4" class="btn-chroma-p text-left p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-xs font-mono text-gray-300 hover:border-brand-cyan">
+              <div class="font-bold">4. 数值比较 $gte</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">where: {"page": {"$gte": 3}}</div>
+            </button>
+            <button data-preset="5" class="btn-chroma-p text-left p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-xs font-mono text-gray-300 hover:border-brand-cyan">
+              <div class="font-bold">5. 集合成员 $in</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">category in ["退款", "发票"]</div>
+            </button>
+            <button data-preset="6" class="btn-chroma-p text-left p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-xs font-mono text-gray-300 hover:border-brand-cyan">
+              <div class="font-bold">6. 排除条件 $ne</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">where: {"category": {"$ne": "其他"}}</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Chroma Query Result Cards -->
+        <div class="space-y-3">
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-gray-400">Chroma Top-3 召回结果 (已计算 Cosine Similarity = 1 - Distance)：</span>
+            <span id="chroma-filtered-count" class="font-mono text-brand-gold">过滤后候选池: 5 / 5 篇</span>
+          </div>
+          <div id="chroma-results-container" class="space-y-2">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Callout comparison cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          <div class="p-4 bg-[#0d1117] rounded-xl border border-[#233044] text-xs space-y-2">
+            <div class="font-bold text-brand-cyan">📌 add() vs upsert() vs update() 区别</div>
+            <ul class="space-y-1 text-gray-400 list-disc list-inside">
+              <li><code class="text-white">add()</code>: ID 存在时抛出 ValueError 终止。</li>
+              <li><code class="text-white">update()</code>: ID 不存在时忽略或报错。</li>
+              <li><code class="text-brand-emerald font-bold">upsert()</code>: 存在则更新，不存在则插入（推荐）。</li>
+            </ul>
+          </div>
+          <div class="p-4 bg-[#0d1117] rounded-xl border border-[#233044] text-xs space-y-2">
+            <div class="font-bold text-brand-gold">📌 Client() vs PersistentClient()</div>
+            <ul class="space-y-1 text-gray-400 list-disc list-inside">
+              <li><code class="text-white">chromadb.Client()</code>: 纯内存运行，进程退出数据清空。</li>
+              <li><code class="text-brand-gold font-bold">chromadb.PersistentClient(path="./chroma_db")</code>: 本地 SQLite + Parquet 自动持久化落盘。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 10.5: 实战演练 —— 标题路径切块 + 语义/关键词/混合检索对决台 -->
+    <section id="module-10-5" class="space-y-8 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-4">
+        <h2 class="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+          <span class="text-brand-cyan font-mono">10.5</span> 实战演练 —— 标题路径切块 + 语义/关键词/混合检索对决台
+        </h2>
+        <p class="text-gray-400 text-sm mt-1">对比朴素切块与标题路径增强切块，并在 5 大典型 Query 下对决 BM25 关键词检索、Embedding 语义检索与 RRF 混合检索。</p>
+      </div>
+
+      <!-- Part A: 标题路径切块器 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+              <span>Part A: 标题路径附加切块器 (Heading-Aware Chunking)</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-brand-emerald/20 text-brand-emerald border border-brand-emerald/30">切块优化</span>
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">防止子段落离开上下文后丧失主旨语义（如孤立的“需要保持商品完好”不知道属于哪个退款政策）。</p>
+          </div>
+          <div class="flex gap-2">
+            <button id="btn-chunk-naive" class="px-3 py-1.5 rounded-lg border border-[#233044] bg-[#0d1117] text-gray-400 text-xs hover:text-white transition">
+              ❌ 朴素切块 (孤立段落)
+            </button>
+            <button id="btn-chunk-heading" class="px-3 py-1.5 rounded-lg border border-brand-emerald bg-brand-emerald/20 text-brand-emerald font-bold text-xs shadow-lg transition">
+              ✅ 标题路径附加切块
+            </button>
+          </div>
+        </div>
+
+        <div id="chunk-preview-container" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Dynamically filled with 3 doc chunk examples -->
+        </div>
+      </div>
+
+      <!-- Part B: 语义检索 vs 关键词检索 vs 混合检索对决台 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div>
+          <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+            <span>Part B: 检索三大模式对决台 (Keyword vs Semantic vs Hybrid)</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-brand-gold/20 text-brand-gold border border-brand-gold/30">PK 对决</span>
+          </h3>
+          <p class="text-xs text-gray-400 mt-0.5">选择代表性查询，拖动 Alpha 权重滑动条，观测三路检索 Top-3 结果与得分变化。</p>
+        </div>
+
+        <!-- 5 Clickable Preset Queries -->
+        <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+          <div class="text-xs font-bold text-gray-300">点击选择测试 Query (体验不同检索模式盲区)：</div>
+          <div class="flex flex-wrap gap-2" id="pk-query-btns">
+            <button data-pk="1" class="btn-pk-q px-3 py-2 rounded-lg border border-brand-gold bg-brand-gold/10 text-brand-gold text-xs font-semibold">
+              1. "我不想要了能退钱吗" <span class="text-[10px] text-gray-400">(无关键词重叠 · 语义胜出)</span>
+            </button>
+            <button data-pk="2" class="btn-pk-q px-3 py-2 rounded-lg border border-[#233044] bg-[#141b26] text-gray-300 text-xs hover:border-brand-gold">
+              2. "买了东西想退掉，有时间限制吗"
+            </button>
+            <button data-pk="3" class="btn-pk-q px-3 py-2 rounded-lg border border-[#233044] bg-[#141b26] text-gray-300 text-xs hover:border-brand-gold">
+              3. "发票抬头写错了能改吗"
+            </button>
+            <button data-pk="4" class="btn-pk-q px-3 py-2 rounded-lg border border-[#233044] bg-[#141b26] text-gray-300 text-xs hover:border-brand-gold">
+              4. "积分怎么用"
+            </button>
+            <button data-pk="5" class="btn-pk-q px-3 py-2 rounded-lg border border-[#233044] bg-[#141b26] text-gray-300 text-xs hover:border-brand-gold">
+              5. "订单号 ORD-20260918 错误码 ERR-5042" <span class="text-[10px] text-brand-coral font-bold">(精确编码 · 语义盲区 · 关键词胜出)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Hybrid Search Alpha Slider -->
+        <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-2">
+          <div class="flex justify-between items-center text-xs font-mono">
+            <span class="text-gray-300">混合检索融合 Alpha (α): <span class="text-gray-500 font-sans">(Score = α × Vector + (1-α) × BM25)</span></span>
+            <span id="val-alpha" class="text-brand-gold font-bold">0.50 (各占 50%)</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <span class="text-[11px] font-mono text-brand-cyan">0.0 (纯 BM25)</span>
+            <input type="range" id="slider-alpha" min="0.0" max="1.0" step="0.05" value="0.50" class="w-full accent-brand-gold bg-gray-700 h-2 rounded cursor-pointer">
+            <span class="text-[11px] font-mono text-brand-violet">1.0 (纯 向量)</span>
+          </div>
+        </div>
+
+        <!-- Side-by-side Top-3 Cards Comparison -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <!-- Column 1: BM25 Keyword -->
+          <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+            <div class="flex items-center justify-between border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-brand-cyan">🔤 BM25 关键词检索</span>
+              <span class="text-[10px] text-gray-500">精确字词匹配</span>
+            </div>
+            <div id="pk-res-bm25" class="space-y-2 text-xs">
+              <!-- Dynamically rendered -->
+            </div>
+          </div>
+
+          <!-- Column 2: Embedding Vector -->
+          <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-3">
+            <div class="flex items-center justify-between border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-brand-violet">🧠 Embedding 语义检索</span>
+              <span class="text-[10px] text-gray-500">泛化同义词识别</span>
+            </div>
+            <div id="pk-res-vector" class="space-y-2 text-xs">
+              <!-- Dynamically rendered -->
+            </div>
+          </div>
+
+          <!-- Column 3: Hybrid Search Winner -->
+          <div class="bg-[#0d1117] p-4 rounded-xl border-2 border-brand-gold space-y-3 glow-gold">
+            <div class="flex items-center justify-between border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-brand-gold">⚡ 混合检索 (Hybrid RRF / Fusion)</span>
+              <span class="text-[10px] text-brand-gold font-bold">最终推荐召回</span>
+            </div>
+            <div id="pk-res-hybrid" class="space-y-2 text-xs">
+              <!-- Dynamically rendered -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 10.6: Python 实战代码库、5 题互动测验与 11 条核心总结 -->
+    <section id="module-10-6" class="space-y-8 scroll-mt-20">
+      <div class="border-b border-[#233044] pb-4">
+        <h2 class="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+          <span class="text-brand-violet font-mono">10.6</span> Python 实战代码库、5 题互动测验与 11 条核心总结
+        </h2>
+        <p class="text-gray-400 text-sm mt-1">打包完整的 Python 工程源码，通过交互测试检验掌握程度。</p>
+      </div>
+
+      <!-- Part A: Python 实战代码库 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <h3 class="text-lg font-semibold text-white">Part A: 模块化 Python 实战源码</h3>
+          <!-- Code Tabs -->
+          <div class="flex flex-wrap gap-1 bg-[#0d1117] p-1 rounded-xl border border-[#233044]" id="code-tabs">
+            <button data-code="1" class="tab-code px-3 py-1 rounded-lg text-xs font-mono bg-brand-violet text-slate-950 font-bold">similarity_metrics.py</button>
+            <button data-code="2" class="tab-code px-3 py-1 rounded-lg text-xs font-mono text-gray-400 hover:text-white">batch_embedding.py</button>
+            <button data-code="3" class="tab-code px-3 py-1 rounded-lg text-xs font-mono text-gray-400 hover:text-white">chroma_crud.py</button>
+            <button data-code="4" class="tab-code px-3 py-1 rounded-lg text-xs font-mono text-gray-400 hover:text-white">playground_ch10.py</button>
+          </div>
+        </div>
+
+        <div class="relative bg-[#0d1117] rounded-xl border border-[#233044] p-4 font-mono text-xs overflow-x-auto">
+          <button id="btn-copy-code" class="absolute top-3 right-3 px-3 py-1 rounded bg-[#141b26] border border-[#233044] text-gray-300 hover:text-white text-[11px] transition">
+            📋 复制代码
+          </button>
+          <pre id="code-display-area" class="text-gray-300 leading-relaxed"><code># 1. similarity_metrics.py
+import numpy as np
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """计算两个向量的余弦相似度 [-1, 1]"""
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return float(np.dot(a, b) / (norm_a * norm_b))
+
+def dot_product(a: np.ndarray, b: np.ndarray) -> float:
+    """计算点积/内积"""
+    return float(np.dot(a, b))
+
+def euclidean_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """计算欧氏距离 [0, +inf]"""
+    return float(np.linalg.norm(a - b))
+
+def l2_normalize(vec: np.ndarray) -> np.ndarray:
+    """L2 归一化：使向量模长为 1"""
+    norm = np.linalg.norm(vec)
+    if norm == 0:
+        return vec
+    return vec / norm
+
+# 验证恒等式: L2 归一化后 dot == cosine
+v1 = np.array([1.0, 2.0, 3.0])
+v2 = np.array([4.0, 1.0, 0.5])
+n1, n2 = l2_normalize(v1), l2_normalize(v2)
+
+print(f"Cosine: {cosine_similarity(v1, v2):.4f}")
+print(f"Normalized Dot: {dot_product(n1, n2):.4f}")  # 完全相同！</code></pre>
+        </div>
+      </div>
+
+      <!-- Part B: 5 题互动测验 -->
+      <div class="rounded-2xl bg-[#141b26] border border-[#233044] p-6 space-y-6">
+        <div>
+          <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+            <span>Part B: 5 题互动强化测验</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-brand-gold/20 text-brand-gold border border-brand-gold/30">知识巩固</span>
+          </h3>
+          <p class="text-xs text-gray-400 mt-0.5">测试您对向量归一化、静默截断、Chroma 机制及混合检索的理解。</p>
+        </div>
+
+        <div class="space-y-6" id="quiz-container">
+          <!-- Quiz items dynamically initialized -->
+        </div>
+      </div>
+
+      <!-- Part C: 11 条核心总结 Grid -->
+      <div class="space-y-4">
+        <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+          <span>Part C: 第 10 章 11 条核心知识点金句总结</span>
+        </h3>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-cyan">1. 向量即语义</div>
+            <p class="text-gray-400 text-[11px]">Embedding 将高维高熵的自然语言文本映射为稠密浮点数向量，捕捉深层语义。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-gold">2. L2 归一化神奇简化</div>
+            <p class="text-gray-400 text-[11px]">向量归一化后，内积、余弦相似度与欧氏距离互相推导，内积计算最省硬件。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-coral">3. 警惕静默截断</div>
+            <p class="text-gray-400 text-[11px]"> Embedding 模型超出 max_seq_length 时通常静默切断，务必在入库前切分适当 Chunk。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-violet">4. 模型元数据锁</div>
+            <p class="text-gray-400 text-[11px]">同一个向量数据库索引内绝对不能混用不同模型，换模型必须全量重建索引。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-emerald">5. HNSW 分层图巅峰</div>
+            <p class="text-gray-400 text-[11px]">以 O(log N) 时间提供 95%~99% 召回率，是目前综合性能最强的高维 ANN 索引。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-cyan">6. 幂等性依赖确定性 ID</div>
+            <p class="text-gray-400 text-[11px]">采用 <code class="bg-[#0d1117] px-1 rounded">filename::chunk_idx</code> 确定性 ID 配合 <code class="bg-[#0d1117] px-1 rounded">upsert()</code> 才能保障重新入库不膨胀。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-gold">7. Chroma Cosine 转换</div>
+            <p class="text-gray-400 text-[11px]">Chroma 返回的是余弦距离 dist (1 - cos)，转化为相似度需做 <code class="bg-[#0d1117] px-1 rounded">1 - dist</code>。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-emerald">8. 标题路径前缀切块</div>
+            <p class="text-gray-400 text-[11px]">给段落带上 <code class="bg-[#0d1117] px-1 rounded"># 一级标题 / ## 二级标题</code> 上下文，彻底解决切块语义碎片化。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-violet">9. 向量检索的四大盲区</div>
+            <p class="text-gray-400 text-[11px]">订单号/错误码、否定句、专有名词缩写、长数字精确匹配是向量检索的天然短板。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-brand-coral">10. 混合检索 (Hybrid) 是终点</div>
+            <p class="text-gray-400 text-[11px]">BM25 关键词匹配与 Vector 语义匹配结合（RRF 融合），覆盖 99% 以上真实搜索痛点。</p>
+          </div>
+          <div class="p-3.5 bg-[#141b26] rounded-xl border border-[#233044] text-xs space-y-1">
+            <div class="font-bold text-white">11. 为第 11 章 RAG 筑基</div>
+            <p class="text-gray-400 text-[11px]">高效高质量的 Chunking + Embedding + Hybrid Search，是后续构建零幻觉 RAG 的基石。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-[#233044] bg-[#0d1117] py-8 text-center text-xs text-gray-500">
+    <div class="max-w-7xl mx-auto px-4">
+      <p>LLM Agent 架构师实战教程 · 第 10 章：Embeddings 与向量数据库</p>
+      <p class="mt-1">设计风格遵循 3Blue1Brown 深度数学可视化工程美学</p>
+    </div>
+  </footer>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // --- GLOBAL RETINA CANVAS RESIZING HELPER ---
+    function setupRetinaCanvas(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width: rect.width, height: rect.height };
+    }
+
+    // --- MODULE 10.1 PART A: 2D SCATTER PLOT ---
+    const scatterDocs = [
+      { id: 0, text: "退款需要什么条件", cat: "退款", color: "#58c4dd", x: 0.25, y: 0.35, vec: [0.82, 0.15, -0.42, 0.31] },
+      { id: 1, text: "怎么申请退货", cat: "退款", color: "#58c4dd", x: 0.32, y: 0.28, vec: [0.79, 0.18, -0.39, 0.28] },
+      { id: 2, text: "退货商品需保持完好", cat: "退款", color: "#58c4dd", x: 0.22, y: 0.45, vec: [0.75, 0.22, -0.45, 0.35] },
+      { id: 3, text: "发票怎么开", cat: "发票/会员", color: "#f0b429", x: 0.72, y: 0.25, vec: [-0.12, 0.88, 0.31, -0.05] },
+      { id: 4, text: "修改发票抬头", cat: "发票/会员", color: "#f0b429", x: 0.78, y: 0.35, vec: [-0.15, 0.85, 0.28, -0.02] },
+      { id: 5, text: "会员积分怎么兑换", cat: "发票/会员", color: "#f0b429", x: 0.65, y: 0.42, vec: [-0.08, 0.76, 0.45, 0.12] },
+      { id: 6, text: "今天天气真好", cat: "杂项", color: "#c084fc", x: 0.45, y: 0.80, vec: [0.05, -0.12, 0.92, 0.33] },
+      { id: 7, text: "股票市场大跌", cat: "杂项", color: "#c084fc", x: 0.52, y: 0.85, vec: [-0.22, 0.05, 0.88, -0.41] },
+      { id: 8, text: "这只猫很可爱", cat: "杂项", color: "#c084fc", x: 0.38, y: 0.75, vec: [0.12, 0.08, 0.75, 0.62] }
+    ];
+
+    let selectedNodeId = 0;
+    let hoverNodeId = null;
+
+    function calcCosineSim(v1, v2) {
+      let dot = 0, n1 = 0, n2 = 0;
+      for (let i = 0; i < v1.length; i++) {
+        dot += v1[i] * v2[i];
+        n1 += v1[i] * v1[i];
+        n2 += v2[i] * v2[i];
+      }
+      return dot / (Math.sqrt(n1) * Math.sqrt(n2));
+    }
+
+    function renderScatterCanvas() {
+      const canvas = document.getElementById('canvas-2d-scatter');
+      if (!canvas) return;
+      const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Grid background
+      ctx.strokeStyle = '#233044';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      for (let x = 40; x < width; x += 60) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+      }
+      for (let y = 40; y < height; y += 60) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      const activeId = hoverNodeId !== null ? hoverNodeId : selectedNodeId;
+      const activeNode = scatterDocs[activeId];
+
+      // Draw glowing connection lines to all other nodes
+      scatterDocs.forEach((doc) => {
+        if (doc.id === activeId) return;
+        const sim = calcCosineSim(activeNode.vec, doc.vec);
+        const x1 = activeNode.x * width, y1 = activeNode.y * height;
+        const x2 = doc.x * width, y2 = doc.y * height;
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+
+        if (sim > 0.7) {
+          ctx.strokeStyle = '#58c4dd';
+          ctx.lineWidth = 2;
+        } else if (sim > 0.3) {
+          ctx.strokeStyle = '#f0b429';
+          ctx.lineWidth = 1;
+        } else {
+          ctx.strokeStyle = 'rgba(35, 48, 68, 0.4)';
+          ctx.lineWidth = 0.5;
+        }
+        ctx.stroke();
+
+        // Similarity Badge
+        if (sim > 0.3) {
+          const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+          ctx.fillStyle = '#0d1117';
+          ctx.fillRect(mx - 18, my - 9, 36, 18);
+          ctx.strokeStyle = '#233044';
+          ctx.strokeRect(mx - 18, my - 9, 36, 18);
+          ctx.fillStyle = sim > 0.7 ? '#58c4dd' : '#f0b429';
+          ctx.font = '10px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(sim.toFixed(2), mx, my + 3);
+        }
+      });
+
+      // Draw Nodes
+      scatterDocs.forEach((doc) => {
+        const nx = doc.x * width, ny = doc.y * height;
+        const isSelected = doc.id === activeId;
+
+        if (isSelected) {
+          ctx.beginPath();
+          ctx.arc(nx, ny, 16, 0, Math.PI * 2);
+          ctx.fillStyle = doc.color + '33';
+          ctx.fill();
+        }
+
+        ctx.beginPath();
+        ctx.arc(nx, ny, isSelected ? 9 : 6, 0, Math.PI * 2);
+        ctx.fillStyle = doc.color;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = isSelected ? 2 : 1;
+        ctx.stroke();
+
+        // Label
+        ctx.font = isSelected ? 'bold 12px Inter, sans-serif' : '11px Inter, sans-serif';
+        ctx.fillStyle = isSelected ? '#ffffff' : '#94a3b8';
+        ctx.textAlign = 'center';
+        ctx.fillText(doc.text, nx, ny - 14);
+      });
+    }
+
+    function updateScatterSidebar(id) {
+      const doc = scatterDocs[id];
+      document.getElementById('selected-node-category').innerText = doc.cat;
+      document.getElementById('selected-node-category').style.color = doc.color;
+      document.getElementById('selected-node-text').innerText = `"${doc.text}"`;
+      document.getElementById('selected-node-vector').innerText = `[${doc.vec.map(n => n.toFixed(2)).join(', ')}]`;
+
+      // Top 3 similar
+      const simList = scatterDocs
+        .filter(d => d.id !== id)
+        .map(d => ({ text: d.text, sim: calcCosineSim(doc.vec, d.vec), color: d.color }))
+        .sort((a, b) => b.sim - a.sim);
+
+      const topSimHtml = simList.slice(0, 3).map(item => `
+        <div class="flex justify-between items-center bg-[#141b26] p-2 rounded border border-[#233044]">
+          <span class="truncate pr-2">${item.text}</span>
+          <span class="font-mono font-bold" style="color: ${item.color}">${(item.sim * 100).toFixed(1)}%</span>
+        </div>
+      `).join('');
+
+      document.getElementById('top-sim-list').innerHTML = topSimHtml;
+    }
+
+    // --- MODULE 10.1 PART B: 2D GEOMETRY LAB ---
+    let isL2Normalized = false;
+
+    function renderGeomMetricsCanvas() {
+      const canvas = document.getElementById('canvas-geom-metrics');
+      if (!canvas) return;
+      const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+      const d1Scale = parseFloat(document.getElementById('slider-d1-scale').value);
+      const d2AngleDeg = parseFloat(document.getElementById('slider-d2-angle').value);
+
+      document.getElementById('val-d1-scale').innerText = `${d1Scale.toFixed(1)} x`;
+      document.getElementById('val-d2-angle').innerText = `${d2AngleDeg}°`;
+
+      ctx.clearRect(0, 0, width, height);
+      const originX = width * 0.2, originY = height * 0.8;
+      const scale = width * 0.22;
+
+      // Vectors base
+      let q = [1.0, 0.3];
+      let d1 = [1.0 * d1Scale, 0.3 * d1Scale];
+
+      const rad = (d2AngleDeg * Math.PI) / 180;
+      // rotate q by rad
+      const cosRad = Math.cos(rad), sinRad = Math.sin(rad);
+      let d2 = [q[0] * cosRad - q[1] * sinRad, q[0] * sinRad + q[1] * cosRad];
+      d2[0] *= 1.8; d2[1] *= 1.8;
+
+      if (isL2Normalized) {
+        const nq = Math.sqrt(q[0]*q[0] + q[1]*q[1]);
+        q = [q[0]/nq, q[1]/nq];
+        const nd1 = Math.sqrt(d1[0]*d1[0] + d1[1]*d1[1]);
+        d1 = [d1[0]/nd1, d1[1]/nd1];
+        const nd2 = Math.sqrt(d2[0]*d2[0] + d2[1]*d2[1]);
+        d2 = [d2[0]/nd2, d2[1]/nd2];
+      }
+
+      // Draw Unit Circle if L2 enabled
+      if (isL2Normalized) {
+        ctx.beginPath();
+        ctx.arc(originX, originY, scale, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(88, 196, 221, 0.3)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(88, 196, 221, 0.05)';
+        ctx.fill();
+
+        ctx.fillStyle = '#58c4dd';
+        ctx.font = '10px monospace';
+        ctx.fillText('单位圆 R = 1.0', originX + scale + 5, originY);
+      }
+
+      // Axes
+      ctx.strokeStyle = '#233044';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(originX, 0); ctx.lineTo(originX, height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, originY); ctx.lineTo(width, originY); ctx.stroke();
+
+      function drawVector(vec, color, label) {
+        const tx = originX + vec[0] * scale;
+        const ty = originY - vec[1] * scale;
+
+        ctx.beginPath();
+        ctx.moveTo(originX, originY);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Arrow head
+        const angle = Math.atan2(originY - ty, tx - originX);
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx - 8 * Math.cos(angle - Math.PI / 6), ty + 8 * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(tx - 8 * Math.cos(angle + Math.PI / 6), ty + 8 * Math.sin(angle + Math.PI / 6));
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        ctx.font = 'bold 12px Inter, sans-serif';
+        ctx.fillText(label, tx + 8, ty);
+      }
+
+      drawVector(q, '#58c4dd', 'q (Query)');
+      drawVector(d1, '#f0b429', 'd1 (Doc 1)');
+      drawVector(d2, '#c084fc', 'd2 (Doc 2)');
+
+      // Update Table
+      const cosD1 = calcCosineSim(q, d1);
+      const cosD2 = calcCosineSim(q, d2);
+      const dotD1 = q[0]*d1[0] + q[1]*d1[1];
+      const dotD2 = q[0]*d2[0] + q[1]*d2[1];
+      const eucD1 = Math.sqrt((q[0]-d1[0])**2 + (q[1]-d1[1])**2);
+      const eucD2 = Math.sqrt((q[0]-d2[0])**2 + (q[1]-d2[1])**2);
+
+      document.getElementById('m-cos-d1').innerText = cosD1.toFixed(3);
+      document.getElementById('m-cos-d2').innerText = cosD2.toFixed(3);
+      document.getElementById('m-dot-d1').innerText = dotD1.toFixed(3);
+      document.getElementById('m-dot-d2').innerText = dotD2.toFixed(3);
+      document.getElementById('m-euc-d1').innerText = eucD1.toFixed(3);
+      document.getElementById('m-euc-d2').innerText = eucD2.toFixed(3);
+    }
+
+    // --- MODULE 10.2 PART A: SILENT TRUNCATION SIMULATOR ---
+    let currentMaxSeq = 512;
+
+    function renderTruncationSimulator() {
+      const numTokens = parseInt(document.getElementById('slider-trunc-tokens').value);
+      document.getElementById('trunc-token-count').innerText = `${numTokens} Tokens`;
+
+      const alertBox = document.getElementById('trunc-alert-box');
+      const container = document.getElementById('token-stream-container');
+
+      if (numTokens > currentMaxSeq) {
+        const overflow = numTokens - currentMaxSeq;
+        const pct = ((overflow / numTokens) * 100).toFixed(1);
+        alertBox.className = 'p-3 rounded-lg border bg-brand-coral/10 border-brand-coral/30 text-xs text-brand-coral flex items-center justify-between';
+        alertBox.innerHTML = `<span class="font-bold">⚠️ 超出模型上限限制 (${numTokens} &gt; ${currentMaxSeq} Tokens)</span><span>将被静默截断 ${overflow} 个 Tokens (约 ${pct}%)</span>`;
+        document.getElementById('trunc-percent-label').innerText = `前 ${currentMaxSeq} 编码 / 后 ${overflow} 丢弃`;
+      } else {
+        alertBox.className = 'p-3 rounded-lg border bg-brand-emerald/10 border-brand-emerald/30 text-xs text-brand-emerald flex items-center justify-between';
+        alertBox.innerHTML = `<span class="font-bold">✅ 未超出模型限制 (${numTokens} ≤ ${currentMaxSeq} Tokens)</span><span>全量文本均参与向量化计算</span>`;
+        document.getElementById('trunc-percent-label').innerText = `全量 ${numTokens} Tokens 均有效`;
+      }
+
+      // Generate visual tokens
+      let html = '';
+      const sampleWords = ["退款", "政策", "规定", "商品", "需", "保持", "完好", "包含", "原装", "包装", "标签", "以及", "发票", "支持", "7天", "无理由", "退换", "超时", "不予", "受理"];
+      
+      for (let i = 1; i <= numTokens; i++) {
+        const word = sampleWords[i % sampleWords.length];
+        if (i <= currentMaxSeq) {
+          html += `<span class="px-1.5 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30 text-[10px]" title="Token #${i}">${word}</span>`;
+        } else {
+          html += `<span class="px-1.5 py-0.5 rounded bg-brand-coral/20 text-brand-coral/60 border border-brand-coral/30 line-through text-[10px]" title="Token #${i} (被丢弃)">${word}</span>`;
+        }
+      }
+      container.innerHTML = html;
+    }
+
+    // --- MODULE 10.2 PART B: BATCH PIPELINE SIMULATION ---
+    let currentBatchSize = 32;
+
+    function runBatchSimulation() {
+      const total = 100;
+      let processed = 0;
+      const pBar = document.getElementById('batch-progress-bar');
+      const pText = document.getElementById('batch-progress-text');
+      const numBatches = Math.ceil(total / currentBatchSize);
+      
+      document.getElementById('batch-num-batches').innerText = `${numBatches} 批次`;
+      document.getElementById('batch-ram-usage').innerText = `~${(currentBatchSize * 0.038).toFixed(1)} GB`;
+
+      const interval = setInterval(() => {
+        processed += currentBatchSize;
+        if (processed >= total) {
+          processed = total;
+          clearInterval(interval);
+        }
+        const pct = (processed / total) * 100;
+        pBar.style.width = `${pct}%`;
+        pText.innerText = `${processed} / ${total} 篇`;
+      }, 300);
+    }
+
+    // --- MODULE 10.3 PART A: NUMPY BRUTE FORCE CALCULATOR ---
+    function updateNumPyCalc() {
+      const N = parseInt(document.getElementById('slider-calc-n').value);
+      const d = parseInt(document.getElementById('calc-val-d').getAttribute('data-dim') || 1536);
+
+      document.getElementById('calc-val-n').innerText = `${N.toLocaleString()} 条`;
+
+      const ramBytes = N * d * 4;
+      const ramGB = (ramBytes / (1024 ** 3)).toFixed(2);
+      document.getElementById('calc-res-ram').innerText = `${ramGB} GB`;
+
+      // Latency estimation
+      const latencyMs = Math.round((N * d * 0.00000012));
+      document.getElementById('calc-res-latency').innerText = `~${latencyMs} ms`;
+    }
+
+    // --- MODULE 10.3 PART B: FOUR INDEX PRINCIPLES THEATER ---
+    let activeIndexType = 'hnsw';
+    let hnswAnimStep = 0;
+    let isAnimatingHnsw = false;
+
+    function renderIndexTheaterCanvas() {
+      const canvas = document.getElementById('canvas-index-theater');
+      if (!canvas) return;
+      const { ctx, width, height } = setupRetinaCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      if (activeIndexType === 'flat') {
+        // Flat Index: Scan all points
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.fillText('Flat (IndexFlatL2 / Cosine): 逐节点 100% 穷举对比', 20, 30);
+
+        for (let i = 0; i < 70; i++) {
+          const x = (Math.sin(i * 17) * 0.4 + 0.5) * width;
+          const y = (Math.cos(i * 23) * 0.4 + 0.5) * height;
+
+          ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#ff6b6b'; ctx.fill();
+        }
+        // Target Query
+        ctx.beginPath(); ctx.arc(width * 0.5, height * 0.5, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#58c4dd'; ctx.fill();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#ffffff'; ctx.fillText('Query', width * 0.5 + 12, height * 0.5 + 4);
+
+      } else if (activeIndexType === 'hnsw') {
+        // HNSW: 3 Layers isometric visual
+        ctx.fillStyle = '#4ade80';
+        ctx.font = 'bold 12px Inter, sans-serif';
+        ctx.fillText('HNSW: 分层图跳跃路径 (Layer 2 -> Layer 1 -> Layer 0)', 20, 25);
+
+        const layers = [
+          { y: height * 0.25, name: "Layer 2 (入口稀疏层)", color: "#ff6b6b" },
+          { y: height * 0.55, name: "Layer 1 (过渡中速层)", color: "#f0b429" },
+          { y: height * 0.85, name: "Layer 0 (底层密集全量图)", color: "#58c4dd" }
+        ];
+
+        layers.forEach((ly) => {
+          ctx.strokeStyle = 'rgba(35, 48, 68, 0.6)';
+          ctx.beginPath(); ctx.moveTo(40, ly.y); ctx.lineTo(width - 40, ly.y); ctx.stroke();
+          ctx.fillStyle = '#64748b'; ctx.font = '10px monospace';
+          ctx.fillText(ly.name, 40, ly.y - 8);
+        });
+
+        // Path Nodes
+        const path = [
+          { x: width * 0.15, y: layers[0].y },
+          { x: width * 0.45, y: layers[0].y },
+          { x: width * 0.45, y: layers[1].y },
+          { x: width * 0.72, y: layers[1].y },
+          { x: width * 0.72, y: layers[2].y },
+          { x: width * 0.80, y: layers[2].y }
+        ];
+
+        // Draw connections
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        for (let i = 0; i <= hnswAnimStep && i < path.length; i++) {
+          if (i === 0) ctx.moveTo(path[i].x, path[i].y);
+          else ctx.lineTo(path[i].x, path[i].y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw HNSW Nodes
+        path.forEach((pt, idx) => {
+          if (idx <= hnswAnimStep) {
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = idx === path.length - 1 ? '#4ade80' : '#f0b429';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff'; ctx.stroke();
+          }
+        });
+
+      } else if (activeIndexType === 'ivf') {
+        // IVF Voronoi Clusters
+        const nprobe = parseInt(document.getElementById('slider-nprobe').value);
+        ctx.fillStyle = '#f0b429';
+        ctx.font = 'bold 12px Inter, sans-serif';
+        ctx.fillText(`IVF: K-Means 质心划分 (nprobe = ${nprobe} 探查簇)`, 20, 25);
+
+        const centroids = [
+          { x: width * 0.25, y: height * 0.35, id: 1 },
+          { x: width * 0.70, y: height * 0.30, id: 2 },
+          { x: width * 0.35, y: height * 0.75, id: 3 },
+          { x: width * 0.75, y: height * 0.75, id: 4 }
+        ];
+
+        centroids.forEach((c, i) => {
+          const isProbed = i < nprobe;
+          ctx.beginPath(); ctx.arc(c.x, c.y, 45, 0, Math.PI * 2);
+          ctx.fillStyle = isProbed ? 'rgba(240, 180, 41, 0.15)' : 'rgba(35, 48, 68, 0.2)';
+          ctx.fill();
+          ctx.strokeStyle = isProbed ? '#f0b429' : '#233044';
+          ctx.stroke();
+
+          ctx.beginPath(); ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
+          ctx.fillStyle = isProbed ? '#f0b429' : '#64748b';
+          ctx.fill();
+          ctx.fillStyle = '#ffffff'; ctx.font = '10px monospace';
+          ctx.fillText(`Cluster #${c.id}`, c.x - 24, c.y - 12);
+        });
+
+      } else if (activeIndexType === 'pq') {
+        // PQ Product Quantization
+        ctx.fillStyle = '#c084fc';
+        ctx.font = 'bold 12px Inter, sans-serif';
+        ctx.fillText('PQ: 向量切分与码本量化压缩 (3,072 Bytes → 96 Bytes)', 20, 25);
+
+        ctx.strokeStyle = '#233044';
+        ctx.strokeRect(40, 70, width - 80, 50);
+        ctx.fillStyle = '#141b26'; ctx.fillRect(40, 70, width - 80, 50);
+
+        ctx.fillStyle = '#e2e8f0'; ctx.font = '11px monospace';
+        ctx.fillText('原始 768 维 Float32 向量: [0.24, -0.85, 0.41, ..., 0.12]', 55, 100);
+
+        // Arrows to Sub-vectors
+        ctx.fillStyle = '#c084fc';
+        ctx.fillText('↓ 切分为 8 个 96 维子向量，分别匹配量化码本 (Codebook) ID', 55, 160);
+
+        ctx.strokeStyle = '#c084fc';
+        ctx.strokeRect(40, 180, width - 80, 40);
+        ctx.fillStyle = '#c084fc22'; ctx.fillRect(40, 180, width - 80, 40);
+        ctx.fillStyle = '#c084fc'; ctx.font = 'bold 12px monospace';
+        ctx.fillText('压缩后 Byte 数组: [ #42,  #18,  #205,  #99,  #12,  #87,  #03,  #156 ]', 55, 205);
+      }
+    }
+
+    // Update Index Desc
+    const idxDescMap = {
+      flat: {
+        title: "Flat (IndexFlatL2 / Cosine)",
+        summary: "暴力精确搜索。不创建任何额外索引结构，每次 Query 与数据集中所有向量计算点积/欧氏距离。",
+        time: "O(N · d)", recall: "100% (绝对精确)", memory: "极低 (无额外开销)"
+      },
+      hnsw: {
+        title: "HNSW (分层可导航小世界图)",
+        summary: "基于 SkipList 与 Small-World Graph 的分层图。顶部稀疏层快速定位，逐层向下精细匹配，性能综合第一。",
+        time: "O(log N)", recall: "95% ~ 99%", memory: "较高 (存储多层图结构边)"
+      },
+      ivf: {
+        title: "IVF (Inverted File Index 倒排索引)",
+        summary: "利用 K-Means 将向量空间划分为 K 个聚类簇。查询时通过 nprobe 只搜最近的少数几个簇，大幅缩小扫描范围。",
+        time: "O(N/K · d)", recall: "85% ~ 95%", memory: "中等 (存储聚类中心)"
+      },
+      pq: {
+        title: "PQ (Product Quantization 乘积量化)",
+        summary: "将高维向量切分为 M 个低维子向量，并映射为量化 Codebook 聚类 ID。实现高达 32x~64x 的极致内存压缩。",
+        time: "O(N · M)", recall: "75% ~ 90%", memory: "极低 (32x 极致压缩)"
+      }
+    };
+
+    function updateIndexInfo(type) {
+      const data = idxDescMap[type];
+      document.getElementById('idx-title').innerText = data.title;
+      document.getElementById('idx-summary').innerText = data.summary;
+      document.getElementById('idx-time').innerText = data.time;
+      document.getElementById('idx-recall').innerText = data.recall;
+      document.getElementById('idx-memory').innerText = data.memory;
+
+      document.getElementById('hnsw-controls').classList.toggle('hidden', type !== 'hnsw');
+      document.getElementById('ivf-controls').classList.toggle('hidden', type !== 'ivf');
+    }
+
+    // --- MODULE 10.4 PART A: RE-INGEST IDEMPOTENCY ---
+    let reingestCount = 1;
+
+    function runReingestExperiment() {
+      reingestCount++;
+      const randTotal = reingestCount * 5;
+      document.getElementById('count-random-uuid').innerText = `当前总数: ${randTotal} 条`;
+      document.getElementById('count-deterministic-id').innerText = `当前总数: 5 条`;
+
+      const warning = document.getElementById('uuid-bloat-warning');
+      warning.innerHTML = `<p class="font-bold">⚠️ 警告：已重复入库 ${reingestCount} 次！</p><p>随机 UUID 已导致向量库严重膨胀，产生 ${randTotal - 5} 条垃圾重复召回。</p>`;
+    }
+
+    // --- MODULE 10.4 PART B: CHROMA QUERY SANDBOX ---
+    const chromaDocs = [
+      { id: "policy.md::0", text: "退款政策：商品无质量问题退货需在 7 天内提出申请。", cat: "退款", source: "policy.md", page: 1, dist: 0.12 },
+      { id: "policy.md::1", text: "退款细则：退款需商品保持完好，包含原包装与发票。", cat: "退款", source: "policy.md", page: 2, dist: 0.18 },
+      { id: "faq.md::0", text: "发票常见问题：可在订单完成后 30 天内开具增值税电子发票。", cat: "发票", source: "faq.md", page: 3, dist: 0.65 },
+      { id: "faq.md::1", text: "修改抬头：发票开具后如需修改抬头，请联系客户人工核对。", cat: "发票", source: "faq.md", page: 4, dist: 0.72 },
+      { id: "misc.md::0", text: "会员权益：每消费 1 元可积 1 分，积分可用于兑换折扣券。", cat: "其他", source: "misc.md", page: 5, dist: 0.88 }
+    ];
+
+    function renderChromaResults(presetId) {
+      let filtered = [...chromaDocs];
+      
+      if (presetId === 2) filtered = filtered.filter(d => d.cat === "退款");
+      else if (presetId === 3) filtered = filtered.filter(d => d.cat === "退款" && d.source === "policy.md");
+      else if (presetId === 4) filtered = filtered.filter(d => d.page >= 3);
+      else if (presetId === 5) filtered = filtered.filter(d => ["退款", "发票"].includes(d.cat));
+      else if (presetId === 6) filtered = filtered.filter(d => d.cat !== "其他");
+
+      document.getElementById('chroma-filtered-count').innerText = `过滤后候选池: ${filtered.length} / 5 篇`;
+
+      const container = document.getElementById('chroma-results-container');
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="p-4 text-center text-gray-500 italic bg-[#0d1117] rounded-xl border border-[#233044]">无符合 where 条件的文档被召回</div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.slice(0, 3).map((d, i) => {
+        const sim = (1 - d.dist).toFixed(3);
+        const simPct = ((1 - d.dist) * 100).toFixed(1);
+        return `
+          <div class="bg-[#0d1117] p-3 rounded-xl border border-[#233044] space-y-2">
+            <div class="flex justify-between items-center text-xs font-mono">
+              <span class="text-brand-cyan font-bold">#${i+1} [ID: ${d.id}]</span>
+              <div class="flex gap-2">
+                <span class="text-gray-400">dist: <span class="text-brand-coral">${d.dist}</span></span>
+                <span class="text-brand-emerald font-bold">sim (1-dist): ${sim} (${simPct}%)</span>
+              </div>
+            </div>
+            <p class="text-xs text-white">${d.text}</p>
+            <div class="flex gap-2 text-[10px] font-mono text-gray-400">
+              <span class="px-1.5 py-0.5 bg-[#141b26] rounded border border-[#233044]">category: ${d.cat}</span>
+              <span class="px-1.5 py-0.5 bg-[#141b26] rounded border border-[#233044]">source: ${d.source}</span>
+              <span class="px-1.5 py-0.5 bg-[#141b26] rounded border border-[#233044]">page: ${d.page}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // --- MODULE 10.5 PART A: HEADING CHUNKING TOGGLE ---
+    const chunkDocsSample = [
+      {
+        naive: "退款商品需保持完好，且包含原包装与发票。",
+        heading: "# 退款政策\n## 退货申请条件\n退款商品需保持完好，且包含原包装与发票。",
+        title: "refund_policy.md"
+      },
+      {
+        naive: "增值税发票可以在订单支付完成 30 天内申请开具。",
+        heading: "# 发票 FAQ\n## 开票时效\n增值税发票可以在订单支付完成 30 天内申请开具。",
+        title: "invoice_faq.md"
+      },
+      {
+        naive: "积分按 1:1 规则结算，月底清零。",
+        heading: "# 会员手册\n## 积分规则\n积分按 1:1 规则结算，月底清零。",
+        title: "membership.md"
+      }
+    ];
+
+    function renderChunkingPreview(isHeading) {
+      const container = document.getElementById('chunk-preview-container');
+      container.innerHTML = chunkDocsSample.map(doc => {
+        const text = isHeading ? doc.heading : doc.naive;
+        return `
+          <div class="bg-[#0d1117] p-4 rounded-xl border border-[#233044] space-y-2 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-mono text-gray-400 mb-1">📄 ${doc.title}</div>
+              <div class="p-3 bg-[#141b26] rounded-lg border border-[#233044] text-xs font-mono ${isHeading ? 'text-brand-emerald' : 'text-gray-300'} whitespace-pre-line leading-relaxed">
+                ${text}
+              </div>
+            </div>
+            <div class="text-[10px] text-gray-500 font-mono text-right pt-2 border-t border-[#233044]">
+              Character Count: ${text.length} chars
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // --- MODULE 10.5 PART B: HYBRID RETRIEVAL DUEL ---
+    const pkChunks = [
+      { id: 0, text: "退款政策：商品无质量问题申请退货退钱需在 7 天内。", bm25: [0.0, 0.8, 0.1, 0.0, 0.0], vec: [0.92, 0.88, 0.20, 0.10, 0.05] },
+      { id: 1, text: "退货条件：需保持商品完好与原包装，包含退款明细。", bm25: [0.1, 0.6, 0.2, 0.0, 0.0], vec: [0.85, 0.75, 0.15, 0.05, 0.02] },
+      { id: 2, text: "发票抬头修改：开票 30 天内联系在线客服提供正确抬头。", bm25: [0.0, 0.0, 0.9, 0.0, 0.0], vec: [0.12, 0.10, 0.95, 0.15, 0.01] },
+      { id: 3, text: "会员积分抵扣：积分兑换购物券，不可退钱或提现。", bm25: [0.2, 0.1, 0.0, 0.9, 0.0], vec: [0.35, 0.25, 0.10, 0.92, 0.08] },
+      { id: 4, text: "系统故障排查：订单号 ORD-20260918 报错 ERR-5042 时提交工单。", bm25: [0.0, 0.0, 0.0, 0.0, 1.0], vec: [0.01, 0.02, 0.01, 0.01, 0.05] }
+    ];
+
+    function renderPKResults() {
+      const qIdx = parseInt(document.querySelector('.btn-pk-q.border-brand-gold')?.getAttribute('data-pk') || 1) - 1;
+      const alpha = parseFloat(document.getElementById('slider-alpha').value);
+      document.getElementById('val-alpha').innerText = `${alpha.toFixed(2)} (向量 ${Math.round(alpha*100)}% / BM25 ${Math.round((1-alpha)*100)}%)`;
+
+      // 1. BM25 Top 3
+      const bm25Sorted = [...pkChunks].sort((a, b) => b.bm25[qIdx] - a.bm25[qIdx]);
+      document.getElementById('pk-res-bm25').innerHTML = bm25Sorted.slice(0, 3).map((item, idx) => `
+        <div class="bg-[#141b26] p-2.5 rounded border border-[#233044] space-y-1">
+          <div class="flex justify-between font-mono text-[11px]">
+            <span class="text-brand-cyan">#${idx+1} BM25 Score</span>
+            <span class="font-bold text-white">${item.bm25[qIdx].toFixed(2)}</span>
+          </div>
+          <p class="text-gray-300 text-[11px]">${item.text}</p>
+        </div>
+      `).join('');
+
+      // 2. Vector Top 3
+      const vecSorted = [...pkChunks].sort((a, b) => b.vec[qIdx] - a.vec[qIdx]);
+      document.getElementById('pk-res-vector').innerHTML = vecSorted.slice(0, 3).map((item, idx) => `
+        <div class="bg-[#141b26] p-2.5 rounded border border-[#233044] space-y-1">
+          <div class="flex justify-between font-mono text-[11px]">
+            <span class="text-brand-violet">#${idx+1} Cosine Sim</span>
+            <span class="font-bold text-white">${item.vec[qIdx].toFixed(2)}</span>
+          </div>
+          <p class="text-gray-300 text-[11px]">${item.text}</p>
+        </div>
+      `).join('');
+
+      // 3. Hybrid RRF Top 3
+      const hybridSorted = [...pkChunks].map(item => {
+        const fused = alpha * item.vec[qIdx] + (1 - alpha) * item.bm25[qIdx];
+        return { ...item, fused };
+      }).sort((a, b) => b.fused - a.fused);
+
+      document.getElementById('pk-res-hybrid').innerHTML = hybridSorted.slice(0, 3).map((item, idx) => `
+        <div class="bg-[#141b26] p-2.5 rounded border border-brand-gold/40 space-y-1">
+          <div class="flex justify-between font-mono text-[11px]">
+            <span class="text-brand-gold font-bold">#${idx+1} Fused Score</span>
+            <span class="font-bold text-brand-gold">${item.fused.toFixed(3)}</span>
+          </div>
+          <p class="text-white font-medium text-[11px]">${item.text}</p>
+        </div>
+      `).join('');
+    }
+
+    // --- MODULE 10.6 PART A: CODE VIEWER CODE SNIPPETS ---
+    const pythonSnippets = {
+      1: `# 1. similarity_metrics.py
+import numpy as np
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """计算两个向量的余弦相似度 [-1, 1]"""
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return float(np.dot(a, b) / (norm_a * norm_b))
+
+def dot_product(a: np.ndarray, b: np.ndarray) -> float:
+    """计算点积/内积"""
+    return float(np.dot(a, b))
+
+def euclidean_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """计算欧氏距离 [0, +inf]"""
+    return float(np.linalg.norm(a - b))
+
+def l2_normalize(vec: np.ndarray) -> np.ndarray:
+    """L2 归一化：使向量模长为 1"""
+    norm = np.linalg.norm(vec)
+    if norm == 0:
+        return vec
+    return vec / norm
+
+# 验证恒等式: L2 归一化后 dot == cosine
+v1 = np.array([1.0, 2.0, 3.0])
+v2 = np.array([4.0, 1.0, 0.5])
+n1, n2 = l2_normalize(v1), l2_normalize(v2)
+
+print(f"Cosine: {cosine_similarity(v1, v2):.4f}")
+print(f"Normalized Dot: {dot_product(n1, n2):.4f}") # 完全相同！`,
+
+      2: `# 2. batch_embedding.py
+import time
+from typing import List
+from sentence_transformers import SentenceTransformer
+
+# 加载 BAAI 离线 Embedding 模型 (512维)
+model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
+
+def embed_in_batches(texts: List[str], batch_size: int = 32):
+    """带 Batching 与截断控制的批量编码流水线"""
+    print(f"开始批量编码 {len(texts)} 条文档，Batch Size = {batch_size}...")
+    start = time.time()
+    
+    embeddings = model.encode(
+        texts,
+        batch_size=batch_size,
+        show_progress_bar=True,
+        normalize_embeddings=True # 强制开启 L2 归一化！
+    )
+    
+    print(f"编码完成！耗时: {time.time() - start:.2f}s, 向量 Shape: {embeddings.shape}")
+    return embeddings`,
+
+      3: `# 3. chroma_crud.py
+import chromadb
+from chromadb.config import Settings
+
+# 1. 初始化持久化 Client (SQLite + Parquet 落盘)
+client = chromadb.PersistentClient(path="./chroma_db_store")
+
+# 2. 创建或获取 Collection，显式配置 cosine 空间
+collection = client.get_or_create_collection(
+    name="company_faq",
+    metadata={"hnsw:space": "cosine"}
+)
+
+# 3. 确定性 ID + Upsert 覆盖更新
+documents = ["退款支持7天无理由", "发票可在30天内开具"]
+metadatas = [{"category": "退款", "source": "p.md"}, {"category": "发票", "source": "f.md"}]
+ids = ["p.md::0", "f.md::0"]
+
+collection.upsert(
+    ids=ids,
+    documents=documents,
+    metadatas=metadatas
+)
+
+# 4. 带 where 元数据过滤的语义查询
+results = collection.query(
+    query_texts=["怎么退钱"],
+    n_results=2,
+    where={"category": "退款"}
+)
+print("Chroma Query Results:", results)`,
+
+      4: `# 4. playground_ch10.py
+"""
+第 10 章 综合实战演练脚本：
+标题路径切块 + Chroma 检索 + BM25 混合检索
+"""
+import chromadb
+import numpy as np
+
+def heading_aware_chunk(md_text: str, current_heading: str = "") -> list:
+    chunks = []
+    lines = md_text.split('\n')
+    for line in lines:
+        if line.startswith('#'):
+            current_heading = line.strip()
+        elif line.strip():
+            chunks.append(f"{current_heading}\n{line.strip()}")
+    return chunks
+
+# 混合检索 RRF 算法实现
+def rrf_fuse(bm25_ranks: dict, vec_ranks: dict, k: int = 60):
+    scores = {}
+    all_keys = set(bm25_ranks.keys()).union(set(vec_ranks.keys()))
+    for doc_id in all_keys:
+        r_bm25 = bm25_ranks.get(doc_id, 1000)
+        r_vec = vec_ranks.get(doc_id, 1000)
+        scores[doc_id] = (1.0 / (k + r_bm25)) + (1.0 / (k + r_vec))
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+print("Playground 初始化成功！准备接入第 11 章 RAG 管道...")`
+    };
+
+    // --- MODULE 10.6 PART B: 5 QUIZ QUESTIONS ---
+    const quizData = [
+      {
+        q: "1. 向量经 L2 归一化 (||v|| = 1) 后，其点积 (Dot Product) 与余弦相似度 (Cosine Similarity) 满足什么关系？",
+        options: [
+          "点积等于余弦相似度的 2 倍",
+          "点积与余弦相似度完全相等",
+          "点积等于 1 - 余弦相似度",
+          "两者毫无关联"
+        ],
+        ans: 1,
+        explain: "正确！根据定义 Cos(a,b) = Dot(a,b) / (||a||·||b||)。当 ||a|| = ||b|| = 1 时，分母为 1，故 Dot(a,b) === Cos(a,b)。"
+      },
+      {
+        q: "2. 当一段 800 Tokens 的长文本传入 max_seq_length 为 512 的 Embedding 模型时，默认会发生什么？",
+        options: [
+          "抛出 ValueError 终止运行",
+          "自动切分成两个 400 Tokens 的向量",
+          "静默截断后 288 Tokens，不报错且丢弃后缀语义",
+          "模型崩溃报 OOM 错误"
+        ],
+        ans: 2,
+        explain: "正确！绝大多数开源与 API Embedding 模型都会静默截断超出部分，这也是 RAG 必须在入库前手动切块 (Chunking) 的直接原因。"
+      },
+      {
+        q: "3. Chroma 数据库在使用 cosine 空间时，query() 返回的 distance 字段代表什么？如何换算为相似度？",
+        options: [
+          "代表余弦相似度，无需换算",
+          "代表余弦距离 (1 - cos)，转换为相似度需要计算 1 - distance",
+          "代表欧氏距离，无法转换为余弦",
+          "代表点积倒数"
+        ],
+        ans: 1,
+        explain: "正确！Chroma 内部返回的是 Distance (距离越小越好)。对于 Cosine 空间，distance = 1 - sim，因此 similarity = 1 - distance。"
+      },
+      {
+        q: "4. 为什么向量数据库重新入库时，推荐采用 'filename::chunk_index' 作为确定性 ID 配合 upsert()？",
+        options: [
+          "能让 CPU 计算点积速度提升 2 倍",
+          "能防止重复执行脚本导致向量数据库记录无线膨胀，保持幂等性",
+          "Chroma 只接受这种格式的 ID",
+          "可以节省 50% 的磁盘空间"
+        ],
+        ans: 1,
+        explain: "正确！使用确定性 ID + upsert() 可以在文档修改重新清洗时直接覆盖旧记录，避免出现冗余垃圾条目。"
+      },
+      {
+        q: "5. 在面对订单号 ('ORD-2026') 或精确错误码 ('ERR-5042') 检索时，纯 Embedding 语义检索往往效果不佳，最根本的工程解法是？",
+        options: [
+          "更换更高维度的 OpenAI Embedding 模型",
+          "开启 L2 归一化",
+          "采用 BM25 关键词与 Embedding 向量组合的混合检索 (Hybrid Search)",
+          "将向量数据库索引更换为 PQ"
+        ],
+        ans: 2,
+        explain: "正确！语义向量对无语义规律的随机字符/代码标识符极其不敏感，混合检索 (Hybrid) 能利用 BM25 完美补齐这一短板。"
+      }
+    ];
+
+    function renderQuiz() {
+      const container = document.getElementById('quiz-container');
+      container.innerHTML = quizData.map((item, qIdx) => `
+        <div class="bg-[#0d1117] p-5 rounded-xl border border-[#233044] space-y-3" id="quiz-card-${qIdx}">
+          <div class="text-sm font-semibold text-white">${item.q}</div>
+          <div class="space-y-2">
+            ${item.options.map((opt, oIdx) => `
+              <button data-q="${qIdx}" data-o="${oIdx}" class="btn-quiz-opt w-full text-left p-3 rounded-lg border border-[#233044] bg-[#141b26] text-xs text-gray-300 hover:border-brand-cyan transition">
+                ${String.fromCharCode(65 + oIdx)}. ${opt}
+              </button>
+            `).join('')}
+          </div>
+          <div id="quiz-explain-${qIdx}" class="hidden p-3 rounded-lg text-xs leading-relaxed"></div>
+        </div>
+      `).join('');
+    }
+
+    // --- EVENT LISTENERS & INITIALIZATION ---
+    window.addEventListener('load', () => {
+      // 1. Module 10.1 Init
+      renderScatterCanvas();
+      updateScatterSidebar(0);
+      renderGeomMetricsCanvas();
+
+      const scatterCanvas = document.getElementById('canvas-2d-scatter');
+      scatterCanvas.addEventListener('mousemove', (e) => {
+        const rect = scatterCanvas.getBoundingClientRect();
+        const mouseX = (e.clientX - rect.left) / rect.width;
+        const mouseY = (e.clientY - rect.top) / rect.height;
+
+        let found = null;
+        scatterDocs.forEach(d => {
+          const dist = Math.hypot(d.x - mouseX, d.y - mouseY);
+          if (dist < 0.08) found = d.id;
+        });
+
+        if (found !== hoverNodeId) {
+          hoverNodeId = found;
+          renderScatterCanvas();
+          if (found !== null) updateScatterSidebar(found);
+        }
+      });
+
+      scatterCanvas.addEventListener('click', () => {
+        if (hoverNodeId !== null) {
+          selectedNodeId = hoverNodeId;
+          updateScatterSidebar(selectedNodeId);
+          renderScatterCanvas();
+        }
+      });
+
+      document.getElementById('slider-d1-scale').addEventListener('input', renderGeomMetricsCanvas);
+      document.getElementById('slider-d2-angle').addEventListener('input', renderGeomMetricsCanvas);
+
+      document.getElementById('btn-toggle-l2').addEventListener('click', () => {
+        isL2Normalized = !isL2Normalized;
+        const indicator = document.getElementById('l2-indicator');
+        const text = document.getElementById('l2-btn-text');
+
+        if (isL2Normalized) {
+          indicator.className = "w-2 h-2 rounded-full bg-brand-emerald";
+          text.innerText = "已开启 L2 归一化 (投影至单位圆)";
+        } else {
+          indicator.className = "w-2 h-2 rounded-full bg-brand-cyan";
+          text.innerText = "开启 L2 归一化 (投影到单位圆)";
+        }
+        renderGeomMetricsCanvas();
+      });
+
+      // 2. Module 10.2 Init
+      renderTruncationSimulator();
+      document.getElementById('slider-trunc-tokens').addEventListener('input', renderTruncationSimulator);
+
+      document.querySelectorAll('.btn-trunc-model').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          document.querySelectorAll('.btn-trunc-model').forEach(b => {
+            b.className = "btn-trunc-model w-full text-left px-3 py-2 rounded-lg border border-[#233044] hover:bg-[#141b26] text-gray-400 text-xs font-mono flex justify-between items-center";
+          });
+          btn.className = "btn-trunc-model w-full text-left px-3 py-2 rounded-lg border border-brand-cyan bg-brand-cyan/10 text-brand-cyan text-xs font-mono font-semibold flex justify-between items-center";
+          currentMaxSeq = parseInt(btn.getAttribute('data-limit'));
+          renderTruncationSimulator();
+        });
+      });
+
+      document.querySelectorAll('.btn-bs').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.btn-bs').forEach(b => {
+            b.className = "btn-bs px-3 py-1 rounded bg-[#141b26] border border-[#233044] text-xs font-mono text-gray-300 hover:text-white";
+          });
+          btn.className = "btn-bs px-3 py-1 rounded bg-brand-cyan/20 border border-brand-cyan text-xs font-mono text-brand-cyan font-bold";
+          currentBatchSize = parseInt(btn.getAttribute('data-size'));
+        });
+      });
+
+      document.getElementById('btn-run-batch').addEventListener('click', runBatchSimulation);
+
+      // 3. Module 10.3 Init
+      updateNumPyCalc();
+      document.getElementById('slider-calc-n').addEventListener('input', updateNumPyCalc);
+      
+      document.querySelectorAll('#dim-preset-btns button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#dim-preset-btns button').forEach(b => {
+            b.className = "px-2 py-1 bg-[#141b26] border border-[#233044] text-xs font-mono text-gray-300 rounded hover:text-white";
+          });
+          btn.className = "px-2 py-1 bg-brand-gold/20 border border-brand-gold text-xs font-mono text-brand-gold font-bold rounded";
+          document.getElementById('calc-val-d').setAttribute('data-dim', btn.getAttribute('data-dim'));
+          document.getElementById('calc-val-d').innerText = `${btn.getAttribute('data-dim')} 维`;
+          updateNumPyCalc();
+        });
+      });
+
+      renderIndexTheaterCanvas();
+      updateIndexInfo('hnsw');
+
+      document.querySelectorAll('#index-tabs .tab-idx').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#index-tabs .tab-idx').forEach(b => {
+            b.className = "tab-idx px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white transition";
+          });
+          btn.className = "tab-idx px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-emerald text-slate-950 font-bold shadow";
+          activeIndexType = btn.getAttribute('data-idx');
+          hnswAnimStep = 0;
+          renderIndexTheaterCanvas();
+          updateIndexInfo(activeIndexType);
+        });
+      });
+
+      document.getElementById('btn-animate-hnsw').addEventListener('click', () => {
+        if (isAnimatingHnsw) return;
+        isAnimatingHnsw = true;
+        hnswAnimStep = 0;
+        const animInterval = setInterval(() => {
+          hnswAnimStep++;
+          renderIndexTheaterCanvas();
+          if (hnswAnimStep >= 5) {
+            clearInterval(animInterval);
+            isAnimatingHnsw = false;
+          }
+        }, 400);
+      });
+
+      document.getElementById('slider-nprobe').addEventListener('input', (e) => {
+        document.getElementById('val-nprobe').innerText = e.target.value;
+        renderIndexTheaterCanvas();
+      });
+
+      // 4. Module 10.4 Init
+      document.getElementById('btn-reingest').addEventListener('click', runReingestExperiment);
+
+      renderChromaResults(1);
+      document.querySelectorAll('#chroma-preset-btns .btn-chroma-p').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#chroma-preset-btns .btn-chroma-p').forEach(b => {
+            b.className = "btn-chroma-p text-left p-2.5 rounded-lg border border-[#233044] bg-[#141b26] text-xs font-mono text-gray-300 hover:border-brand-cyan";
+          });
+          btn.className = "btn-chroma-p text-left p-2.5 rounded-lg border border-brand-cyan bg-brand-cyan/10 text-xs font-mono text-brand-cyan";
+          const pId = parseInt(btn.getAttribute('data-preset'));
+          renderChromaResults(pId);
+        });
+      });
+
+      // 5. Module 10.5 Init
+      renderChunkingPreview(true);
+      document.getElementById('btn-chunk-naive').addEventListener('click', () => {
+        document.getElementById('btn-chunk-naive').className = "px-3 py-1.5 rounded-lg border border-brand-coral bg-brand-coral/20 text-brand-coral font-bold text-xs shadow-lg transition";
+        document.getElementById('btn-chunk-heading').className = "px-3 py-1.5 rounded-lg border border-[#233044] bg-[#0d1117] text-gray-400 text-xs hover:text-white transition";
+        renderChunkingPreview(false);
+      });
+      document.getElementById('btn-chunk-heading').addEventListener('click', () => {
+        document.getElementById('btn-chunk-heading').className = "px-3 py-1.5 rounded-lg border border-brand-emerald bg-brand-emerald/20 text-brand-emerald font-bold text-xs shadow-lg transition";
+        document.getElementById('btn-chunk-naive').className = "px-3 py-1.5 rounded-lg border border-[#233044] bg-[#0d1117] text-gray-400 text-xs hover:text-white transition";
+        renderChunkingPreview(true);
+      });
+
+      renderPKResults();
+      document.getElementById('slider-alpha').addEventListener('input', renderPKResults);
+      document.querySelectorAll('.btn-pk-q').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.btn-pk-q').forEach(b => {
+            b.className = "btn-pk-q px-3 py-2 rounded-lg border border-[#233044] bg-[#141b26] text-gray-300 text-xs hover:border-brand-gold";
+          });
+          btn.className = "btn-pk-q px-3 py-2 rounded-lg border border-brand-gold bg-brand-gold/10 text-brand-gold text-xs font-semibold";
+          renderPKResults();
+        });
+      });
+
+      // 6. Module 10.6 Code Tabs
+      document.querySelectorAll('#code-tabs .tab-code').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#code-tabs .tab-code').forEach(b => {
+            b.className = "tab-code px-3 py-1 rounded-lg text-xs font-mono text-gray-400 hover:text-white";
+          });
+          btn.className = "tab-code px-3 py-1 rounded-lg text-xs font-mono bg-brand-violet text-slate-950 font-bold";
+          const codeId = btn.getAttribute('data-code');
+          document.getElementById('code-display-area').innerHTML = `<code>${pythonSnippets[codeId]}</code>`;
+        });
+      });
+
+      document.getElementById('btn-copy-code').addEventListener('click', () => {
+        const codeText = document.getElementById('code-display-area').innerText;
+        const textarea = document.createElement('textarea');
+        textarea.value = codeText;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+
+        const copyBtn = document.getElementById('btn-copy-code');
+        copyBtn.innerText = "✓ 已复制到剪贴板";
+        setTimeout(() => { copyBtn.innerText = "📋 复制代码"; }, 2000);
+      });
+
+      // Quiz Init
+      renderQuiz();
+      document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('btn-quiz-opt')) {
+          const qIdx = parseInt(e.target.getAttribute('data-q'));
+          const oIdx = parseInt(e.target.getAttribute('data-o'));
+          const qItem = quizData[qIdx];
+          const explainDiv = document.getElementById(`quiz-explain-${qIdx}`);
+
+          const opts = document.querySelectorAll(`button[data-q="${qIdx}"]`);
+          opts.forEach(b => b.classList.remove('border-brand-emerald', 'border-brand-coral', 'bg-brand-emerald/10', 'bg-brand-coral/10'));
+
+          explainDiv.classList.remove('hidden', 'bg-brand-emerald/10', 'border-brand-emerald/30', 'text-brand-emerald', 'bg-brand-coral/10', 'border-brand-coral/30', 'text-brand-coral');
+
+          if (oIdx === qItem.ans) {
+            e.target.classList.add('border-brand-emerald', 'bg-brand-emerald/10');
+            explainDiv.classList.add('bg-brand-emerald/10', 'border', 'border-brand-emerald/30', 'text-brand-emerald');
+            explainDiv.innerHTML = `<span class="font-bold">🎉 回答正确！</span> ${qItem.explain}`;
+          } else {
+            e.target.classList.add('border-brand-coral', 'bg-brand-coral/10');
+            explainDiv.classList.add('bg-brand-coral/10', 'border', 'border-brand-coral/30', 'text-brand-coral');
+            explainDiv.innerHTML = `<span class="font-bold">❌ 回答错误。</span> ${qItem.explain}`;
+          }
+        }
+      });
+
+      // ScrollSpy Window Scroll
+      window.addEventListener('resize', () => {
+        renderScatterCanvas();
+        renderGeomMetricsCanvas();
+        renderIndexTheaterCanvas();
+      });
+    });
+  </script>
+</body>
+</html>

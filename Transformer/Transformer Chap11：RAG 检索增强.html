@@ -1,0 +1,1914 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 11 章：RAG 实战 —— 文档解析、结构化切块、三阶段召回重排与评估体系</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0d1117',
+            cardDark: '#141b26',
+            borderDark: '#233044',
+            cyanAccent: '#58c4dd',
+            goldAccent: '#f0b429',
+            emeraldAccent: '#4ade80',
+            coralAccent: '#ff6b6b',
+            violetAccent: '#c084fc',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #233044;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #58c4dd;
+    }
+    .math-symbol {
+      font-family: 'Times New Roman', serif;
+      font-style: italic;
+    }
+    .active-tab {
+      border-bottom: 2px solid #58c4dd;
+      color: #58c4dd;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Sticky Header Nav -->
+  <header class="sticky top-0 z-50 bg-[#0d1117]/90 backdrop-blur border-b border-[#233044] px-4 py-3">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="flex items-center space-x-3">
+        <span class="px-2.5 py-1 text-xs font-semibold uppercase tracking-wider bg-[#58c4dd]/10 text-[#58c4dd] border border-[#58c4dd]/30 rounded-full">
+          CHAPTER 11
+        </span>
+        <h1 class="text-lg font-bold text-white tracking-tight">RAG 实战：解析、切块、三阶段召回重排与评估体系</h1>
+      </div>
+      <nav class="flex items-center space-x-1 text-xs font-medium overflow-x-auto max-w-full pb-1 md:pb-0">
+        <a href="#module-11-1" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-[#141b26] transition-colors">11.1 解析实验室</a>
+        <a href="#module-11-2" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-[#141b26] transition-colors">11.2 切块策略</a>
+        <a href="#module-11-3" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-[#141b26] transition-colors">11.3 三阶段 RAG</a>
+        <a href="#module-11-4" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-[#141b26] transition-colors">11.4 评估体系</a>
+        <a href="#module-11-5" class="px-3 py-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-[#141b26] transition-colors">11.5 代码库与自测</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="border-b border-[#233044] bg-gradient-to-b from-[#141b26] to-[#0d1117] py-12 px-4">
+    <div class="max-w-7xl mx-auto space-y-6">
+      <div class="space-y-2">
+        <h2 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+          企业级 RAG 检索增强生成系统全链路解构
+        </h2>
+        <p class="text-base text-gray-400 max-w-3xl">
+          从脏乱非结构化文档提取，到 Heading Stack 标题栈上下文感知切块；从双塔向量检索 + 交叉编码器精排，到基于 <span class="math-symbol">τ</span> 阈值的拒答门控与端到端 LLM-as-Judge 评估体系。
+        </p>
+      </div>
+
+      <!-- KPI Pills -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1">
+          <div class="text-xs text-gray-400">阶段 1：向量召回</div>
+          <div class="text-xl font-bold text-[#58c4dd]">Dense Top-5</div>
+          <div class="text-xs text-gray-500">双塔余弦相似度快速匹配</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1">
+          <div class="text-xs text-gray-400">阶段 2：交叉精排</div>
+          <div class="text-xl font-bold text-[#f0b429]">Cross-Encoder Top-3</div>
+          <div class="text-xs text-gray-500">注意力深度相关性交互</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1">
+          <div class="text-xs text-gray-400">阶段 3：拒答门控</div>
+          <div class="text-xl font-bold text-[#4ade80]">Threshold τ = 0.52</div>
+          <div class="text-xs text-gray-500">拦截域外查询/防止幻觉</div>
+        </div>
+        <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-1">
+          <div class="text-xs text-gray-400">质量评估矩阵</div>
+          <div class="text-xl font-bold text-[#c084fc]">Recall@K & MRR</div>
+          <div class="text-xs text-gray-500">LLM-as-Judge 忠实度校验</div>
+        </div>
+      </div>
+
+      <!-- Pipeline Interactive Strip -->
+      <div class="p-4 rounded-xl bg-[#141b26]/70 border border-[#233044] space-y-3">
+        <div class="text-xs font-semibold uppercase text-gray-400 tracking-wider">RAG 数据流五大关键节点</div>
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-2 text-center text-xs">
+          <div class="p-2.5 rounded-lg bg-[#233044]/50 border border-[#58c4dd]/30 text-white font-medium">
+            1. 文档解析与清洗
+          </div>
+          <div class="p-2.5 rounded-lg bg-[#233044]/50 border border-[#f0b429]/30 text-white font-medium">
+            2. Heading Stack 切块
+          </div>
+          <div class="p-2.5 rounded-lg bg-[#233044]/50 border border-[#4ade80]/30 text-white font-medium">
+            3. 双塔向量召回
+          </div>
+          <div class="p-2.5 rounded-lg bg-[#233044]/50 border border-[#ff6b6b]/30 text-white font-medium">
+            4. Cross-Encoder 重排
+          </div>
+          <div class="p-2.5 rounded-lg bg-[#233044]/50 border border-[#c084fc]/30 text-white font-medium">
+            5. 拒答门控与评估
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Container -->
+  <main class="max-w-7xl mx-auto px-4 py-8 space-y-16 flex-grow w-full">
+
+    <!-- MODULE 11.1 -->
+    <section id="module-11-1" class="space-y-6">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#58c4dd]">11.1</span> 文档加载与解析实验室 (Parsing Lab)
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          对比真实场景下 PDF、DOCX、HTML 文档的陷阱，尝试 BeautifulSoup 4 步骤交互清洗沙盒。
+        </p>
+      </div>
+
+      <!-- Format Trap Comparator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <h4 class="text-sm font-semibold text-white">多格式文档解析陷阱对比器 (Format Trap Comparator)</h4>
+          <div class="flex space-x-2">
+            <button onclick="switchFormatTrap('pdf')" id="btn-trap-pdf" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#58c4dd] text-black">PDF (5大陷阱)</button>
+            <button onclick="switchFormatTrap('docx')" id="btn-trap-docx" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#233044] text-gray-300 hover:text-white">DOCX (样式丢失)</button>
+            <button onclick="switchFormatTrap('html')" id="btn-trap-html" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#233044] text-gray-300 hover:text-white">HTML (噪声污染)</button>
+          </div>
+        </div>
+
+        <div id="trap-display-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Dynamically Injected -->
+        </div>
+      </div>
+
+      <!-- BeautifulSoup Interactive Cleaning Sandbox -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">BeautifulSoup HTML 4 步清洗交互沙盒</h4>
+            <p class="text-xs text-gray-400">勾选清洗步骤，实时观测 DOM 提取文本质量与字符压缩率</p>
+          </div>
+          <div class="flex items-center space-x-2 text-xs">
+            <span id="clean-stats-before" class="px-2 py-1 rounded bg-[#233044] text-gray-300">原始: 520 字符</span>
+            <span id="clean-stats-after" class="px-2 py-1 rounded bg-[#58c4dd]/20 text-[#58c4dd] font-semibold">清洗后: 185 字符</span>
+            <span id="clean-compression" class="px-2 py-1 rounded bg-[#4ade80]/20 text-[#4ade80] font-semibold">压缩率: 64.4%</span>
+          </div>
+        </div>
+
+        <!-- Step Checkboxes -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <label class="flex items-center space-x-2 p-2.5 rounded-lg bg-[#0d1117] border border-[#233044] cursor-pointer hover:border-[#58c4dd]">
+            <input type="checkbox" id="chk-step1" checked onchange="updateHtmlSandbox()" class="rounded text-[#58c4dd] focus:ring-0">
+            <span>① decompose() 清除 script/nav/footer</span>
+          </label>
+          <label class="flex items-center space-x-2 p-2.5 rounded-lg bg-[#0d1117] border border-[#233044] cursor-pointer hover:border-[#58c4dd]">
+            <input type="checkbox" id="chk-step2" checked onchange="updateHtmlSandbox()" class="rounded text-[#58c4dd] focus:ring-0">
+            <span>② 锁定 article / main 正文容器</span>
+          </label>
+          <label class="flex items-center space-x-2 p-2.5 rounded-lg bg-[#0d1117] border border-[#233044] cursor-pointer hover:border-[#58c4dd]">
+            <input type="checkbox" id="chk-step3" checked onchange="updateHtmlSandbox()" class="rounded text-[#58c4dd] focus:ring-0">
+            <span>③ separator='\n' 提取文本</span>
+          </label>
+          <label class="flex items-center space-x-2 p-2.5 rounded-lg bg-[#0d1117] border border-[#233044] cursor-pointer hover:border-[#58c4dd]">
+            <input type="checkbox" id="chk-step4" checked onchange="updateHtmlSandbox()" class="rounded text-[#58c4dd] focus:ring-0">
+            <span>④ 换行与连续空白规范化</span>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="space-y-1">
+            <div class="text-xs font-mono text-gray-400">原始 HTML 源码输入</div>
+            <textarea id="raw-html-input" oninput="updateHtmlSandbox()" rows="8" class="w-full p-3 font-mono text-xs rounded-lg bg-[#0d1117] border border-[#233044] text-gray-300 focus:outline-none focus:border-[#58c4dd]"><html><head><title>退款政策 FAQ</title></head>
+<body>
+  <nav>首页 | 商品分类 | 关于我们 | 联系客服</nav>
+  <article>
+    <h1>退款与售后政策</h1>
+    <p>自买家收到商品之日起 7 天内，可申请无理由退货。</p>
+    <p>商品需维持原状且不影响二次销售。</p>
+  </article>
+  <footer>© 2024 电商平台 版权所有</footer>
+  <script>console.log("tracker initialized");</script>
+</body></html></textarea>
+          </div>
+          <div class="space-y-1">
+            <div class="text-xs font-mono text-gray-400">清洗提取正文结果 (Extracted Clean Text)</div>
+            <div id="clean-html-output" class="w-full h-[184px] p-3 font-mono text-xs rounded-lg bg-[#0d1117] border border-[#233044] text-[#4ade80] overflow-y-auto whitespace-pre-wrap"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Parsing Solutions Matrix Table -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-3">
+        <h4 class="text-sm font-semibold text-white">主流文档解析方案选型矩阵 (Parsing Solutions Matrix)</h4>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-gray-300 border-collapse">
+            <thead>
+              <tr class="border-b border-[#233044] bg-[#0d1117] text-gray-400 font-semibold">
+                <th class="p-3">方案名称</th>
+                <th class="p-3">核心优势</th>
+                <th class="p-3">局限性</th>
+                <th class="p-3">推荐应用场景</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#233044]">
+              <tr>
+                <td class="p-3 font-mono text-[#58c4dd] font-semibold">BeautifulSoup4 / PyPDF</td>
+                <td class="p-3">轻量无额外依赖、执行速度毫秒级、零成本</td>
+                <td class="p-3">需为每个网站/模板编写 XPath/正则规则</td>
+                <td class="p-3">已知特定结构的 HTML/简单单栏 PDF</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-mono text-[#f0b429] font-semibold">Microsoft MarkItDown</td>
+                <td class="p-3">多格式统一输出 Markdown、结构与标题保持良好</td>
+                <td class="p-3">复杂扫描件与公式解析能力一般</td>
+                <td class="p-3">Word, Office, HTML 等跨格式混合知识库</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-mono text-[#4ade80] font-semibold">LangChain / LlamaIndex Loaders</td>
+                <td class="p-3">生态丰富、开箱即用、涵盖 100+ 数据源</td>
+                <td class="p-3">底层抽象重、异常排查与深层定制难度高</td>
+                <td class="p-3">快速搭建概念验证 (POC) 与标准化流程</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-mono text-[#c084fc] font-semibold">Marker / MinerU (Deep Learning)</td>
+                <td class="p-3">基于多模态模型、自动排版分割、精准还原公式/表格</td>
+                <td class="p-3">依赖 GPU 算力、处理延迟相对较高 (1-3s/页)</td>
+                <td class="p-3">学术论文、财报、复杂多栏扫描 PDF 抽取</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 11.2 -->
+    <section id="module-11-2" class="space-y-6">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#f0b429]">11.2</span> 文本切分策略与 Heading Stack 实验室 (Chunking Lab)
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          探究固定长度切分、重叠滑动窗口与 Markdown Heading Stack (标题路径栈) 对检索上下文保留的决定性影响。
+        </p>
+      </div>
+
+      <!-- Dynamic Chunking Simulator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-6">
+        <!-- Control Sliders -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs font-semibold">
+              <span class="text-gray-300">块大小 (Chunk Size)</span>
+              <span id="val-chunk-size" class="text-[#58c4dd]">250 字符</span>
+            </div>
+            <input type="range" id="slider-chunk-size" min="100" max="600" step="25" value="250" oninput="updateChunkingPlayground()" class="w-full accent-[#58c4dd] bg-[#0d1117] h-1.5 rounded-lg cursor-pointer">
+          </div>
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs font-semibold">
+              <span class="text-gray-300">重叠长度 (Overlap Window)</span>
+              <span id="val-chunk-overlap" class="text-[#f0b429]">50 字符</span>
+            </div>
+            <input type="range" id="slider-chunk-overlap" min="0" max="150" step="10" value="50" oninput="updateChunkingPlayground()" class="w-full accent-[#f0b429] bg-[#0d1117] h-1.5 rounded-lg cursor-pointer">
+          </div>
+          <div class="space-y-2">
+            <div class="text-xs font-semibold text-gray-300 mb-2">切换切分策略</div>
+            <div class="flex rounded-lg bg-[#0d1117] p-1 border border-[#233044] text-xs">
+              <button onclick="setChunkStrategy('fixed')" id="strat-btn-fixed" class="flex-1 py-1 rounded text-center text-gray-400 hover:text-white">固定长度</button>
+              <button onclick="setChunkStrategy('sliding')" id="strat-btn-sliding" class="flex-1 py-1 rounded text-center text-gray-400 hover:text-white">滑动重叠</button>
+              <button onclick="setChunkStrategy('heading')" id="strat-btn-heading" class="flex-1 py-1 bg-[#58c4dd] text-black font-semibold rounded text-center">Heading Stack</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Visual Chunks Render Output -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-gray-400">生成切块预警与结构预览 (Generated Chunk Blocks)</h4>
+            <span id="chunk-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#58c4dd]/10 text-[#58c4dd] border border-[#58c4dd]/30">共 3 个 Chunk</span>
+          </div>
+
+          <div id="chunks-visual-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Dynamically injected chunk cards -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 4-Scenario Parameter Guide Table -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-3">
+        <h4 class="text-sm font-semibold text-white">常见业务场景切分参数指南 (Chunking Parameter Guide)</h4>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-gray-300 border-collapse">
+            <thead>
+              <tr class="border-b border-[#233044] bg-[#0d1117] text-gray-400 font-semibold">
+                <th class="p-3">业务场景</th>
+                <th class="p-3">建议 Chunk Size</th>
+                <th class="p-3">建议 Overlap</th>
+                <th class="p-3">推荐切分策略</th>
+                <th class="p-3">设计决策理由</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#233044]">
+              <tr>
+                <td class="p-3 font-semibold text-white">客服 FAQ / 问答对</td>
+                <td class="p-3 text-[#58c4dd]">150 – 300 字符</td>
+                <td class="p-3 text-[#f0b429]">20 字符</td>
+                <td class="p-3 text-emerald-400">单条完整问答切分</td>
+                <td class="p-3">问答对颗粒度极小，强语义归一，防止跨问题污染</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-semibold text-white">技术 API / 开发手册</td>
+                <td class="p-3 text-[#58c4dd]">300 – 500 字符</td>
+                <td class="p-3 text-[#f0b429]">50 字符</td>
+                <td class="p-3 text-emerald-400">Heading Stack 结构化切分</td>
+                <td class="p-3">需补充顶级模块与子方法路径，保证参数与示例关联</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-semibold text-white">法律合同 / 规章条款</td>
+                <td class="p-3 text-[#58c4dd]">500 – 800 字符</td>
+                <td class="p-3 text-[#f0b429]">100 字符</td>
+                <td class="p-3 text-emerald-400">结构切分 + 上下文窗口</td>
+                <td class="p-3">合同条款修饰限定较多，大 Chunk 保证前置定义不丢失</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-semibold text-white">长篇图书 / 叙事新闻</td>
+                <td class="p-3 text-[#58c4dd]">800 – 1200 字符</td>
+                <td class="p-3 text-[#f0b429]">150 字符</td>
+                <td class="p-3 text-emerald-400">语义段落 (Semantic Chunking)</td>
+                <td class="p-3">注重上下文叙事连贯性，大语义块能提升摘要理解</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 11.3 -->
+    <section id="module-11-3" class="space-y-6">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#4ade80]">11.3</span> 三阶段 RAG 流水线剧场 (3-Stage RAG Pipeline Theatre)
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          结合双塔 Bi-Encoder 向量召回、Cross-Encoder 交叉编码器精排与拒答门控 (Refusal Gate)，可视化端到端问答决策。
+        </p>
+      </div>
+
+      <!-- Bi-Encoder vs Cross-Encoder Architecture Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-semibold text-white">双塔召回 (Bi-Encoder) vs 交叉编码精排 (Cross-Encoder) 架构图</h4>
+          <span class="text-xs text-gray-400">Retina High-DPI Visualizer</span>
+        </div>
+        <div class="w-full overflow-hidden rounded-lg bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-encoders" class="w-full h-[280px] block"></canvas>
+        </div>
+      </div>
+
+      <!-- Interactive 3-Stage RAG Simulator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-6">
+        <!-- Preset Query Selector -->
+        <div class="space-y-3">
+          <div class="text-xs font-semibold text-gray-300">测试查询预设 (Select or Type Query):</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <button onclick="setRAGQuery('买东西收货后几天可以无条件退款？')" class="p-2.5 text-left text-xs rounded-lg bg-[#0d1117] border border-[#233044] hover:border-[#58c4dd] text-gray-300 hover:text-white transition-all">
+              ① "买东西收货后几天可以无条件退款？"
+            </button>
+            <button onclick="setRAGQuery('开具电子发票有什么注意事项？')" class="p-2.5 text-left text-xs rounded-lg bg-[#0d1117] border border-[#233044] hover:border-[#58c4dd] text-gray-300 hover:text-white transition-all">
+              ② "开具电子发票有什么注意事项？"
+            </button>
+            <button onclick="setRAGQuery('VIP会员有什么折扣优惠？')" class="p-2.5 text-left text-xs rounded-lg bg-[#0d1117] border border-[#233044] hover:border-[#58c4dd] text-gray-300 hover:text-white transition-all">
+              ③ "VIP会员有什么折扣优惠？"
+            </button>
+            <button onclick="setRAGQuery('你们支持货到付款发货吗？')" class="p-2.5 text-left text-xs rounded-lg bg-[#0d1117] border border-[#ff6b6b]/50 hover:border-[#ff6b6b] text-[#ff6b6b] transition-all font-medium">
+              ④ "你们支持货到付款发货吗？" (触发拒答)
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Query Input & Threshold Slider -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div class="md:col-span-2 space-y-1">
+            <label class="text-xs font-semibold text-gray-300">自定义用户查询 (User Query Input)</label>
+            <div class="flex gap-2">
+              <input type="text" id="rag-input-query" value="买东西收货后几天可以无条件退款？" class="flex-1 px-3 py-2 text-xs rounded-lg bg-[#0d1117] border border-[#233044] text-white focus:outline-none focus:border-[#58c4dd]">
+              <button onclick="runRAGSimulation()" class="px-4 py-2 text-xs font-bold rounded-lg bg-[#58c4dd] text-black hover:bg-[#58c4dd]/90 transition-all">
+                运行 RAG 流水线
+              </button>
+            </div>
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-semibold">
+              <span class="text-gray-300">拒答门控阈值 (<span class="math-symbol">τ</span>)</span>
+              <span id="val-refusal-tau" class="text-[#4ade80] font-mono">0.52</span>
+            </div>
+            <input type="range" id="slider-refusal-tau" min="0.20" max="0.80" step="0.02" value="0.52" oninput="updateRefusalTauDisplay(); runRAGSimulation();" class="w-full accent-[#4ade80] bg-[#0d1117] h-1.5 rounded-lg cursor-pointer">
+          </div>
+        </div>
+
+        <!-- Pipeline Execution Flow Cards -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <!-- Stage 1 Card -->
+          <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+            <div class="flex items-center justify-between border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-[#58c4dd]">阶段 1：向量双塔召回 (Dense Top-5)</span>
+              <span class="text-[10px] bg-[#58c4dd]/20 text-[#58c4dd] px-2 py-0.5 rounded">余弦相似度</span>
+            </div>
+            <div id="rag-stage1-output" class="space-y-2 text-xs">
+              <!-- Injected -->
+            </div>
+          </div>
+
+          <!-- Stage 2 Card -->
+          <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+            <div class="flex items-center justify-between border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-[#f0b429]">阶段 2：Cross-Encoder 重排 (Top-3)</span>
+              <span class="text-[10px] bg-[#f0b429]/20 text-[#f0b429] px-2 py-0.5 rounded">标题+关键词加权</span>
+            </div>
+            <div id="rag-stage2-output" class="space-y-2 text-xs">
+              <!-- Injected -->
+            </div>
+          </div>
+
+          <!-- Stage 3 Card -->
+          <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+            <div class="flex items-center justify-between border-b border-[#233044] pb-2">
+              <span class="text-xs font-bold text-[#4ade80]">阶段 3：拒答校验与 LLM 答案</span>
+              <span id="rag-gate-status-badge" class="text-[10px] px-2 py-0.5 rounded font-bold">门控评估中</span>
+            </div>
+            <div id="rag-stage3-output" class="space-y-2 text-xs">
+              <!-- Injected -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 11.4 -->
+    <section id="module-11-4" class="space-y-6">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#c084fc]">11.4</span> RAG 评估体系实验室 (Evaluation Lab)
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          拖拽排序评估候选 Chunk，计算 Recall@K、Precision@K 与 MRR，探索拒答阈值分布图与 LLM-as-Judge 忠实度校验。
+        </p>
+      </div>
+
+      <!-- Candidate Interactive Ranking Evaluator -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h4 class="text-sm font-semibold text-white">检索结果交互排序与评估指标计算器</h4>
+            <p class="text-xs text-gray-400">调整标准答案 Chunk 在检索结果列表中的位置，观测指标变动</p>
+          </div>
+          <div class="flex space-x-3">
+            <div class="p-2.5 rounded-lg bg-[#0d1117] border border-[#233044] text-center">
+              <div class="text-[10px] text-gray-400">Recall@3</div>
+              <div id="eval-metric-recall" class="text-lg font-bold text-[#58c4dd]">100%</div>
+            </div>
+            <div class="p-2.5 rounded-lg bg-[#0d1117] border border-[#233044] text-center">
+              <div class="text-[10px] text-gray-400">Precision@3</div>
+              <div id="eval-metric-precision" class="text-lg font-bold text-[#f0b429]">33.3%</div>
+            </div>
+            <div class="p-2.5 rounded-lg bg-[#0d1117] border border-[#233044] text-center">
+              <div class="text-[10px] text-gray-400">MRR (平均倒数排名)</div>
+              <div id="eval-metric-mrr" class="text-lg font-bold text-[#4ade80]">1.000</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="space-y-3">
+            <div class="text-xs font-semibold text-gray-300">检索结果列表 (点击 ▲/▼ 调整文档相关性顺序):</div>
+            <div id="eval-items-list" class="space-y-2 text-xs">
+              <!-- Dynamic Candidate Items -->
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+            <div class="text-xs font-bold text-white border-b border-[#233044] pb-2">指标计算公式与诊断结论</div>
+            <div class="space-y-2 text-xs text-gray-300">
+              <div class="p-2 rounded bg-[#141b26] border border-[#233044]">
+                <span class="text-[#58c4dd] font-semibold">Recall@K</span> = (检索到的相关文档数) / (标准相关文档总数)
+              </div>
+              <div class="p-2 rounded bg-[#141b26] border border-[#233044]">
+                <span class="text-[#f0b429] font-semibold">Precision@K</span> = (前 K 个中的相关文档数) / K
+              </div>
+              <div class="p-2 rounded bg-[#141b26] border border-[#233044]">
+                <span class="text-[#4ade80] font-semibold">MRR</span> = <span class="math-symbol">1 / rank<sub>first</sub></span> (首个相关文档出现位置的倒数)
+              </div>
+            </div>
+            <div id="eval-verdict-box" class="p-3 rounded-lg bg-[#58c4dd]/10 border border-[#58c4dd]/30 text-xs text-[#58c4dd]">
+              诊断：标准相关文档位于 Rank #1，MRR = 1.00，系统召回与重排质量极高！
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Refusal Threshold Distribution Canvas -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">拒答门控得分分布与假阳性/假阴性权衡图</h4>
+            <p class="text-xs text-gray-400">20 域内可答查询 (Cyan) vs 10 域外不可答查询 (Coral) 的得分概率分布</p>
+          </div>
+          <div class="flex items-center space-x-2 text-xs">
+            <span class="flex items-center space-x-1"><span class="w-3 h-3 rounded-full bg-[#58c4dd] inline-block"></span><span>可答分布</span></span>
+            <span class="flex items-center space-x-1"><span class="w-3 h-3 rounded-full bg-[#ff6b6b] inline-block"></span><span>域外/不可答</span></span>
+          </div>
+        </div>
+
+        <div class="w-full overflow-hidden rounded-lg bg-[#0d1117] border border-[#233044] p-2">
+          <canvas id="canvas-distribution" class="w-full h-[220px] block"></canvas>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/30 text-[#ff6b6b]">
+            <span class="font-bold">假阳性 (False Positive - 幻觉风险):</span> 得分 ≥ <span class="math-symbol">τ</span> 但实际不可答。当前误答率: <span id="val-fp-rate" class="font-bold font-mono">5.0%</span>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#f0b429]/30 text-[#f0b429]">
+            <span class="font-bold">假阴性 (False Negative - 误拒率):</span> 得分 < <span class="math-symbol">τ</span> 但实际可答。当前误拒率: <span id="val-fn-rate" class="font-bold font-mono">10.0%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- LLM-as-Judge Faithfulness Checker -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">LLM-as-Judge 自动评估三元组 JSON 结构</h4>
+            <p class="text-xs text-gray-400">通过生成式 LLM 判定回答的【忠实度 Faithfulness】与【上下文相关度】</p>
+          </div>
+          <button onclick="toggleJudgeJson()" id="btn-toggle-json" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#c084fc]/20 text-[#c084fc] border border-[#c084fc]/30">
+            切换 JSON / 评估解释
+          </button>
+        </div>
+
+        <div id="judge-content-box" class="p-4 rounded-lg bg-[#0d1117] border border-[#233044] font-mono text-xs text-gray-300 overflow-x-auto">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULE 11.5 -->
+    <section id="module-11-5" class="space-y-6">
+      <div class="border-b border-[#233044] pb-3">
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <span class="text-[#ff6b6b]">11.5</span> 实战项目、完整代码库与自测 (CLI & Code Repo)
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">
+          提供可直接运行的 Python 知识库 CLI 命令行项目、5 项工程优化卡片与完整源代码。
+        </p>
+      </div>
+
+      <!-- CLI Terminal Simulator Sandbox -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-semibold text-white">CLI 知识库终端模拟器 (Interactive Terminal Sandbox)</h4>
+          <div class="flex space-x-1.5">
+            <span class="w-3 h-3 rounded-full bg-red-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-yellow-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-green-500/80 inline-block"></span>
+          </div>
+        </div>
+
+        <div class="p-4 rounded-lg bg-[#0d1117] border border-[#233044] font-mono text-xs space-y-3">
+          <div class="flex items-center space-x-2">
+            <span class="text-[#4ade80]">user@rag-server:~$</span>
+            <div class="flex-1 flex gap-2">
+              <button onclick="runCliCommand('demo')" class="px-2.5 py-1 rounded bg-[#233044] text-gray-200 hover:text-white">python playground_ch11.py --demo</button>
+              <button onclick="runCliCommand('ask')" class="px-2.5 py-1 rounded bg-[#233044] text-gray-200 hover:text-white">--ask "几天可退款？"</button>
+              <button onclick="runCliCommand('eval')" class="px-2.5 py-1 rounded bg-[#233044] text-gray-200 hover:text-white">--eval</button>
+            </div>
+          </div>
+          <div id="terminal-output" class="p-3 rounded bg-[#070a0f] border border-[#1f293d] text-gray-300 min-h-[140px] whitespace-pre-wrap overflow-x-auto">
+            点击上方按钮，模拟运行 `playground_ch11.py` 命令行工具...
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 Engineering Optimization Cards -->
+      <div class="space-y-3">
+        <h4 class="text-sm font-semibold text-white">RAG 系统生产级 5 大工程优化手段</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-2">
+            <div class="text-xs font-bold text-[#58c4dd]">1. 缓存层 (Query Cache)</div>
+            <p class="text-[11px] text-gray-400">使用 Redis 对高频相似 Query 建立向量缓存，提升响应速度并降低 LLM Token 成本。</p>
+          </div>
+          <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-2">
+            <div class="text-xs font-bold text-[#f0b429]">2. 混合检索 (Hybrid Search)</div>
+            <p class="text-[11px] text-gray-400">融合 Dense Vector (语义) 与 BM25 (关键词精确匹配)，基于 RRF 算法合并评分。</p>
+          </div>
+          <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-2">
+            <div class="text-xs font-bold text-[#4ade80]">3. 父子文档切分 (Parent-Child)</div>
+            <p class="text-[11px] text-gray-400">小 Chunk (如 150 字) 用于向量精准匹配，命中后提取大 Parent Block (如 800 字) 送给 LLM。</p>
+          </div>
+          <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-2">
+            <div class="text-xs font-bold text-[#ff6b6b]">4. 假想文档扩展 (HyDE)</div>
+            <p class="text-[11px] text-gray-400">先让 LLM 生成假想回答，再用假想回答的向量去检索数据库，弥补 Question-Answer 向量差距。</p>
+          </div>
+          <div class="p-4 rounded-xl bg-[#141b26] border border-[#233044] space-y-2">
+            <div class="text-xs font-bold text-[#c084fc]">5. 动态重叠 (Dynamic Window)</div>
+            <p class="text-[11px] text-gray-400">根据文本标点符号 (如句号、段落换行) 动态调整 Window 边界，防止句中硬切断。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Complete Python Code Repository (FIXED CODE CONTAINER) -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h4 class="text-sm font-semibold text-white">完整 Python 代码库 (Complete Code Repository)</h4>
+            <p class="text-xs text-gray-400">点击切换查看 4 个完整模块 Python 代码，点击右侧按钮可一键复制</p>
+          </div>
+          <button onclick="copyCurrentCode()" id="btn-copy-code" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#58c4dd] text-black hover:bg-[#58c4dd]/90 transition-all flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            <span id="copy-btn-text">复制当前代码</span>
+          </button>
+        </div>
+
+        <!-- Code File Tabs -->
+        <div class="flex border-b border-[#233044] space-x-1 overflow-x-auto text-xs font-mono">
+          <button onclick="selectCodeTab('load_html')" data-tab="load_html" class="code-tab-btn px-4 py-2 text-gray-400 hover:text-white transition-colors border-b-2 border-transparent">
+            load_html.py
+          </button>
+          <button onclick="selectCodeTab('chunk_by_structure')" data-tab="chunk_by_structure" class="code-tab-btn px-4 py-2 text-gray-400 hover:text-white transition-colors border-b-2 border-transparent">
+            chunk_by_structure.py
+          </button>
+          <button onclick="selectCodeTab('rag_pipeline')" data-tab="rag_pipeline" class="code-tab-btn px-4 py-2 text-gray-400 hover:text-white transition-colors border-b-2 border-transparent">
+            rag_pipeline.py
+          </button>
+          <button onclick="selectCodeTab('playground_ch11')" data-tab="playground_ch11" class="code-tab-btn px-4 py-2 text-gray-400 hover:text-white transition-colors border-b-2 border-transparent">
+            playground_ch11.py
+          </button>
+        </div>
+
+        <!-- Display Box -->
+        <div class="relative">
+          <pre class="p-4 rounded-lg bg-[#0d1117] border border-[#233044] overflow-x-auto font-mono text-xs text-gray-200 max-h-[460px] leading-relaxed"><code id="code-display"></code></pre>
+        </div>
+      </div>
+
+      <!-- 5-Question Quiz -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-6">
+        <h4 class="text-sm font-semibold text-white">本章核心概念巩固测试 (5-Question Quiz)</h4>
+        <div id="quiz-container" class="space-y-6">
+          <!-- Injected Quiz -->
+        </div>
+      </div>
+
+      <!-- 12-Point Chapter Summary Grid -->
+      <div class="p-6 rounded-xl bg-[#141b26] border border-[#233044] space-y-4">
+        <h4 class="text-sm font-semibold text-white">第 11 章：全书总结与最佳实践 CheckList (12 Key Takeaways)</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">1. 垃圾进，垃圾出</div>
+            <div class="text-gray-400">解析阶段清洗掉导航栏、页眉页脚与脚本，是后续高召回率的前提。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">2. Heading Stack 上下文</div>
+            <div class="text-gray-400">切块时拼装 Markdown 标题层级路径，可避免孤立段落丢失重要限定语。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#58c4dd]">3. 重叠窗防止断句</div>
+            <div class="text-gray-400">保留 10%-20% 的 Overlap Sliding Window，可防核心实体关键词被斩断。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#f0b429]">4. 双塔召回加速</div>
+            <div class="text-gray-400">Bi-Encoder 将 Chunk 预先向量化，在向量数据库中极速进行 Top-K 余弦搜索。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#f0b429]">5. 交叉精排提高精度</div>
+            <div class="text-gray-400">Cross-Encoder 将 Query 与 Chunk 拼接计算 Full Attention，大幅度减少虚假召回。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#f0b429]">6. 拒答门控防幻觉</div>
+            <div class="text-gray-400">设定 <span class="math-symbol">τ</span> 阈值拦截低匹配度查询，是消除生产环境中幻觉的最有效手段。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#4ade80]">7. Recall@K 指标</div>
+            <div class="text-gray-400">衡量检索模块是否涵盖了回答问题所需的全部关键知识片断。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#4ade80]">8. MRR 倒数排名</div>
+            <div class="text-gray-400">衡量正确答案出现的优先顺位，首位命中得分最高 (<span class="math-symbol">1.0</span>)。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#4ade80]">9. LLM-as-Judge 自动化</div>
+            <div class="text-gray-400">利用大语言模型自动评估 Faithfulness (忠实度) 与 Relevancy (相关度)。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#c084fc]">10. 父子 Chunk 结合</div>
+            <div class="text-gray-400">以小 Block 做 Vector Search，以大 Block 做 LLM Context，兼顾精准度与上下文。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#c084fc]">11. 混合检索 Hybrid</div>
+            <div class="text-gray-400">合并向量检索与关键词 BM25，有效解决专有名词、单号等精确定位问题。</div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#233044] space-y-1">
+            <div class="font-bold text-[#c084fc]">12. 闭环基准测试</div>
+            <div class="text-gray-400">建立固定 Evaluation Dataset，任何切块与模型调整均需通过基准测试验证。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-[#233044] bg-[#0d1117] py-6 px-4 text-center text-xs text-gray-500">
+    <div class="max-w-7xl mx-auto space-y-1">
+      <p>第 11 章：RAG 实战 —— 文档解析、结构化切块、三阶段召回重排与评估体系</p>
+      <p>3Blue1Brown Mathematical & Engineering Style Educational Interactive Module</p>
+    </div>
+  </footer>
+
+  <!-- SCRIPT LOGIC -->
+  <script>
+    // ------------------------------------------------------------------
+    // SAFE PYTHON CODE REPOSITORY OBJECT (Prevents premature script closing)
+    // ------------------------------------------------------------------
+    const CODE_FILES = {
+      load_html: [
+        'import re',
+        'from bs4 import BeautifulSoup',
+        '',
+        'def load_html(html: str, url: str = "") -> dict:',
+        '    """从 HTML 抽正文，去掉导航/脚本/样式。"""',
+        '    soup = BeautifulSoup(html, "html.parser")',
+        '',
+        '    # ① 删掉非正文标签',
+        '    for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript"]):',
+        '        tag.decompose()',
+        '',
+        '    # ② 优先找 <article> 或 <main>',
+        '    container = soup.find("article") or soup.find("main") or soup.body or soup',
+        '',
+        '    # ③ 抽文本',
+        '    text = container.get_text(separator="\\n")',
+        '',
+        '    # ④ 清理空行',
+        '    lines = [ln.strip() for ln in text.split("\\n") if ln.strip()]',
+        '    text = re.sub(r"\\n{3,}", "\\n\\n", "\\n".join(lines))',
+        '',
+        '    title = soup.title.get_text(strip=True) if soup.title else ""',
+        '    return {"text": text, "title": title, "url": url}',
+        '',
+        '',
+        'html = """',
+        '<html><head><title>退款政策</title></head>',
+        '<body>',
+        '  <nav>首页 | 商品 | 关于我们</nav>',
+        '  <article>',
+        '    <h1>退款政策</h1>',
+        '    <p>自收货之日起 7 天内可申请无理由退款。</p>',
+        '    <p>超过 7 天需提供质量问题证明。</p>',
+        '  </article>',
+        '  <footer>© 2024 某某公司</footer>',
+        '  \x3Cscript\x3Econsole.log(\'tracking\')\x3C/script\x3E',
+        '</body></html>',
+        '"""',
+        '',
+        'doc = load_html(html, "https://example.com/refund")',
+        'print(f"标题: {doc[\'title\']}")',
+        'print(f"正文:\\n{doc[\'text\']}")'
+      ].join('\n'),
+
+      chunk_by_structure: [
+        'import re',
+        '',
+        'def chunk_by_structure(text: str, chunk_size: int = 400) -> list[dict]:',
+        '    """基于 Markdown 标题层级栈 (Heading Stack) 的结构化切块策略"""',
+        '    lines = text.split("\\n")',
+        '    chunks = []',
+        '    heading_stack = []',
+        '    current_buffer = []',
+        '    current_len = 0',
+        '',
+        '    def get_context_prefix():',
+        '        return " > ".join(heading_stack) if heading_stack else ""',
+        '',
+        '    for line in lines:',
+        '        match = re.match(r"^(#{1,6})\\s+(.+)$", line.strip())',
+        '        if match:',
+        '            level = len(match.group(1))',
+        '            title = match.group(2).strip()',
+        '',
+        '            if current_buffer:',
+        '                content = "\\n".join(current_buffer)',
+        '                ctx = get_context_prefix()',
+        '                full_text = f"[{ctx}]\\n{content}" if ctx else content',
+        '                chunks.append({"header_path": ctx, "text": full_text})',
+        '                current_buffer = []',
+        '                current_len = 0',
+        '',
+        '            heading_stack = heading_stack[:level-1]',
+        '            heading_stack.append(title)',
+        '        else:',
+        '            if line.strip():',
+        '                current_buffer.append(line.strip())',
+        '                current_len += len(line)',
+        '',
+        '                if current_len >= chunk_size:',
+        '                    content = "\\n".join(current_buffer)',
+        '                    ctx = get_context_prefix()',
+        '                    full_text = f"[{ctx}]\\n{content}" if ctx else content',
+        '                    chunks.append({"header_path": ctx, "text": full_text})',
+        '                    # Sliding overlap window (start = end - 80)',
+        '                    current_buffer = current_buffer[-2:] if len(current_buffer) > 2 else current_buffer[-1:]',
+        '                    current_len = sum(len(x) for x in current_buffer)',
+        '',
+        '    if current_buffer:',
+        '        content = "\\n".join(current_buffer)',
+        '        ctx = get_context_prefix()',
+        '        full_text = f"[{ctx}]\\n{content}" if ctx else content',
+        '        chunks.append({"header_path": ctx, "text": full_text})',
+        '',
+        '    return chunks',
+        '',
+        'demo_md = """# 电商平台服务条款',
+        '',
+        '## 1. 退款政策说明',
+        '### 1.1 无理由退款条件',
+        '买家在收到商品之日起 7 天内，可申请 7 天无理由退款。商品需保持完好包装，未拆封不影响二次销售。',
+        '退款运费需由买家自行承担，除非商品存在质量缺陷。',
+        '',
+        '### 1.2 质量问题退款流程',
+        '若拆封后发现严重质量问题（如破损、功能失效），买家需在 14 天内提交图片或视频证明。',
+        '平台审核通过后，提供免费上门取件与全额退款（含发票金额）。',
+        '',
+        '## 2. 发票与凭证',
+        '### 2.1 电子发票开具',
+        '订单完成后 30 天内，可在个人中心申请开具增值税电子普通发票。',
+        '发票一经开具不可更改抬头，如需重开需先作废原发票。',
+        '"""',
+        '',
+        'if __name__ == "__main__":',
+        '    result = chunk_by_structure(demo_md, chunk_size=200)',
+        '    for i, c in enumerate(result, 1):',
+        '        print(f"--- Chunk #{i} ---")',
+        '        print(f"路径: {c[\'header_path\']}")',
+        '        print(f"内容:\\n{c[\'text\']}\\n")'
+      ].join('\n'),
+
+      rag_pipeline: [
+        'import math',
+        'import re',
+        '',
+        'DOCS = [',
+        '    {',
+        '        "id": "doc_refund_1",',
+        '        "title": "退款政策",',
+        '        "header_path": "电商平台服务条款 > 1. 退款政策说明 > 1.1 无理由退款条件",',
+        '        "text": "[电商平台服务条款 > 1. 退款政策说明 > 1.1 无理由退款条件]\\n自收货之日起 7 天内可申请 7 天无理由退款。商品需保持完好包装，不影响二次销售。买家承担退货运费。"',
+        '    },',
+        '    {',
+        '        "id": "doc_refund_2",',
+        '        "title": "退款政策",',
+        '        "header_path": "电商平台服务条款 > 1. 退款政策说明 > 1.2 质量问题退款流程",',
+        '        "text": "[电商平台服务条款 > 1. 退款政策说明 > 1.2 质量问题退款流程]\\n若有质量问题，需在 14 天内上传凭证，审核通过后免费上门取件并全额退款。"',
+        '    },',
+        '    {',
+        '        "id": "doc_invoice_1",',
+        '        "title": "发票指南",',
+        '        "header_path": "电商平台服务条款 > 2. 发票与凭证 > 2.1 电子发票开具",',
+        '        "text": "[电商平台服务条款 > 2. 发票与凭证 > 2.1 电子发票开具]\\n订单完成后 30 天内可在APP申请电子普通发票。抬头提交后不可修改。"',
+        '    },',
+        '    {',
+        '        "id": "doc_vip_1",',
+        '        "title": "会员手册",',
+        '        "header_path": "会员手册 > VIP 等级说明",',
+        '        "text": "[会员手册 > VIP 等级说明]\\n黄金会员享受 95 折优惠，钻石会员享受 9 折优惠及专属客服。"',
+        '    }',
+        ']',
+        '',
+        'REFUSE_THRESHOLD = 0.52',
+        '',
+        'class KnowledgeBase:',
+        '    def __init__(self, docs):',
+        '        self.docs = docs',
+        '',
+        '    def vector_recall(self, query: str, top_k: int = 5) -> list[dict]:',
+        '        """双塔向量召回模拟"""',
+        '        q_words = set(re.findall(r"\\w+", query.lower()))',
+        '        results = []',
+        '        for doc in self.docs:',
+        '            d_words = set(re.findall(r"\\w+", doc["text"].lower()))',
+        '            overlap = len(q_words & d_words)',
+        '            sim = overlap / math.sqrt(len(q_words) * len(d_words) + 1e-5)',
+        '            for kw in ["退款", "7天", "发票", "会员", "运费"]:',
+        '                if kw in query and kw in doc["text"]:',
+        '                    sim += 0.25',
+        '            results.append({**doc, "vector_score": min(1.0, sim)})',
+        '        results.sort(key=lambda x: x["vector_score"], reverse=True)',
+        '        return results[:top_k]',
+        '',
+        '    def rerank(self, query: str, candidate_chunks: list[dict], top_k: int = 3) -> list[dict]:',
+        '        """Cross-Encoder 模拟精排：基于深度词重叠与 Heading 匹配衰减"""',
+        '        reranked = []',
+        '        q_keywords = [w for w in ["退款", "7天", "发票", "会员", "货到付款", "质量", "运费"] if w in query]',
+        '        for chunk in candidate_chunks:',
+        '            score = chunk["vector_score"] * 0.4',
+        '            for kw in q_keywords:',
+        '                if kw in chunk["text"]:',
+        '                    score += 0.22',
+        '                if kw in chunk["header_path"]:',
+        '                    score += 0.15 # 0.15 Heading Bonus',
+        '            final_score = min(0.99, max(0.05, score))',
+        '            reranked.append({**chunk, "rerank_score": final_score})',
+        '        reranked.sort(key=lambda x: x["rerank_score"], reverse=True)',
+        '        return reranked[:top_k]',
+        '',
+        'class MockLLM:',
+        '    @staticmethod',
+        '    def generate(query: str, contexts: list[dict]) -> str:',
+        '        citations = "\\n".join([f"[{i+1}] {c[\'text\']}" for i, c in enumerate(contexts)])',
+        '        return f"基于以下参考文档：\\n{citations}\\n\\n回答：针对问题 \'{query}\'，根据权威条款，" + contexts[0][\'text\'].split(\'\\n\')[-1]',
+        '',
+        'def run_rag_pipeline(query: str):',
+        '    kb = KnowledgeBase(DOCS)',
+        '    print(f"\\n==========================================")',
+        '    print(f"🔍 用户查询: \'{query}\'")',
+        '    ',
+        '    # 阶段 1：向量召回 Top-5',
+        '    recalled = kb.vector_recall(query, top_k=5)',
+        '    print(f"\\n--- [阶段 1: 双塔向量召回 Top-5] ---")',
+        '    for r in recalled:',
+        '        print(f"  · Score {r[\'vector_score\']:.3f} | {r[\'header_path\']}")',
+        '        ',
+        '    # 阶段 2：交叉编码器精排 Top-3',
+        '    reranked = kb.rerank(query, recalled, top_k=3)',
+        '    print(f"\\n--- [阶段 2: Cross-Encoder 精排 Top-3] ---")',
+        '    for r in reranked:',
+        '        print(f"  · Score {r[\'rerank_score\']:.3f} | {r[\'header_path\']}")',
+        '        ',
+        '    # 阶段 3：拒答门控与生成',
+        '    top_score = reranked[0]["rerank_score"] if reranked else 0.0',
+        '    print(f"\\n--- [阶段 3: 拒答门控校验 (τ = {REFUSE_THRESHOLD})] ---")',
+        '    print(f"  最高匹配得分: {top_score:.3f}")',
+        '    ',
+        '    if top_score < REFUSE_THRESHOLD:',
+        '        print("  ⚠️ 决策: 触发拒答门控！知识库无匹配内容。")',
+        '        print("  🤖 回复: 抱歉，当前知识库中未检索到关于该问题的相关政策信息。")',
+        '    else:',
+        '        print("  ✅ 决策: 通过门控，提交 LLM 生成回答。")',
+        '        answer = MockLLM.generate(query, reranked[:2])',
+        '        print(f"\\n🤖 LLM 输出:\\n{answer}")',
+        '',
+        'if __name__ == "__main__":',
+        '    queries = [',
+        '        "买东西收货后几天可以无条件退款？",',
+        '        "开具电子发票有什么注意事项？",',
+        '        "VIP会员有什么折扣优惠？",',
+        '        "你们支持货到付款吗？" # 触发拒答',
+        '    ]',
+        '    for q in queries:',
+        '        run_rag_pipeline(q)'
+      ].join('\n'),
+
+      playground_ch11: [
+        'import argparse',
+        'import json',
+        'import math',
+        'import os',
+        'import re',
+        '',
+        'def load_text_file(filepath: str) -> str:',
+        '    with open(filepath, "r", encoding="utf-8") as f:',
+        '        return f.read()',
+        '',
+        'def load_pdf(filepath: str) -> str:',
+        '    return f"[PDF Doc Content from {os.path.basename(filepath)}]"',
+        '',
+        'def load_docx(filepath: str) -> str:',
+        '    return f"[DOCX Doc Content from {os.path.basename(filepath)}]"',
+        '',
+        'def chunk_document(text: str, chunk_size: int = 300) -> list[str]:',
+        '    paragraphs = text.split("\\n\\n")',
+        '    chunks = []',
+        '    curr = ""',
+        '    for p in paragraphs:',
+        '        if len(curr) + len(p) <= chunk_size:',
+        '            curr += p + "\\n\\n"',
+        '        else:',
+        '            if curr:',
+        '                chunks.append(curr.strip())',
+        '            curr = p + "\\n\\n"',
+        '    if curr:',
+        '        chunks.append(curr.strip())',
+        '    return chunks',
+        '',
+        'class RAGPipeline:',
+        '    def __init__(self, threshold=0.35):',
+        '        self.chunks = []',
+        '        self.threshold = threshold',
+        '',
+        '    def add_documents(self, text_list: list[str]):',
+        '        for text in text_list:',
+        '            sub_chunks = chunk_document(text)',
+        '            self.chunks.extend(sub_chunks)',
+        '',
+        '    def search(self, query: str, top_k=3):',
+        '        q_tokens = set(re.findall(r"\\w+", query.lower()))',
+        '        scores = []',
+        '        for i, chk in enumerate(self.chunks):',
+        '            c_tokens = set(re.findall(r"\\w+", chk.lower()))',
+        '            overlap = len(q_tokens & c_tokens)',
+        '            sim = overlap / (math.sqrt(len(q_tokens) * len(c_tokens)) + 1e-5)',
+        '            for kw in query:',
+        '                if len(kw) > 1 and kw in chk:',
+        '                    sim += 0.15',
+        '            scores.append((sim, i, chk))',
+        '        scores.sort(key=lambda x: x[0], reverse=True)',
+        '        return scores[:top_k]',
+        '',
+        '    def query(self, query_text: str):',
+        '        results = self.search(query_text, top_k=3)',
+        '        top_score = results[0][0] if results else 0.0',
+        '        ',
+        '        if top_score < self.threshold:',
+        '            return {"answer": "抱歉，知识库中未查找到相关权威依据，无法解答。", "score": top_score, "refused": True}',
+        '        ',
+        '        answer = f"根据相关文档说明：{results[0][2][:80]}..."',
+        '        return {"answer": answer, "score": top_score, "refused": False, "sources": results}',
+        '',
+        'def evaluate_rag(rag: RAGPipeline, test_cases: list[dict]):',
+        '    """计算 Recall@K 和 MRR 评估指标"""',
+        '    recalls = []',
+        '    mrr_list = []',
+        '    for case in test_cases:',
+        '        query = case["query"]',
+        '        ground_truth_kw = case["expected_keyword"]',
+        '        retrieved = rag.search(query, top_k=5)',
+        '        hit = False',
+        '        rank_hit = 0',
+        '        for rank, (score, idx, text) in enumerate(retrieved, 1):',
+        '            if ground_truth_kw in text:',
+        '                hit = True',
+        '                if rank_hit == 0:',
+        '                    rank_hit = rank',
+        '        recalls.append(1.0 if hit else 0.0)',
+        '        mrr_list.append(1.0 / rank_hit if rank_hit > 0 else 0.0)',
+        '    return {"Recall@5": sum(recalls)/len(recalls), "MRR": sum(mrr_list)/len(mrr_list)}',
+        '',
+        'DEMO_DOCS = [',
+        '    "退款政策：用户可在签收商品 7 天内申请无理由退还，商品需完好且不影响二次销售。",',
+        '    "发票开具：订单成功后可在APP填写抬头申请增值税电子发票，30天内有效。",',
+        '    "物流说明：常规商品下单后24小时内安排发货，偏远地区发顺丰速运。"',
+        ']',
+        '',
+        'DEMO_EVAL = [',
+        '    {"query": "几天内可以申请退款？", "expected_keyword": "7 天内"},',
+        '    {"query": "电子发票怎么开？", "expected_keyword": "增值税电子发票"},',
+        '    {"query": "发货使用什么快递？", "expected_keyword": "顺丰速运"}',
+        ']',
+        '',
+        'def main():',
+        '    parser = argparse.ArgumentParser(description="Ch11 RAG Knowledge Engine")',
+        '    parser.add_argument("--demo", action="store_true", help="运行 Demo 检索与评估演示")',
+        '    parser.add_argument("--ask", type=str, help="向知识库提出一个问题")',
+        '    parser.add_argument("--eval", action="store_true", help="评估当前知识库指标")',
+        '    args = parser.parse_args()',
+        '',
+        '    rag = RAGPipeline(threshold=0.35)',
+        '    rag.add_documents(DEMO_DOCS)',
+        '',
+        '    if args.demo or (not args.ask and not args.eval):',
+        '        print("🚀 [Demo 模式] 初始化内置知识库...")',
+        '        print(f"已加载 {len(rag.chunks)} 个文档块。")',
+        '        q = "退款有时间限制吗？"',
+        '        res = rag.query(q)',
+        '        print(f"\\n❓ 查询: {q}")',
+        '        print(f"💡 回答: {res[\'answer\']}")',
+        '        print(f"📊 得分: {res[\'score\']:.3f}")',
+        '        ',
+        '        print("\\n📈 [基准评估 Demo]")',
+        '        metrics = evaluate_rag(rag, DEMO_EVAL)',
+        '        print(json.dumps(metrics, indent=2, ensure_ascii=False))',
+        '',
+        '    elif args.ask:',
+        '        res = rag.query(args.ask)',
+        '        print(f"❓ 查询: {args.ask}")',
+        '        print(f"💡 结果: {res[\'answer\']}")',
+        '        print(f"📊 最高检索得分: {res[\'score\']:.3f}")',
+        '',
+        '    elif args.eval:',
+        '        metrics = evaluate_rag(rag, DEMO_EVAL)',
+        '        print(f"📊 评估结果: Recall@5={metrics[\'Recall@5\']:.2%}, MRR={metrics[\'MRR\']:.4f}")',
+        '',
+        'if __name__ == "__main__":',
+        '    main()'
+      ].join('\n')
+    };
+
+    let currentCodeTab = 'load_html';
+
+    function selectCodeTab(tabKey) {
+      currentCodeTab = tabKey;
+      document.querySelectorAll('.code-tab-btn').forEach(btn => {
+        const isActive = (btn.dataset.tab === tabKey);
+        btn.classList.toggle('active-tab', isActive);
+        btn.classList.toggle('text-[#58c4dd]', isActive);
+        btn.classList.toggle('font-bold', isActive);
+        btn.classList.toggle('text-gray-400', !isActive);
+      });
+
+      const codeElem = document.getElementById('code-display');
+      if (codeElem && CODE_FILES[tabKey]) {
+        codeElem.textContent = CODE_FILES[tabKey];
+      }
+    }
+
+    function copyCurrentCode() {
+      const textToCopy = CODE_FILES[currentCodeTab] || "";
+      const btnText = document.getElementById('copy-btn-text');
+      
+      // Safe fallback clipboard write
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(textToCopy).then(() => {
+          btnText.textContent = "已成功复制!";
+          setTimeout(() => btnText.textContent = "复制当前代码", 2000);
+        });
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = textToCopy;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        btnText.textContent = "已复制到剪贴板!";
+        setTimeout(() => btnText.textContent = "复制当前代码", 2000);
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // HIGH DPI CANVAS HELPER & DRAW ROUNDED RECT
+    // ------------------------------------------------------------------
+    function setupCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width: rect.width, height: rect.height };
+    }
+
+    function drawRoundedRect(ctx, x, y, width, height, radius, fillStyle, strokeStyle, lineWidth = 1) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.arcTo(x + width, y, x + width, y + radius, radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+      ctx.lineTo(x + radius, y + height);
+      ctx.arcTo(x, y + height, x, y + height - radius, radius);
+      ctx.lineTo(x, y + radius);
+      ctx.arcTo(x, y, x + radius, y, radius);
+      ctx.closePath();
+      if (fillStyle) {
+        ctx.fillStyle = fillStyle;
+        ctx.fill();
+      }
+      if (strokeStyle) {
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // MODULE 11.1: FORMAT TRAPS & BS4 CLEANING
+    // ------------------------------------------------------------------
+    const TRAP_DATA = {
+      pdf: {
+        title: "PDF 5 大抽取陷阱 (Multi-Column, Headers & Watermarks)",
+        raw: "----------------- PAGE 1 -----------------\n电商平台服务条款 2024 (机密页眉)\n1. 退款政策 1.1 无理由退款\n买家收货 7 天内可申请... [页脚: Page 1 of 50]\n----------------- PAGE 2 -----------------\n[硬断裂] 需保持原包装未拆封。",
+        clean: "1. 退款政策说明 > 1.1 无理由退款条件\n买家收货 7 天内可申请无理由退货。商品需保持完好原包装未拆封。",
+        note: "通过正则 strip_headers_footers() 匹配剔除页码与重复页眉，合并跨页句尾。"
+      },
+      docx: {
+        title: "DOCX 文本样式与 Heading Level 丢失陷阱",
+        raw: "电商平台服务条款\n退款政策说明\n7天无理由退款\n买家可在7天内申请退款...",
+        clean: "# 电商平台服务条款\n## 退款政策说明\n### 7天无理由退款\n买家可在7天内申请退款...",
+        note: "利用 python-docx 读取 paragraph.style.name (如 Heading 1)，将其转化为标准的 Markdown # 标记。"
+      },
+      html: {
+        title: "HTML DOM 节点噪声与 Script 脚本污染陷阱",
+        raw: "<html><head><script>tracking()<\/script></head><body><nav>首页 | 商品</nav><article><h1>退款政策</h1><p>7天无理由。</p></article><footer>©2024</footer></body></html>",
+        clean: "# 退款政策\n7天无理由。",
+        note: "使用 BeautifulSoup decompose() 剔除 nav, footer, script, style，仅提取 article/main 节点文本。"
+      }
+    };
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function switchFormatTrap(key) {
+      document.querySelectorAll('#btn-trap-pdf, #btn-trap-docx, #btn-trap-html').forEach(b => {
+        b.className = "px-3 py-1.5 text-xs font-medium rounded-lg bg-[#233044] text-gray-300 hover:text-white";
+      });
+      document.getElementById(`btn-trap-${key}`).className = "px-3 py-1.5 text-xs font-medium rounded-lg bg-[#58c4dd] text-black font-bold";
+
+      const d = TRAP_DATA[key];
+      const container = document.getElementById('trap-display-container');
+      container.innerHTML = `
+        <div class="space-y-1">
+          <div class="text-xs font-mono text-[#ff6b6b]">⚠️ 原始陷阱文本 (Raw Unparsed Text)</div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#ff6b6b]/30 text-xs font-mono text-gray-400 h-[140px] overflow-y-auto whitespace-pre-wrap">${escapeHtml(d.raw)}</div>
+        </div>
+        <div class="space-y-1">
+          <div class="text-xs font-mono text-[#4ade80]">✅ 清洗规整输出 (Stripped & Structed)</div>
+          <div class="p-3 rounded-lg bg-[#0d1117] border border-[#4ade80]/30 text-xs font-mono text-[#4ade80] h-[140px] overflow-y-auto whitespace-pre-wrap">${escapeHtml(d.clean)}\n\n<span class="text-gray-400 text-[11px] font-sans">💡 优化技巧: ${d.note}</span></div>
+        </div>
+      `;
+    }
+
+    function updateHtmlSandbox() {
+      const rawHtml = document.getElementById('raw-html-input').value;
+      const s1 = document.getElementById('chk-step1').checked;
+      const s2 = document.getElementById('chk-step2').checked;
+      const s3 = document.getElementById('chk-step3').checked;
+      const s4 = document.getElementById('chk-step4').checked;
+
+      let processed = rawHtml;
+      
+      if (s1) {
+        processed = processed.replace(/<nav[\s\S]*?<\/nav>/gi, '');
+        processed = processed.replace(/<footer[\s\S]*?<\/footer>/gi, '');
+        processed = processed.replace(/<script[\s\S]*?<\/script>/gi, '');
+        processed = processed.replace(/<style[\s\S]*?<\/style>/gi, '');
+      }
+
+      if (s2) {
+        const articleMatch = processed.match(/<article[\s\S]*?<\/article>/i);
+        if (articleMatch) {
+          processed = articleMatch[0];
+        }
+      }
+
+      if (s3) {
+        processed = processed.replace(/<[^>]+>/g, '\n');
+      }
+
+      if (s4) {
+        const lines = processed.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        processed = lines.join('\n');
+      }
+
+      const outElem = document.getElementById('clean-html-output');
+      outElem.textContent = processed;
+
+      const beforeLen = rawHtml.length;
+      const afterLen = processed.length;
+      const compRatio = beforeLen > 0 ? ((1 - afterLen / beforeLen) * 100).toFixed(1) : 0;
+
+      document.getElementById('clean-stats-before').textContent = `原始: ${beforeLen} 字符`;
+      document.getElementById('clean-stats-after').textContent = `清洗后: ${afterLen} 字符`;
+      document.getElementById('clean-compression').textContent = `压缩率: ${compRatio}%`;
+    }
+
+    // ------------------------------------------------------------------
+    // MODULE 11.2: CHUNKING PLAYGROUND
+    // ------------------------------------------------------------------
+    let currentChunkStrategy = 'heading';
+
+    const SAMPLE_DOC = `# 电商平台服务条款
+
+## 1. 退款政策说明
+### 1.1 无理由退款条件
+买家在收到商品之日起 7 天内，可申请 7 天无理由退款。商品需保持完好包装，未拆封不影响二次销售。退款运费需由买家自行承担，除非商品存在质量缺陷。
+
+### 1.2 质量问题退款流程
+若拆封后发现严重质量问题（如破损、功能失效），买家需在 14 天内提交图片或视频证明。平台审核通过后，提供免费上门取件与全额退款（含发票金额）。
+
+## 2. 发票与凭证
+### 2.1 电子发票开具
+订单完成后 30 天内，可在个人中心申请开具增值税电子普通发票。发票一经开具不可更改抬头，如需重开需先作废原发票。`;
+
+    function setChunkStrategy(strat) {
+      currentChunkStrategy = strat;
+      ['fixed', 'sliding', 'heading'].forEach(s => {
+        const btn = document.getElementById(`strat-btn-${s}`);
+        if (s === strat) {
+          btn.className = "flex-1 py-1 bg-[#58c4dd] text-black font-semibold rounded text-center";
+        } else {
+          btn.className = "flex-1 py-1 rounded text-center text-gray-400 hover:text-white";
+        }
+      });
+      updateChunkingPlayground();
+    }
+
+    function updateChunkingPlayground() {
+      const chunkSize = parseInt(document.getElementById('slider-chunk-size').value);
+      const overlap = parseInt(document.getElementById('slider-chunk-overlap').value);
+
+      document.getElementById('val-chunk-size').textContent = `${chunkSize} 字符`;
+      document.getElementById('val-chunk-overlap').textContent = `${overlap} 字符`;
+
+      const chunksContainer = document.getElementById('chunks-visual-container');
+      chunksContainer.innerHTML = '';
+
+      let generatedChunks = [];
+
+      if (currentChunkStrategy === 'fixed') {
+        const cleanText = SAMPLE_DOC.replace(/#+\s+/g, '');
+        for (let i = 0; i < cleanText.length; i += chunkSize) {
+          generatedChunks.push({
+            header: "N/A (无标题栈)",
+            text: cleanText.substring(i, i + chunkSize)
+          });
+        }
+      } else if (currentChunkStrategy === 'sliding') {
+        const cleanText = SAMPLE_DOC.replace(/#+\s+/g, '');
+        let start = 0;
+        while (start < cleanText.length) {
+          let end = Math.min(start + chunkSize, cleanText.length);
+          generatedChunks.push({
+            header: `Sliding Window [${start}:${end}]`,
+            text: cleanText.substring(start, end)
+          });
+          if (end >= cleanText.length) break;
+          start = end - overlap;
+        }
+      } else { // Heading Stack
+        const lines = SAMPLE_DOC.split('\n');
+        let stack = [];
+        let buffer = [];
+        let currLen = 0;
+
+        for (let line of lines) {
+          const match = line.match(/^(#{1,6})\s+(.+)$/);
+          if (match) {
+            const level = match[1].length;
+            const title = match[2];
+            if (buffer.length > 0) {
+              const path = stack.join(' > ');
+              generatedChunks.push({
+                header: path || "根目录",
+                text: `[${path}]\n` + buffer.join('\n')
+              });
+              buffer = [];
+              currLen = 0;
+            }
+            stack = stack.slice(0, level - 1);
+            stack.push(title);
+          } else {
+            if (line.trim()) {
+              buffer.push(line.trim());
+              currLen += line.length;
+              if (currLen >= chunkSize) {
+                const path = stack.join(' > ');
+                generatedChunks.push({
+                  header: path || "根目录",
+                  text: `[${path}]\n` + buffer.join('\n')
+                });
+                buffer = buffer.slice(-1);
+                currLen = buffer.join('\n').length;
+              }
+            }
+          }
+        }
+        if (buffer.length > 0) {
+          const path = stack.join(' > ');
+          generatedChunks.push({
+            header: path || "根目录",
+            text: `[${path}]\n` + buffer.join('\n')
+          });
+        }
+      }
+
+      document.getElementById('chunk-count-badge').textContent = `共 ${generatedChunks.length} 个 Chunk`;
+
+      const borderColors = ['border-[#58c4dd]/40', 'border-[#f0b429]/40', 'border-[#4ade80]/40', 'border-[#c084fc]/40'];
+      const badgeColors = ['bg-[#58c4dd]/20 text-[#58c4dd]', 'bg-[#f0b429]/20 text-[#f0b429]', 'bg-[#4ade80]/20 text-[#4ade80]', 'bg-[#c084fc]/20 text-[#c084fc]'];
+
+      generatedChunks.forEach((c, idx) => {
+        const bColor = borderColors[idx % borderColors.length];
+        const tColor = badgeColors[idx % badgeColors.length];
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-xl bg-[#0d1117] border ${bColor} space-y-2 flex flex-col justify-between text-xs`;
+        card.innerHTML = `
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-bold text-white">Chunk #${idx + 1}</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono ${tColor}">${c.text.length} 字符</span>
+            </div>
+            <div class="text-[11px] text-gray-400 font-mono mb-2 truncate">📍 ${c.header}</div>
+            <p class="font-mono text-gray-300 leading-relaxed bg-[#141b26] p-2.5 rounded border border-[#233044] overflow-hidden">${c.text}</p>
+          </div>
+        `;
+        chunksContainer.appendChild(card);
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // MODULE 11.3: CANVAS & RAG PIPELINE SIMULATION
+    // ------------------------------------------------------------------
+    function renderEncoderCanvas() {
+      const canvas = document.getElementById('canvas-encoders');
+      if (!canvas) return;
+      const { ctx, width, height } = setupCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Left Box: Bi-Encoder
+      const wHalf = (width - 40) / 2;
+      drawRoundedRect(ctx, 10, 10, wHalf, height - 20, 10, '#141b26', '#58c4dd', 1);
+
+      ctx.fillStyle = '#58c4dd';
+      ctx.font = 'bold 13px Inter, sans-serif';
+      ctx.fillText('双塔模型 (Bi-Encoder / Dense Retrieval)', 25, 35);
+
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '11px Inter, sans-serif';
+      ctx.fillText('Query 与 Doc 独立编码为向量，适合库级快速检索', 25, 55);
+
+      // Query Tower & Doc Tower
+      drawRoundedRect(ctx, 25, 75, wHalf - 50, 32, 6, '#0d1117', '#233044');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('Query Vector = E_q(Query)', 40, 95);
+
+      drawRoundedRect(ctx, 25, 120, wHalf - 50, 32, 6, '#0d1117', '#233044');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('Doc Vector = E_d(Doc)', 40, 140);
+
+      drawRoundedRect(ctx, 25, 175, wHalf - 50, 40, 6, '#58c4dd', null);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 12px Inter, sans-serif';
+      ctx.fillText('Similarity = Cosine(v_q, v_d)  [毫秒级]', 40, 200);
+
+      // Right Box: Cross-Encoder
+      const xRight = wHalf + 30;
+      drawRoundedRect(ctx, xRight, 10, wHalf, height - 20, 10, '#141b26', '#f0b429', 1);
+
+      ctx.fillStyle = '#f0b429';
+      ctx.font = 'bold 13px Inter, sans-serif';
+      ctx.fillText('交叉编码器精排 (Cross-Encoder Reranker)', xRight + 15, 35);
+
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '11px Inter, sans-serif';
+      ctx.fillText('Query 与 Doc 拼接后输入注意力层，高精度打分', xRight + 15, 55);
+
+      drawRoundedRect(ctx, xRight + 15, 75, wHalf - 30, 45, 6, '#0d1117', '#233044');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('Input = [CLS] Query [SEP] Chunk [SEP]', xRight + 25, 102);
+
+      drawRoundedRect(ctx, xRight + 15, 135, wHalf - 30, 35, 6, '#0d1117', '#f0b429');
+      ctx.fillStyle = '#f0b429';
+      ctx.fillText('Deep Transformer Self-Attention', xRight + 25, 157);
+
+      drawRoundedRect(ctx, xRight + 15, 185, wHalf - 30, 35, 6, '#f0b429', null);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 12px Inter, sans-serif';
+      ctx.fillText('Relevance Score (0.00 – 1.00)', xRight + 25, 207);
+    }
+
+    function setRAGQuery(q) {
+      document.getElementById('rag-input-query').value = q;
+      runRAGSimulation();
+    }
+
+    function updateRefusalTauDisplay() {
+      const tau = parseFloat(document.getElementById('slider-refusal-tau').value).toFixed(2);
+      document.getElementById('val-refusal-tau').textContent = tau;
+    }
+
+    const RAG_DOC_CORPUS = [
+      { id: 1, header: "退款政策 > 1.1 无理由退款", text: "买家在签收商品之日起 7 天内可无理由退款，退货运费自行承担。", words: ["退款", "7天", "无理由", "运费"] },
+      { id: 2, header: "退款政策 > 1.2 质量问题退款", text: "若商品有重大质量缺陷，14 天内提交凭证可免费上门取件全额退款。", words: ["质量", "14天", "免费", "全额"] },
+      { id: 3, header: "发票指南 > 2.1 电子发票", text: "订单完成后 30 天内可开具增值税电子普通发票，抬头提交后不可修改。", words: ["发票", "30天", "电子", "抬头"] },
+      { id: 4, header: "会员手册 > VIP 等级说明", text: "黄金会员享 95 折，钻石会员享 9 折优惠与专属客服通道。", words: ["VIP", "会员", "折扣", "优惠"] },
+      { id: 5, header: "配送指南 > 物流时效", text: "常规地区 24 小时内发货，偏远地区使用顺丰速运派送。", words: ["物流", "发货", "顺丰"] }
+    ];
+
+    function runRAGSimulation() {
+      const query = document.getElementById('rag-input-query').value.trim();
+      const tau = parseFloat(document.getElementById('slider-refusal-tau').value);
+
+      // Stage 1: Vector Recall Simulation
+      let recalled = RAG_DOC_CORPUS.map(doc => {
+        let score = 0.15;
+        doc.words.forEach(w => {
+          if (query.includes(w)) score += 0.28;
+        });
+        if (query.includes("退款") && doc.text.includes("退款")) score += 0.25;
+        if (query.includes("发票") && doc.text.includes("发票")) score += 0.35;
+        if (query.includes("VIP") && doc.text.includes("VIP")) score += 0.40;
+        return { ...doc, vectorScore: Math.min(0.95, score) };
+      });
+      recalled.sort((a, b) => b.vectorScore - a.vectorScore);
+
+      const stage1Out = document.getElementById('rag-stage1-output');
+      stage1Out.innerHTML = recalled.map((r, i) => `
+        <div class="p-2 rounded bg-[#141b26] border border-[#233044] flex items-center justify-between">
+          <div class="truncate flex-1 pr-2">
+            <span class="text-gray-400 font-mono">#${i + 1}</span> <span class="text-white">${r.header}</span>
+          </div>
+          <span class="font-mono font-bold text-[#58c4dd]">${r.vectorScore.toFixed(3)}</span>
+        </div>
+      `).join('');
+
+      // Stage 2: Cross-Encoder Rerank Simulation
+      let topCandidates = recalled.slice(0, 3);
+      let reranked = topCandidates.map(doc => {
+        let rScore = doc.vectorScore * 0.5;
+        if (query.includes("货到付款")) {
+          rScore = 0.22; // Out of domain penalty
+        } else {
+          doc.words.forEach(w => { if (query.includes(w)) rScore += 0.25; });
+        }
+        return { ...doc, rerankScore: Math.min(0.98, Math.max(0.08, rScore)) };
+      });
+      reranked.sort((a, b) => b.rerankScore - a.rerankScore);
+
+      const stage2Out = document.getElementById('rag-stage2-output');
+      stage2Out.innerHTML = reranked.map((r, i) => `
+        <div class="p-2 rounded bg-[#141b26] border border-[#233044] space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-white font-bold">Top #${i + 1} ${r.header}</span>
+            <span class="font-mono font-bold text-[#f0b429]">${r.rerankScore.toFixed(3)}</span>
+          </div>
+          <p class="text-[11px] text-gray-400 truncate">${r.text}</p>
+        </div>
+      `).join('');
+
+      // Stage 3: Refusal Gate & Answer Generation
+      const topScore = reranked[0] ? reranked[0].rerankScore : 0;
+      const gateBadge = document.getElementById('rag-gate-status-badge');
+      const stage3Out = document.getElementById('rag-stage3-output');
+
+      if (topScore >= tau) {
+        gateBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold bg-[#4ade80]/20 text-[#4ade80] border border-[#4ade80]/30";
+        gateBadge.textContent = "✅ 通过门控";
+
+        stage3Out.innerHTML = `
+          <div class="p-2.5 rounded bg-[#4ade80]/10 border border-[#4ade80]/30 space-y-2">
+            <div class="text-[11px] text-gray-300">最高分 <span class="font-mono font-bold text-[#4ade80]">${topScore.toFixed(3)}</span> ≥ <span class="math-symbol">τ</span> (${tau.toFixed(2)})，允许生成：</div>
+            <div class="p-2 rounded bg-[#0d1117] text-gray-200 leading-relaxed font-sans border border-[#233044]">
+              <span class="text-[#58c4dd] font-bold">[1]</span> 根据《${reranked[0].header}》：${reranked[0].text}
+            </div>
+          </div>
+        `;
+      } else {
+        gateBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold bg-[#ff6b6b]/20 text-[#ff6b6b] border border-[#ff6b6b]/30";
+        gateBadge.textContent = "⚠️ 触发拒答";
+
+        stage3Out.innerHTML = `
+          <div class="p-2.5 rounded bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 space-y-2">
+            <div class="text-[11px] text-[#ff6b6b]">最高分 <span class="font-mono font-bold">${topScore.toFixed(3)}</span> < <span class="math-symbol">τ</span> (${tau.toFixed(2)})，无法提供权威证明：</div>
+            <div class="p-2 rounded bg-[#0d1117] text-[#ff6b6b] leading-relaxed font-sans border border-[#233044]">
+              🤖 抱歉，当前知识库中未检索到关于“${query}”的相关权威政策依据，为防幻觉已安全拒答。
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // MODULE 11.4: EVALUATION LAB & DISTRIBUTION CANVAS
+    // ------------------------------------------------------------------
+    let evalCandidates = [
+      { id: 101, header: "退款政策 > 1.1 无理由退款", isRelevant: true, text: "7天无理由退款说明" },
+      { id: 102, header: "物流指南 > 顺丰派送说明", isRelevant: false, text: "物流派送范围与时效" },
+      { id: 103, header: "发票指南 > 电子发票说明", isRelevant: false, text: "开具增值税发票规则" },
+      { id: 104, header: "会员手册 > VIP 折扣制度", isRelevant: false, text: "会员权益与折扣" },
+      { id: 105, header: "支付指南 > 快捷支付方式", isRelevant: false, text: "支持的信用卡与网银" }
+    ];
+
+    function renderEvalList() {
+      const container = document.getElementById('eval-items-list');
+      container.innerHTML = evalCandidates.map((item, idx) => `
+        <div class="p-2.5 rounded-lg ${item.isRelevant ? 'bg-[#58c4dd]/10 border border-[#58c4dd]/50' : 'bg-[#0d1117] border border-[#233044]'} flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="font-mono font-bold text-gray-400">Rank #${idx + 1}</span>
+            <span class="${item.isRelevant ? 'text-[#58c4dd] font-bold' : 'text-gray-300'}">${item.header}</span>
+            ${item.isRelevant ? '<span class="px-1.5 py-0.5 rounded bg-[#58c4dd] text-black font-bold text-[10px]">Ground Truth</span>' : ''}
+          </div>
+          <div class="flex space-x-1">
+            <button onclick="moveEvalItem(${idx}, -1)" ${idx === 0 ? 'disabled class="opacity-30"' : ''} class="px-2 py-0.5 rounded bg-[#233044] text-white hover:bg-[#58c4dd] hover:text-black">▲</button>
+            <button onclick="moveEvalItem(${idx}, 1)" ${idx === evalCandidates.length - 1 ? 'disabled class="opacity-30"' : ''} class="px-2 py-0.5 rounded bg-[#233044] text-white hover:bg-[#58c4dd] hover:text-black">▼</button>
+          </div>
+        </div>
+      `).join('');
+
+      calculateEvalMetrics();
+    }
+
+    function moveEvalItem(index, dir) {
+      const target = index + dir;
+      if (target < 0 || target >= evalCandidates.length) return;
+      const temp = evalCandidates[index];
+      evalCandidates[index] = evalCandidates[target];
+      evalCandidates[target] = temp;
+      renderEvalList();
+    }
+
+    function calculateEvalMetrics() {
+      const relIndex = evalCandidates.findIndex(x => x.isRelevant);
+      const rankHit = relIndex + 1;
+
+      const k = 3;
+      const isHitInK = relIndex >= 0 && relIndex < k;
+      const recallAtK = isHitInK ? 1.0 : 0.0;
+      const precisionAtK = isHitInK ? 1 / k : 0.0;
+      const mrr = rankHit > 0 ? 1 / rankHit : 0.0;
+
+      document.getElementById('eval-metric-recall').textContent = `${(recallAtK * 100).toFixed(0)}%`;
+      document.getElementById('eval-metric-precision').textContent = `${(precisionAtK * 100).toFixed(1)}%`;
+      document.getElementById('eval-metric-mrr').textContent = mrr.toFixed(3);
+
+      const verdictBox = document.getElementById('eval-verdict-box');
+      if (rankHit === 1) {
+        verdictBox.className = "p-3 rounded-lg bg-[#4ade80]/10 border border-[#4ade80]/30 text-xs text-[#4ade80]";
+        verdictBox.textContent = `诊断：标准相关文档位于 Rank #1，MRR = 1.000，系统召回与重排质量极高！`;
+      } else if (rankHit <= 3) {
+        verdictBox.className = "p-3 rounded-lg bg-[#f0b429]/10 border border-[#f0b429]/30 text-xs text-[#f0b429]";
+        verdictBox.textContent = `诊断：标准相关文档位于 Rank #${rankHit}，MRR = ${mrr.toFixed(3)}。虽然进入 Top-3 但排名有待提高。`;
+      } else {
+        verdictBox.className = "p-3 rounded-lg bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 text-xs text-[#ff6b6b]";
+        verdictBox.textContent = `诊断：标准相关文档落后至 Rank #${rankHit}，超出 Top-3 推荐位！建议调优 Cross-Encoder。`;
+      }
+    }
+
+    function renderDistributionCanvas() {
+      const canvas = document.getElementById('canvas-distribution');
+      if (!canvas) return;
+      const { ctx, width, height } = setupCanvas(canvas);
+
+      ctx.clearRect(0, 0, width, height);
+
+      const tau = parseFloat(document.getElementById('slider-refusal-tau').value);
+
+      // Draw Axes
+      ctx.strokeStyle = '#233044';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(40, height - 30);
+      ctx.lineTo(width - 20, height - 30);
+      ctx.stroke();
+
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '10px Inter, sans-serif';
+      ctx.fillText('0.0', 40, height - 15);
+      ctx.fillText('0.5', width / 2, height - 15);
+      ctx.fillText('1.0 (Similarity Score)', width - 60, height - 15);
+
+      // Draw Answerable Curves (Cyan - Mean 0.75)
+      ctx.beginPath();
+      ctx.strokeStyle = '#58c4dd';
+      ctx.lineWidth = 2.5;
+      for (let x = 40; x <= width - 20; x++) {
+        const score = (x - 40) / (width - 60);
+        const y = height - 30 - Math.exp(-Math.pow(score - 0.75, 2) / 0.03) * (height - 60);
+        if (x === 40) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Draw Unanswerable Curves (Coral - Mean 0.35)
+      ctx.beginPath();
+      ctx.strokeStyle = '#ff6b6b';
+      ctx.lineWidth = 2.5;
+      for (let x = 40; x <= width - 20; x++) {
+        const score = (x - 40) / (width - 60);
+        const y = height - 30 - Math.exp(-Math.pow(score - 0.32, 2) / 0.02) * (height - 60);
+        if (x === 40) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Draw Threshold Line tau
+      const tauX = 40 + tau * (width - 60);
+      ctx.strokeStyle = '#4ade80';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(tauX, 20);
+      ctx.lineTo(tauX, height - 30);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#4ade80';
+      ctx.font = 'bold 11px Inter, sans-serif';
+      ctx.fillText(`τ Threshold = ${tau.toFixed(2)}`, tauX - 35, 15);
+
+      // Recalculate FP and FN rates
+      const fpRate = Math.max(0, Math.min(100, (1 - tau) * 20)).toFixed(1);
+      const fnRate = Math.max(0, Math.min(100, tau * 18)).toFixed(1);
+
+      document.getElementById('val-fp-rate').textContent = `${fpRate}%`;
+      document.getElementById('val-fn-rate').textContent = `${fnRate}%`;
+    }
+
+    let isJsonView = true;
+    function toggleJudgeJson() {
+      isJsonView = !isJsonView;
+      renderJudgeContent();
+    }
+
+    function renderJudgeContent() {
+      const box = document.getElementById('judge-content-box');
+      if (isJsonView) {
+        box.textContent = JSON.stringify({
+          "evaluation_id": "eval_889201",
+          "query": "买东西收货后几天可以无条件退款？",
+          "retrieved_context": "[退款政策 > 1.1 无理由退款]\n自收货之日起 7 天内可申请无理由退款。",
+          "llm_answer": "买家可在收到商品之日起 7 天内申请无理由退款。",
+          "verdict": {
+            "faithfulness_score": 1.0,
+            "answer_relevancy": 1.0,
+            "has_hallucination": false,
+            "reasoning": "回答准确引用了参考文档中'7 天内'的关键词，未添加文档以外的推测内容。"
+          }
+        }, null, 2);
+      } else {
+        box.innerHTML = `
+          <div class="space-y-2 font-sans">
+            <div class="text-[#c084fc] font-bold">LLM-as-Judge 评审结论报告：</div>
+            <p>· <span class="font-bold text-white">忠实度 (Faithfulness):</span> <span class="text-[#4ade80] font-bold">1.0 / 1.0</span> (无幻觉衍生)</p>
+            <p>· <span class="font-bold text-white">回答相关度 (Answer Relevancy):</span> <span class="text-[#4ade80] font-bold">1.0 / 1.0</span> (完全对齐提问焦点)</p>
+            <p>· <span class="font-bold text-white">推导逻辑链:</span> LLM 逐句比对 context 与 answer，断言命题完全成真。</p>
+          </div>
+        `;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // MODULE 11.5: CLI SIMULATOR & QUIZ
+    // ------------------------------------------------------------------
+    function runCliCommand(cmd) {
+      const out = document.getElementById('terminal-output');
+      if (cmd === 'demo') {
+        out.textContent = `user@rag-server:~$ python playground_ch11.py --demo\n\n🚀 [Demo 模式] 初始化内置知识库...\n已加载 3 个文档块。\n\n❓ 查询: 退款有时间限制吗？\n💡 回答: 根据相关文档说明：退款政策：用户可在签收商品 7 天内申请无理由退还...\n📊 得分: 0.725\n\n📈 [基准评估 Demo]\n{\n  "Recall@5": 1.0,\n  "MRR": 1.0\n}`;
+      } else if (cmd === 'ask') {
+        out.textContent = `user@rag-server:~$ python playground_ch11.py --ask "几天可退款？"\n\n❓ 查询: 几天可退款？\n💡 结果: 根据相关文档说明：退款政策：用户可在签收商品 7 天内申请无理由退还...\n📊 最高检索得分: 0.812`;
+      } else if (cmd === 'eval') {
+        out.textContent = `user@rag-server:~$ python playground_ch11.py --eval\n\n📊 评估结果: Recall@5=100.00%, MRR=1.0000`;
+      }
+    }
+
+    const QUIZ_QUESTIONS = [
+      {
+        q: "1. 在 RAG 三阶段流水线中，为什么不能直接用 Cross-Encoder 处理整个知识库的大规模 Vector？",
+        options: [
+          "A. Cross-Encoder 无法处理中文文本",
+          "B. Cross-Encoder 计算复杂度太高 (Full Attention)，无法在海量文档库上做毫秒级搜索",
+          "C. Cross-Encoder 的精度比向量双塔更低",
+          "D. 向量数据库不支持 Cross-Encoder 索引"
+        ],
+        ans: 1,
+        explain: "双塔模型 (Bi-Encoder) 预先算好向量，用余弦相似度快速召回 Top-K；Cross-Encoder 则对 Query 和 Chunk 拼接做深层注意力，计算慢但极其精细，因此只用于精排阶段。"
+      },
+      {
+        q: "2. 在切块策略中，引入 Heading Stack (标题路径栈) 的最关键价值是什么？",
+        options: [
+          "A. 增加 Chunk 的字数长度",
+          "B. 自动剔除文档中的 HTML 标签",
+          "C. 保证子段落被单独切 split 后，依然携带祖先标题的上下文限定信息",
+          "D. 提高向量编码的计算速度"
+        ],
+        ans: 2,
+        explain: "例如单独的“1.1 7天内无条件退款”缺少前缀，拼上 [电商平台服务条款 > 退款政策] 后，向量模型才能精准捕捉其适用的主体范围。"
+      },
+      {
+        q: "3. 拒答门控 (Refusal Gate) 的阈值 τ 设定过高 (如 τ = 0.95) 会导致什么结果？",
+        options: [
+          "A. 误答率 (False Positive) 大幅上升",
+          "B. 系统产生大量幻觉",
+          "C. 误拒率 (False Negative) 升高，许多原本可答的问题被拒绝",
+          "D. 召回率 Recall@K 变为 100%"
+        ],
+        ans: 2,
+        explain: "阈值过高会导致门控过于苛刻，即使知识库有正确答案，也可能因为相似度未达 0.95 而错误拒答。"
+      },
+      {
+        q: "4. 指标 MRR (Mean Reciprocal Rank) 主要用于评估系统的哪方面性能？",
+        options: [
+          "A. 数据库索引的内存消耗",
+          "B. 第一个相关正确答案在检索列表中排名的优先顺位",
+          "C. 大模型生成回答的字数长度",
+          "D. 文档解析清洗的文本压缩比率"
+        ],
+        ans: 1,
+        explain: "MRR 关注正确答案是否排在最前面 (Rank #1 得分 1.0，Rank #2 得分 0.5)，直观反映重排排序算法的优劣。"
+      },
+      {
+        q: "5. 在处理 PDF 格式文档时，直接用简单正则表达式抽取文本最容易陷入的陷阱是？",
+        options: [
+          "A. 页眉页脚/页码作为硬文本插入句中，截断上下文",
+          "B. 图片自动转为 Unicode 字符",
+          "C. 文本编码格式变为 UTF-32",
+          "D. 导致 Python 内存溢出"
+        ],
+        ans: 0,
+        explain: "PDF 本质是版面排版指令，跨页文本常被页码、页眉线强制斩断，需专门进行规则与版面语义修复。"
+      }
+    ];
+
+    function renderQuiz() {
+      const qContainer = document.getElementById('quiz-container');
+      qContainer.innerHTML = QUIZ_QUESTIONS.map((q, idx) => `
+        <div class="p-4 rounded-xl bg-[#0d1117] border border-[#233044] space-y-3">
+          <div class="text-xs font-bold text-white">${q.q}</div>
+          <div class="space-y-1.5 text-xs">
+            ${q.options.map((opt, oIdx) => `
+              <button onclick="checkQuizAnswer(${idx}, ${oIdx})" id="quiz-${idx}-opt-${oIdx}" class="w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] hover:border-[#58c4dd] text-gray-300 transition-all">
+                ${opt}
+              </button>
+            `).join('')}
+          </div>
+          <div id="quiz-${idx}-explain" class="hidden p-3 rounded-lg text-xs leading-relaxed"></div>
+        </div>
+      `).join('');
+    }
+
+    function checkQuizAnswer(qIdx, oIdx) {
+      const q = QUIZ_QUESTIONS[qIdx];
+      const expBox = document.getElementById(`quiz-${qIdx}-explain`);
+
+      for (let i = 0; i < q.options.length; i++) {
+        const btn = document.getElementById(`quiz-${qIdx}-opt-${i}`);
+        if (i === q.ans) {
+          btn.className = "w-full text-left p-2.5 rounded-lg bg-[#4ade80]/20 border border-[#4ade80] text-[#4ade80] font-bold";
+        } else if (i === oIdx && oIdx !== q.ans) {
+          btn.className = "w-full text-left p-2.5 rounded-lg bg-[#ff6b6b]/20 border border-[#ff6b6b] text-[#ff6b6b]";
+        } else {
+          btn.className = "w-full text-left p-2.5 rounded-lg bg-[#141b26] border border-[#233044] text-gray-500 opacity-60";
+        }
+      }
+
+      expBox.classList.remove('hidden');
+      if (oIdx === q.ans) {
+        expBox.className = "p-3 rounded-lg bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80]";
+        expBox.innerHTML = `<strong>✅ 回答正确！</strong> ${q.explain}`;
+      } else {
+        expBox.className = "p-3 rounded-lg bg-[#ff6b6b]/10 border border-[#ff6b6b]/30 text-[#ff6b6b]";
+        expBox.innerHTML = `<strong>❌ 解析说明：</strong> ${q.explain}`;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // PAGE INITIALIZATION
+    // ------------------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1. Initialize Code Tab directly to load_html to guarantee rendering
+      selectCodeTab('load_html');
+
+      // 2. Initialize Module 11.1
+      switchFormatTrap('pdf');
+      updateHtmlSandbox();
+
+      // 3. Initialize Module 11.2
+      updateChunkingPlayground();
+
+      // 4. Initialize Module 11.3
+      renderEncoderCanvas();
+      runRAGSimulation();
+
+      // 5. Initialize Module 11.4
+      renderEvalList();
+      renderDistributionCanvas();
+      renderJudgeContent();
+
+      // 6. Initialize Module 11.5
+      renderQuiz();
+
+      // Window Resize Listener for Canvases
+      window.addEventListener('resize', () => {
+        renderEncoderCanvas();
+        renderDistributionCanvas();
+      });
+    });
+  </script>
+</body>
+</html>
